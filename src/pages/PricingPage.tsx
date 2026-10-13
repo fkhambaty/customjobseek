@@ -1,12 +1,12 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
-import { PLANS, PLAN_ORDER, type PlanId } from "../../shared/plans";
+import { PLANS, PLAN_ORDER, RUN_PACKS, type PlanId, type RunPack } from "../../shared/plans";
 import { api } from "../api";
 import { useSession } from "../session";
 
 export function PricingPage() {
   const { account } = useSession();
-  const [msg, setMsg] = useState<{ plan: PlanId; text: string } | null>(null);
+  const [msg, setMsg] = useState<{ plan: string; text: string } | null>(null);
 
   async function buy(plan: PlanId) {
     try {
@@ -14,6 +14,15 @@ export function PricingPage() {
       window.location.href = url;
     } catch (e) {
       setMsg({ plan, text: (e as Error).message });
+    }
+  }
+
+  async function buyRuns(pack: RunPack) {
+    try {
+      const { url } = await api.checkoutRuns(pack.id);
+      window.location.href = url;
+    } catch (e) {
+      setMsg({ plan: "runs", text: (e as Error).message });
     }
   }
 
@@ -66,6 +75,19 @@ export function PricingPage() {
           );
         })}
       </div>
+      <section className="run-packs">
+        <h2>Add scan runs</h2>
+        <p>A run is one press of Scan for jobs, or one day of the daily scan. It prepares up to three jobs and uses one application pack for each.</p>
+        <div className="run-pack-row">
+          {RUN_PACKS.map((pack) => (
+            <button key={pack.id} className="btn btn-ghost" disabled={!account} onClick={() => buyRuns(pack)}>
+              {pack.runs} runs · ₹{pack.priceInr}
+            </button>
+          ))}
+        </div>
+        {!account && <p className="muted small">Sign in before buying runs.</p>}
+        {msg?.plan === "runs" && <div className="alert alert-info small">{msg.text}</div>}
+      </section>
     </div>
   );
 }

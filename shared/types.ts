@@ -224,6 +224,7 @@ export interface Account {
   plan: string;
   evalCredits: number;
   resumeCredits: number;
+  scanRuns: number;
   creditsExpireAt: string | null;
 }
 

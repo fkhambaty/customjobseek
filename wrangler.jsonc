@@ -20,7 +20,7 @@
     "MAIL_FROM": "CustomJobSeek <no-reply@funberrykids.in>"
   },
   "triggers": {
-    "crons": ["17 * * * *"]
+    "crons": ["17 * * * *", "30 * * * *"]
   },
   "observability": { "enabled": true }
 }

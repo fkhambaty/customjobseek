@@ -93,7 +93,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         <div className="side-foot">
           {account && (
             <Link to="/account" className="credits">
-              {plural(account.evalCredits, "check")} · {plural(account.resumeCredits, "resume")} left
+              {plural(account.scanRuns, "scan")} · {plural(account.evalCredits, "check")} · {plural(account.resumeCredits, "resume")} left
             </Link>
           )}
           <div className="side-user">

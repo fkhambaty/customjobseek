@@ -48,6 +48,7 @@ export function toAccount(u: UserRow): Account {
     plan: u.plan,
     evalCredits: u.eval_credits,
     resumeCredits: u.resume_credits,
+    scanRuns: u.scan_runs ?? 1,
     creditsExpireAt: u.credits_expire_at,
   };
 }

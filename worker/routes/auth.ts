@@ -26,7 +26,7 @@ export const auth = new Hono<AppEnv>()
       await c.env.DB.batch([
         c.env.DB.prepare("INSERT INTO users (id, email, password_hash, email_verified, eval_credits, resume_credits) VALUES (?, ?, ?, 0, 3, 3)")
           .bind(id, email, await hashPassword(password)),
-        c.env.DB.prepare("INSERT INTO credit_ledger (user_id, kind, eval_delta, resume_delta, note) VALUES (?, 'grant', 3, 3, 'free plan')").bind(id),
+        c.env.DB.prepare("INSERT INTO credit_ledger (user_id, kind, eval_delta, resume_delta, runs_delta, note) VALUES (?, 'grant', 3, 3, 1, 'free plan')").bind(id),
       ]);
     } else {
       await c.env.DB.prepare("UPDATE users SET password_hash = ? WHERE id = ?").bind(await hashPassword(password), existing.id).run();
@@ -100,7 +100,7 @@ export const auth = new Hono<AppEnv>()
     }
     // Foreign keys cascade, but D1 enforcement depends on the connection, so every table is cleared explicitly.
     await c.env.DB.batch([
-      ...["job_events", "packs", "resume_uploads", "missed_reports", "resumes", "jobs", "profiles", "credit_ledger", "sessions"].map((t) =>
+      ...["job_events", "packs", "resume_uploads", "missed_reports", "resumes", "jobs", "profiles", "credit_ledger", "scan_runs_log", "scan_schedules", "sessions"].map((t) =>
         c.env.DB.prepare(`DELETE FROM ${t} WHERE user_id = ?`).bind(user.id),
       ),
       c.env.DB.prepare("UPDATE companies SET added_by = NULL WHERE added_by = ?").bind(user.id),

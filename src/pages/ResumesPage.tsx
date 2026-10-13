@@ -25,7 +25,7 @@ export function ResumesPage() {
       <div className="page-top">
         <div>
           <h1 className="page-title">Resumes</h1>
-          <p className="lede">Every resume is kept here: the general one built from your profile, the base versions you brought with you, and the one made for each job.</p>
+          <p className="lede">The general one built from your profile, any formatted resume you brought with you, and the one made for each job.</p>
         </div>
       </div>
       {error && <div className="alert alert-error">{error}</div>}
@@ -41,37 +41,35 @@ export function ResumesPage() {
         </div>
       </section>
 
+      {lib && lib.base.length > 0 && (
       <section className="panel">
         <header>
-          <h2>Base resumes <span className="n">{lib?.base.length ?? ""}</span></h2>
-          <p>Versions you uploaded or brought over. They open exactly as saved; print them to PDF from the browser.</p>
+          <h2>Resumes you brought over <span className="n">{lib.base.length}</span></h2>
+          <p>Formatted copies kept as they were. Print them to PDF from the browser.</p>
         </header>
-        {lib?.base.length ? (
-          <ul className="files">
-            {lib.base.map((b) => (
-              <li key={b.id}>
-                <span className="file-name">{b.label}</span>
-                <span className="muted small">{b.format === "html" ? "Formatted" : "Text from PDF"} · {shortDate(b.createdAt)}</span>
-                <span className="row-inline">
-                  <a className="btn btn-ghost btn-xs" href={`/api/resumes/base/${b.id}`} target="_blank" rel="noreferrer">Open</a>
-                  <button
-                    className="btn btn-quiet btn-xs"
-                    onClick={async () => {
-                      if (!confirm(`Remove "${b.label}"?`)) return;
-                      await api.deleteBaseResume(b.id);
-                      setLib({ ...lib, base: lib.base.filter((x) => x.id !== b.id) });
-                    }}
-                  >
-                    Remove
-                  </button>
-                </span>
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <p className="muted">None yet. Upload a PDF on your <Link to="/profile">profile</Link> and it is kept here.</p>
-        )}
+        <ul className="files">
+          {lib.base.map((b) => (
+            <li key={b.id}>
+              <span className="file-name">{b.label}</span>
+              <span className="muted small">{shortDate(b.createdAt)}</span>
+              <span className="row-inline">
+                <a className="btn btn-ghost btn-xs" href={`/api/resumes/base/${b.id}`} target="_blank" rel="noreferrer">Open</a>
+                <button
+                  className="btn btn-quiet btn-xs"
+                  onClick={async () => {
+                    if (!confirm(`Remove "${b.label}"?`)) return;
+                    await api.deleteBaseResume(b.id);
+                    setLib({ ...lib, base: lib.base.filter((x) => x.id !== b.id) });
+                  }}
+                >
+                  Remove
+                </button>
+              </span>
+            </li>
+          ))}
+        </ul>
       </section>
+      )}
 
       <section className="panel">
         <header>

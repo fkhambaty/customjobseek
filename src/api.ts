@@ -1,4 +1,4 @@
-import type { Plan, PlanId } from "../shared/plans";
+import type { Plan, PlanId, RunPack } from "../shared/plans";
 import type { ApplicationFile, JobDescriptionFile } from "../shared/engine/documents";
 import type { MessageSet } from "../shared/engine/outreach";
 import type { Account, Channel, Contact, JobEvent, JobFull, JobRecord, JobStatus, Profile, TailoredResume } from "../shared/types";
@@ -85,6 +85,14 @@ export interface DiscoverScan {
   checked: number;
 }
 
+export interface ScanSchedule {
+  schedule: { hourIst: number; enabled: boolean; nextRunAt: string | null; pausedReason: string } | null;
+  scanRuns: number;
+  manualAllowedAt: string | null;
+  manualNote: string;
+  runs: { id: string; trigger: string; startedAt: string; preparedCount: number; charged: boolean; note: string }[];
+}
+
 export interface ResumeLibrary {
   tailored: { jobId: string; title: string; company: string; status: JobStatus; madeAt: string; built: boolean; saved: boolean }[];
   base: { id: string; label: string; format: string; createdAt: string }[];
@@ -155,6 +163,8 @@ export const api = {
   people: () => call<Person[]>("GET", "/jobs/people"),
   discover: () => call<{ needsTargets: boolean; rows: DiscoverRow[] }>("GET", "/discover"),
   scanDiscover: () => call<DiscoverScan>("POST", "/discover/scan"),
+  scanSchedule: () => call<ScanSchedule>("GET", "/discover/schedule"),
+  saveScanSchedule: (body: { enabled: boolean; hourIst: number }) => call<ScanSchedule>("PUT", "/discover/schedule", body),
   resumes: () => call<ResumeLibrary>("GET", "/resumes"),
   masterResume: () => call<TailoredResume>("GET", "/resumes/master"),
   deleteBaseResume: (id: string) => call<{ ok: true }>("DELETE", `/resumes/base/${id}`),
@@ -169,4 +179,5 @@ export const api = {
 
   plans: () => call<Plan[]>("GET", "/plans"),
   checkout: (plan: PlanId) => call<{ url: string }>("POST", "/checkout", { plan }),
+  checkoutRuns: (runPack: RunPack["id"]) => call<{ url: string }>("POST", "/checkout", { runPack }),
 };

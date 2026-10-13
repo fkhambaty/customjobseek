@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { api, ApiError, type DiscoverRow, type DiscoverScan } from "../api";
+import { formatIstHour } from "../../shared/engine/scanRules";
+import { api, ApiError, type DiscoverRow, type DiscoverScan, type ScanSchedule } from "../api";
 import { useJobs } from "../data";
 import { ago } from "../format";
 import { useSession } from "../session";
@@ -13,9 +14,15 @@ export function DiscoverPage() {
   const [error, setError] = useState("");
   const [hidden, setHidden] = useState<Set<string>>(new Set());
   const [scan, setScan] = useState<DiscoverScan | null>(null);
+  const [quota, setQuota] = useState<ScanSchedule | null>(null);
+  const [hourIst, setHourIst] = useState(13);
 
   useEffect(() => {
     api.discover().then(setData, (e: Error) => setError(e.message));
+    api.scanSchedule().then((row) => {
+      setQuota(row);
+      if (row.schedule) setHourIst(row.schedule.hourIst);
+    }, () => undefined);
   }, []);
 
   async function check(row: DiscoverRow) {
@@ -47,10 +54,24 @@ export function DiscoverPage() {
       setError((e as Error).message);
     } finally {
       setBusy("");
+      api.scanSchedule().then(setQuota, () => undefined);
+    }
+  }
+
+  async function saveSchedule(enabled: boolean, hour = hourIst) {
+    setError("");
+    try {
+      setQuota(await api.saveScanSchedule({ enabled, hourIst: hour }));
+      setHourIst(hour);
+    } catch (e) {
+      setError((e as Error).message);
     }
   }
 
   const rows = (scan?.locked ?? data?.rows ?? []).filter((r) => !hidden.has(r.url));
+  const runsLeft = quota?.scanRuns ?? account?.scanRuns ?? 0;
+  const packsLeft = Math.min(account?.evalCredits ?? 0, account?.resumeCredits ?? 0);
+  const paid = account !== null && account.plan !== "free";
   return (
     <div className="page">
       <div className="page-top">
@@ -73,19 +94,72 @@ export function DiscoverPage() {
             <p>
               {scan
                 ? `The strongest ${scan.checked} title matches were read against your profile. Open a prepared job below; the other ${rows.length} matches stay visible as a preview.`
-                : `Matching on ${profile?.preferences.targetRoles.join(", ")}. We will read the strongest matches, rank the honest fits, and prepare up to three resumes, application files and outreach notes.`}
+                : `Matching on ${profile?.preferences.targetRoles.join(", ")}. ${runsLeft === 1 ? "1 scan" : `${runsLeft} scans`} left. One scan reads the strongest matches and prepares up to three resumes, application files and outreach notes.`}
             </p>
+            {quota?.manualNote && <p className="scan-wait">{quota.manualNote}</p>}
           </div>
           {!scan && (
             <button
               className="btn btn-primary"
-              disabled={busy !== "" || Math.min(account?.evalCredits ?? 0, account?.resumeCredits ?? 0) < 1}
+              disabled={busy !== "" || runsLeft < 1 || packsLeft < 1 || Boolean(quota?.manualAllowedAt)}
               onClick={scanForJobs}
             >
               {busy === "scan" ? "Reading and preparing…" : "Scan for jobs · prepare top 3"}
             </button>
           )}
         </div>
+      )}
+      {data && !data.needsTargets && (
+        <section className="daily-scan">
+          <div>
+            <h2>Daily scan</h2>
+            {paid ? (
+              <p>
+                {quota?.schedule?.enabled
+                  ? `On, every day at ${formatIstHour(quota.schedule.hourIst)}.${quota.schedule.pausedReason ? ` Paused: ${quota.schedule.pausedReason}` : ""}`
+                  : "Off. Pick an hour in India time and it prepares up to three jobs once a day."}
+              </p>
+            ) : (
+              <p>Daily scans come with any paid plan. The free scan is the one you start yourself.</p>
+            )}
+          </div>
+          {paid ? (
+            <div className="daily-controls">
+              <select
+                value={hourIst}
+                onChange={(e) => {
+                  const hour = Number(e.target.value);
+                  setHourIst(hour);
+                  if (quota?.schedule?.enabled) void saveSchedule(true, hour);
+                }}
+              >
+                {Array.from({ length: 24 }, (_, hour) => (
+                  <option key={hour} value={hour}>{formatIstHour(hour)}</option>
+                ))}
+              </select>
+              <button className="btn btn-ghost btn-sm" onClick={() => saveSchedule(!(quota?.schedule?.enabled ?? false))}>
+                {quota?.schedule?.enabled ? "Turn off" : "Turn on"}
+              </button>
+            </div>
+          ) : (
+            <Link to="/pricing" className="btn btn-ghost btn-sm">See plans</Link>
+          )}
+        </section>
+      )}
+      {quota && quota.runs.length > 0 && (
+        <section className="last-runs">
+          <h2>Last runs</h2>
+          <ul>
+            {quota.runs.map((run) => (
+              <li key={run.id}>
+                <span>{run.trigger === "scheduled" ? "Daily" : "By hand"}</span>
+                <span>{run.preparedCount ? `${run.preparedCount} prepared` : "Nothing prepared"}</span>
+                <span>{run.charged ? "1 scan used" : "Not charged"}</span>
+                {run.note && <span>{run.note}</span>}
+              </li>
+            ))}
+          </ul>
+        </section>
       )}
       {data === null && !error && <p className="muted">Looking through the boards…</p>}
       {scan?.prepared.length ? (

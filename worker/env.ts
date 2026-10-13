@@ -17,6 +17,9 @@ export interface UserRow {
   plan: string;
   eval_credits: number;
   resume_credits: number;
+  scan_runs?: number;
+  last_manual_scan_at?: string | null;
+  scan_lock_until?: string | null;
   credits_expire_at: string | null;
   created_at: string;
 }
@@ -26,7 +29,7 @@ export type AppContext = Context<AppEnv>;
 
 export class HttpError extends Error {
   constructor(
-    public status: 400 | 401 | 402 | 403 | 404 | 409 | 422 | 500 | 501 | 502,
+    public status: 400 | 401 | 402 | 403 | 404 | 409 | 422 | 429 | 500 | 501 | 502,
     message: string,
   ) {
     super(message);

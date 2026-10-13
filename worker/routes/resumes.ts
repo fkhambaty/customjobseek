@@ -45,7 +45,7 @@ export const resumes = new Hono<AppEnv>()
       )
         .bind(user.id)
         .all<{ id: string; title: string; company: string; status: string; made_at: string; built: number; saved: number }>(),
-      c.env.DB.prepare("SELECT id, label, filename, format, created_at FROM resume_uploads WHERE user_id = ? ORDER BY created_at DESC")
+      c.env.DB.prepare("SELECT id, label, filename, format, created_at FROM resume_uploads WHERE user_id = ? AND format = 'html' ORDER BY created_at DESC")
         .bind(user.id)
         .all<{ id: string; label: string; filename: string; format: string; created_at: string }>(),
     ]);

@@ -1,6 +1,6 @@
 import { Hono } from "hono";
 import { secureHeaders } from "hono/secure-headers";
-import { PLANS, PLAN_ORDER, type PlanId } from "../shared/plans";
+import { PLANS, PLAN_ORDER, RUN_PACKS, type PlanId } from "../shared/plans";
 import { HttpError, type AppEnv, type Env } from "./env";
 import { auth } from "./routes/auth";
 import { companies } from "./routes/companies";
@@ -8,6 +8,7 @@ import { discover } from "./routes/discover";
 import { jobs } from "./routes/jobs";
 import { profile } from "./routes/profile";
 import { resumes } from "./routes/resumes";
+import { runDueSchedules } from "./autoScan";
 import { scanDue } from "./scan";
 import { requireUser } from "./session";
 
@@ -36,8 +37,9 @@ app.get("/api/plans", (c) => c.json(PLAN_ORDER.map((id) => PLANS[id])));
 
 app.post("/api/checkout", requireUser, async (c) => {
   const body = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
+  const runPack = typeof body.runPack === "string" ? RUN_PACKS.find((pack) => pack.id === body.runPack) : undefined;
   const planId = body.plan as PlanId;
-  if (!PLANS[planId] || planId === "free") throw new HttpError(400, "Pick a paid plan.");
+  if (!runPack && (!PLANS[planId] || planId === "free")) throw new HttpError(400, "Pick a paid plan.");
   throw new HttpError(501, "Payments open soon. Your free credits are ready to use now.");
 });
 
@@ -51,9 +53,32 @@ app.onError((err, c) => {
   return c.json({ error: "Something went wrong on our side. Please try again." }, 500);
 });
 
+type Schedule = "17 * * * *" | "30 * * * *";
+
+function knownSchedule(cron: string): Schedule | null {
+  if (cron === "17 * * * *" || cron === "30 * * * *") return cron;
+  return null;
+}
+
 export default {
   fetch: (request: Request, env: Env, ctx: ExecutionContext) => app.fetch(request, env, ctx),
-  scheduled: (_event: ScheduledEvent, env: Env, ctx: ExecutionContext) => {
-    ctx.waitUntil(scanDue(env));
+  scheduled: (event: ScheduledEvent, env: Env, ctx: ExecutionContext) => {
+    const job = knownSchedule(event.cron);
+    if (!job) {
+      console.error("Unknown schedule", event.cron);
+      return;
+    }
+    switch (job) {
+      case "17 * * * *":
+        ctx.waitUntil(scanDue(env));
+        return;
+      case "30 * * * *":
+        ctx.waitUntil(runDueSchedules(env));
+        return;
+      default: {
+        const unexpected: never = job;
+        console.error("Unknown schedule", unexpected);
+      }
+    }
   },
 };

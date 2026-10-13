@@ -1,10 +1,12 @@
 import { useMemo, useState, type ReactNode } from "react";
 import { Link } from "react-router-dom";
 import { computeAnalytics, todayQueues } from "../../shared/engine/insights";
-import type { JobRecord } from "../../shared/types";
+import type { JobRecord, Profile } from "../../shared/types";
+import { profileReadiness } from "../../shared/validate";
 import { JobLine, type LineMode } from "../components/JobLine";
 import { useJobs } from "../data";
 import { pct, plural, today } from "../format";
+import { useSession } from "../session";
 
 const PREVIEW = 6;
 
@@ -30,6 +32,69 @@ function Queue({ title, note, jobs, mode, empty }: { title: string; note: ReactN
   );
 }
 
+function Welcome({ greeting, name, profile }: { greeting: string; name: string | undefined; profile: Profile | null }) {
+  const { account } = useSession();
+  const missing = profile ? profileReadiness(profile) : ["your profile"];
+  const ready = missing.length === 0;
+  const scanUsed = ready && (account?.scanRuns ?? 1) < 1;
+  const action = !ready
+    ? { href: "/profile", label: "Finish your profile" }
+    : scanUsed
+      ? { href: "/jobs/new", label: "Check a job" }
+      : { href: "/discover", label: "Scan for your first 3 jobs" };
+  const steps = [
+    { when: ready ? "Done" : "Now", title: "Write what is true", body: ready ? "Your roles, skills and the places you accept are saved." : `Still needed: ${missing.join(", ")}.` },
+    { when: !ready || scanUsed ? "Then" : "Now", title: "Let one scan prepare three jobs", body: scanUsed ? "Your free scan has been used." : "The strongest matches get a fit score, a resume and an application pack." },
+    { when: "Then", title: "You apply", body: "Read the pack, write to a person if one is named, and send it yourself." },
+  ];
+  return (
+    <div className="page">
+      <p className="kicker">Your search starts here</p>
+      <h1 className="page-title">{greeting}{name ? `, ${name}` : ""}.</h1>
+      <div className="welcome">
+        <div>
+          <p className="lede">Nothing is on your list yet. Do the step in front of you. The rest can wait.</p>
+          <ol className="welcome-steps">
+            {steps.map((step, i) => (
+              <li key={step.title} className={i === 0 && ready ? "done" : i > 0 && !ready ? "later" : i === 1 && scanUsed ? "done" : ""}>
+                <span className="when">{step.when}</span>
+                <div>
+                  <h2>{step.title}</h2>
+                  <p>{step.body}</p>
+                </div>
+              </li>
+            ))}
+          </ol>
+          <div className="welcome-actions">
+            <Link to={action.href} className="btn btn-primary btn-lg">{action.label}</Link>
+            {ready && !scanUsed && <Link to="/jobs/new" className="welcome-quiet">Or paste one job yourself</Link>}
+            {scanUsed && <Link to="/pricing" className="welcome-quiet">Daily scans come with a paid plan</Link>}
+          </div>
+        </div>
+        <div>
+          <div className="shot" aria-hidden>
+            <div className="shot-bar"><span>Prepared for you</span><span>1 of 3</span></div>
+            <div className="shot-body">
+              <h3>What one scan gives you</h3>
+              <ul className="lines">
+                <li className="line">
+                  <span className="score score-hi">82</span>
+                  <span className="line-main">
+                    <span className="line-title">Internal Communications Lead</span>
+                    <span className="line-company">Northwind</span>
+                    <span className="line-facts"><span>resume ready</span><span>application pack</span><span>people to write to</span></span>
+                  </span>
+                </li>
+              </ul>
+            </div>
+          </div>
+          <p className="welcome-note">The free scan prepares the best three. The other matches stay visible, faded, until you have more packs.</p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function TodayPage() {
   const { jobs, error, profile } = useJobs();
   const date = today();
@@ -43,21 +108,7 @@ export function TodayPage() {
   const greeting = new Date().getHours() < 12 ? "Good morning" : new Date().getHours() < 17 ? "Good afternoon" : "Good evening";
   const name = profile?.fullName.split(/\s+/)[0];
 
-  if (!jobs.length) {
-    return (
-      <div className="page">
-        <h1 className="page-title">{greeting}{name ? `, ${name}` : ""}.</h1>
-        <div className="first-run">
-          <p>Nothing on your list yet. Start with a job you were going to apply for anyway.</p>
-          <ol>
-            <li><Link to="/profile">Fill in your profile</Link>: your roles, achievements and the pay and places you accept.</li>
-            <li><Link to="/jobs/new">Check a job</Link>: paste a link and see the fit before you spend an evening on it.</li>
-            <li>Or browse <Link to="/discover">openings we found for you</Link> on the career pages we scan.</li>
-          </ol>
-        </div>
-      </div>
-    );
-  }
+  if (!jobs.length) return <Welcome greeting={greeting} name={name} profile={profile} />;
 
   return (
     <div className="page">
