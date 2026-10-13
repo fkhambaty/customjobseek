@@ -35,11 +35,16 @@ export interface Certification {
   year: string;
 }
 
+export type SalaryPeriod = "year" | "month" | "hour" | "lpa";
+
 export interface Preferences {
+  country: string;
   cities: string[];
   remoteOk: boolean;
-  minSalaryLpa: number | null;
-  maxSalaryLpa: number | null;
+  currency: string;
+  minSalary: number | null;
+  maxSalary: number | null;
+  salaryPeriod: SalaryPeriod;
   targetRoles: string[];
   excludedTitleWords: string[];
 }
@@ -67,9 +72,21 @@ export interface Blocker {
   message: string;
 }
 
+export interface ParsedSalary {
+  min: number;
+  max: number;
+  currency: string;
+  /** The unit the posting used. min and max are in that unit, not annualised. */
+  period: SalaryPeriod;
+  /** min and max converted to one year, in major currency units (rupees, dollars). */
+  annualMin: number;
+  annualMax: number;
+}
+
 export interface FitResult {
   score: number;
   decision: Decision;
+  imported?: boolean;
   matchedRequired: string[];
   matchedOther: string[];
   missingRequired: string[];
@@ -77,7 +94,7 @@ export interface FitResult {
   blockers: Blocker[];
   notes: string[];
   jdYearsRequired: number | null;
-  parsedSalaryLpa: { min: number; max: number } | null;
+  parsedSalary: ParsedSalary | null;
 }
 
 export interface TailoredRole {
@@ -113,6 +130,7 @@ export const JOB_STATUSES = [
   "offer",
   "rejected",
   "withdrawn",
+  "closed",
 ] as const;
 export type JobStatus = (typeof JOB_STATUSES)[number];
 
@@ -157,10 +175,13 @@ export function emptyProfile(email = ""): Profile {
     education: [],
     certifications: [],
     preferences: {
+      country: "",
       cities: [],
       remoteOk: true,
-      minSalaryLpa: null,
-      maxSalaryLpa: null,
+      currency: "USD",
+      minSalary: null,
+      maxSalary: null,
+      salaryPeriod: "year",
       targetRoles: [],
       excludedTitleWords: [],
     },

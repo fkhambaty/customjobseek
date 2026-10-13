@@ -64,6 +64,26 @@ npm run deploy
 
 Keep the `DATA_KEY` value somewhere safe. Losing it makes every stored profile and resume unreadable.
 
+## Worldwide
+
+The profile stores a country, the cities inside it (or any city you type), a currency, and a minimum and maximum in per year, per month, per hour, or lakhs per year. Pay is compared only when the job uses the same currency. A remote role in another country is flagged.
+
+## Companies we scan
+
+Anyone signed in can paste a job link the tool missed. The company's career page is added to the `companies` table and scanned. Greenhouse, Lever, Ashby, Workable and SmartRecruiters boards are re-read every six hours. Workday and other sites are stored for a later adapter. Openings are titles, locations and links. A fit check still happens only when a person chooses a job.
+
+## Documents, all from code
+
+Nothing on the live site calls a language model. The fit score, the resume, the application file and the job-description file are produced by `shared/engine`. The resume and the application file only reorder and quote lines the person wrote. A PDF upload is read for its text and turned into a draft the person must save.
+
+## Email
+
+Sign-up, confirmation and password reset go through Resend, same as the other products. The sender is `MAIL_FROM` in `wrangler.jsonc`. `RESEND_API_KEY` is a Worker secret.
+
+## Importing an existing search
+
+`scripts/seed-from-command-center.mjs` copies one person's own profile and job history from a local Command Center into their account. It does not copy recruiter contacts, and it does not write anything back. Set `SITE_URL` to the deployed site so the password-reset email is sent.
+
 ## Not built yet
 
 - Payments (Razorpay) and crediting purchases to accounts.

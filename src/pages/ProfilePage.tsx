@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import type { Bullet, Experience, Profile } from "../../shared/types";
+import { COUNTRIES, currencies } from "../../shared/geo";
+import type { Bullet, Experience, Profile, SalaryPeriod } from "../../shared/types";
 import { api } from "../api";
 import { Field, ListInput, NumberInput, newId } from "../components/fields";
 
@@ -139,11 +140,91 @@ export function ProfilePage() {
       </section>
 
       <section className="card">
-        <h2>What you will accept</h2>
-        <p className="muted small">Jobs that break these rules are flagged as deal-breakers before you spend a credit on a resume.</p>
+        <div className="row-between">
+          <h2>Upload a resume</h2>
+          <label className="btn btn-ghost btn-sm">
+            Choose PDF
+            <input
+              type="file"
+              accept="application/pdf"
+              hidden
+              onChange={async (e) => {
+                const file = e.target.files?.[0];
+                e.target.value = "";
+                if (!file) return;
+                setStatus(null);
+                try {
+                  const r = await api.importResume(file);
+                  setProfile({ ...r.profile, preferences: profile.preferences });
+                  setMissing(r.missing);
+                  setStatus({ kind: "ok", text: "Read the PDF. Check every line, then save." });
+                } catch (err) {
+                  setStatus({ kind: "error", text: (err as Error).message });
+                }
+              }}
+            />
+          </label>
+        </div>
+        <p className="muted small">Text-based PDFs only. Nothing is saved until you press Save profile, so you can correct what the reader got wrong.</p>
+      </section>
+
+      <section className="card">
+        <h2>Where you will work, and for what pay</h2>
+        <p className="muted small">Pick a country, then the cities in it. Pay is compared only when the job uses the same currency.</p>
         <div className="grid-2">
-          <Field label="Cities" hint="Comma-separated. Leave empty to accept any city.">
-            <ListInput value={profile.preferences.cities} onChange={(v) => setPref("cities", v)} placeholder="Pune, Mumbai, Bengaluru" />
+          <Field label="Country">
+            <select
+              value={profile.preferences.country}
+              onChange={(e) => {
+                const country = COUNTRIES.find((c) => c.code === e.target.value);
+                setProfile({
+                  ...profile,
+                  preferences: {
+                    ...profile.preferences,
+                    country: e.target.value,
+                    currency: country?.currency || profile.preferences.currency,
+                    cities: [],
+                  },
+                });
+              }}
+            >
+              <option value="">Any country</option>
+              {COUNTRIES.map((c) => (
+                <option key={c.code} value={c.code}>{c.name}</option>
+              ))}
+            </select>
+          </Field>
+          <Field label="Cities" hint="Leave empty to accept the whole country. Add any city the list does not have.">
+            <select
+              value=""
+              onChange={(e) => {
+                if (!e.target.value || profile.preferences.cities.includes(e.target.value)) return;
+                setPref("cities", [...profile.preferences.cities, e.target.value]);
+              }}
+            >
+              <option value="">Add a city…</option>
+              {(COUNTRIES.find((c) => c.code === profile.preferences.country)?.cities ?? []).map((city) => (
+                <option key={city} value={city}>{city}</option>
+              ))}
+            </select>
+            <input
+              placeholder="Or type a city and press Enter"
+              onKeyDown={(e) => {
+                if (e.key !== "Enter") return;
+                e.preventDefault();
+                const v = e.currentTarget.value.trim();
+                if (!v || profile.preferences.cities.includes(v)) return;
+                setPref("cities", [...profile.preferences.cities, v]);
+                e.currentTarget.value = "";
+              }}
+            />
+            <span className="chips">
+              {profile.preferences.cities.map((city) => (
+                <button type="button" key={city} className="chip chip-ok" onClick={() => setPref("cities", profile.preferences.cities.filter((c) => c !== city))}>
+                  {city} ×
+                </button>
+              ))}
+            </span>
           </Field>
           <Field label="Remote">
             <select value={profile.preferences.remoteOk ? "yes" : "no"} onChange={(e) => setPref("remoteOk", e.target.value === "yes")}>
@@ -151,8 +232,21 @@ export function ProfilePage() {
               <option value="no">No remote roles</option>
             </select>
           </Field>
-          <Field label="Minimum pay (₹ LPA)"><NumberInput value={profile.preferences.minSalaryLpa} onChange={(v) => setPref("minSalaryLpa", v)} placeholder="30" /></Field>
-          <Field label="Target pay ceiling (₹ LPA)"><NumberInput value={profile.preferences.maxSalaryLpa} onChange={(v) => setPref("maxSalaryLpa", v)} placeholder="55" /></Field>
+          <Field label="Currency">
+            <select value={profile.preferences.currency} onChange={(e) => setPref("currency", e.target.value)}>
+              {currencies().map((c) => <option key={c} value={c}>{c}</option>)}
+            </select>
+          </Field>
+          <Field label="Pay unit">
+            <select value={profile.preferences.salaryPeriod} onChange={(e) => setPref("salaryPeriod", e.target.value as SalaryPeriod)}>
+              <option value="year">Per year</option>
+              <option value="month">Per month</option>
+              <option value="hour">Per hour</option>
+              <option value="lpa">Lakhs per year (India)</option>
+            </select>
+          </Field>
+          <Field label="Minimum pay"><NumberInput value={profile.preferences.minSalary} onChange={(v) => setPref("minSalary", v)} placeholder="80000" /></Field>
+          <Field label="Maximum pay"><NumberInput value={profile.preferences.maxSalary} onChange={(v) => setPref("maxSalary", v)} placeholder="120000" /></Field>
           <Field label="Roles you target" hint="Comma-separated job titles.">
             <ListInput value={profile.preferences.targetRoles} onChange={(v) => setPref("targetRoles", v)} placeholder="Analytics Engineer, BI Manager" />
           </Field>

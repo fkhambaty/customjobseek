@@ -12,10 +12,15 @@
     {
       "binding": "DB",
       "database_name": "customjobseek",
-      // Replace with the id printed by `wrangler d1 create customjobseek`.
-      "database_id": "00000000-0000-0000-0000-000000000000",
+      "database_id": "d6919300-3a73-4211-8884-e0c4acefce3d",
       "migrations_dir": "migrations"
     }
   ],
+  "vars": {
+    "MAIL_FROM": "CustomJobSeek <no-reply@funberrykids.in>"
+  },
+  "triggers": {
+    "crons": ["17 */6 * * *"]
+  },
   "observability": { "enabled": true }
 }

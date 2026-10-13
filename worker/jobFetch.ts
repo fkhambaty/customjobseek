@@ -1,3 +1,5 @@
+import { openingByUrl } from "./scan";
+
 export interface FetchedJob {
   title: string;
   company: string;
@@ -178,6 +180,19 @@ async function fetchFromAtsApi(url: URL): Promise<FetchedJob | null> {
 export async function fetchJob(url: URL): Promise<FetchedJob | null> {
   const viaApi = await fetchFromAtsApi(url).catch(() => null);
   if (viaApi && viaApi.description.length >= 80) return viaApi;
+
+  const listed = await openingByUrl(url.toString()).catch(() => null);
+  if (listed && listed.description.length >= 80) {
+    const board = url.pathname.split("/").filter(Boolean)[0] ?? "";
+    return {
+      title: listed.title,
+      company: board.replace(/-/g, " "),
+      location: listed.location,
+      salaryText: "",
+      description: listed.description,
+      source: "structured",
+    };
+  }
 
   const res = await fetch(url.toString(), {
     headers: {

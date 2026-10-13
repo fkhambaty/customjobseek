@@ -1,4 +1,5 @@
 import { Hono } from "hono";
+import { buildApplication, buildJobFile } from "../../shared/engine/documents";
 import { evaluateFit, type JobInput } from "../../shared/engine/fit";
 import { tailorResume } from "../../shared/engine/tailor";
 import { JOB_STATUSES, type JobStatus, type TailoredResume } from "../../shared/types";
@@ -149,15 +150,43 @@ export const jobs = new Hono<AppEnv>()
       profile,
     );
     const resume = tailorResume(profile, fit, { id: job.id, title: job.title, company: job.company });
+    const application = buildApplication(profile, fit, resume);
+    const jobFile = buildJobFile(
+      { title: job.title, company: job.company, location: job.location, url: job.url, salaryText: job.salary_text, description: job.description },
+      fit,
+    );
+    const packed = [
+      ["resume", resume],
+      ["application", application],
+      ["jd", jobFile],
+    ] as const;
+    const stored = await Promise.all(packed.map(async ([kind, body]) => [kind, await encryptJson(c.env.DATA_KEY, body)] as const));
     await c.env.DB.batch([
       c.env.DB.prepare(
         `INSERT INTO resumes (job_id, user_id, ciphertext) VALUES (?, ?, ?)
          ON CONFLICT(job_id) DO UPDATE SET ciphertext = excluded.ciphertext, created_at = datetime('now')`,
-      ).bind(job.id, user.id, await encryptJson(c.env.DATA_KEY, resume)),
+      ).bind(job.id, user.id, stored[0]![1]),
+      ...stored.map(([kind, ciphertext]) =>
+        c.env.DB.prepare(
+          `INSERT INTO packs (job_id, user_id, kind, ciphertext, created_at) VALUES (?, ?, ?, ?, datetime('now'))
+           ON CONFLICT(job_id, kind) DO UPDATE SET ciphertext = excluded.ciphertext, created_at = excluded.created_at`,
+        ).bind(job.id, user.id, kind, ciphertext),
+      ),
       c.env.DB.prepare(
         `UPDATE jobs SET fit_json = ?, status = CASE WHEN status = 'evaluated' THEN 'resume_ready' ELSE status END,
          updated_at = datetime('now') WHERE id = ?`,
       ).bind(JSON.stringify(fit), job.id),
     ]);
-    return c.json(resume);
+    return c.json({ resume, application, jobFile });
+  })
+  .get("/:id/pack", async (c) => {
+    const user = c.get("user");
+    const job = await getJob(c.env, user.id, c.req.param("id"));
+    const { results } = await c.env.DB.prepare("SELECT kind, ciphertext FROM packs WHERE job_id = ? AND user_id = ?")
+      .bind(job.id, user.id)
+      .all<{ kind: string; ciphertext: string }>();
+    if (!results.length) throw new HttpError(404, "No application pack has been made for this job yet.");
+    const out: Record<string, unknown> = {};
+    for (const row of results) out[row.kind] = await decryptJson(c.env.DATA_KEY, row.ciphertext);
+    return c.json({ resume: out.resume ?? null, application: out.application ?? null, jobFile: out.jd ?? null });
   });

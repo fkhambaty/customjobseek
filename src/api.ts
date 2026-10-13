@@ -1,4 +1,5 @@
 import type { Plan, PlanId } from "../shared/plans";
+import type { ApplicationFile, JobDescriptionFile } from "../shared/engine/documents";
 import type { Account, JobRecord, JobStatus, Profile, TailoredResume } from "../shared/types";
 
 export class ApiError extends Error {
@@ -41,8 +42,28 @@ export interface NewJob {
   url: string;
 }
 
+export interface Pack {
+  resume: TailoredResume;
+  application: ApplicationFile;
+  jobFile: JobDescriptionFile;
+}
+
+export interface CompanyRow {
+  id: string;
+  name: string;
+  career_url: string;
+  ats: string;
+  scan_status: string;
+  opening_count: number;
+  last_scan_at: string | null;
+}
+
 export const api = {
-  signup: (email: string, password: string) => call<{ ok: true }>("POST", "/auth/signup", { email, password }),
+  signup: (email: string, password: string) => call<{ ok: true; needsVerification: true }>("POST", "/auth/signup", { email, password }),
+  verify: (email: string, code: string) => call<{ ok: true }>("POST", "/auth/verify", { email, code }),
+  resendCode: (email: string, purpose: "signup" | "reset") => call<{ ok: true }>("POST", "/auth/resend-code", { email, purpose }),
+  forgot: (email: string) => call<{ ok: true }>("POST", "/auth/forgot", { email }),
+  reset: (email: string, code: string, password: string) => call<{ ok: true }>("POST", "/auth/reset", { email, code, password }),
   login: (email: string, password: string) => call<{ ok: true }>("POST", "/auth/login", { email, password }),
   logout: () => call<{ ok: true }>("POST", "/auth/logout"),
   me: () => call<Account>("GET", "/auth/me"),
@@ -50,6 +71,12 @@ export const api = {
 
   getProfile: () => call<{ profile: Profile; missing: string[] }>("GET", "/profile"),
   saveProfile: (p: Profile) => call<{ profile: Profile; missing: string[] }>("PUT", "/profile", p),
+  importResume: async (file: File) => {
+    const res = await fetch("/api/profile/resume-file", { method: "POST", credentials: "same-origin", headers: { "content-type": "application/pdf" }, body: await file.arrayBuffer() });
+    const data = (await res.json().catch(() => ({}))) as { error?: string; profile?: Profile; missing?: string[] };
+    if (!res.ok) throw new ApiError(res.status, data.error ?? "Upload failed");
+    return data as { profile: Profile; missing: string[] };
+  },
 
   fetchJob: (url: string) => call<FetchedJob>("POST", "/jobs/fetch", { url }),
   listJobs: () => call<JobRecord[]>("GET", "/jobs"),
@@ -60,7 +87,12 @@ export const api = {
   rescoreJob: (id: string) => call<JobRecord>("POST", `/jobs/${id}/rescore`),
   deleteJob: (id: string) => call<{ ok: true }>("DELETE", `/jobs/${id}`),
   getResume: (id: string) => call<TailoredResume>("GET", `/jobs/${id}/resume`),
-  makeResume: (id: string) => call<TailoredResume>("POST", `/jobs/${id}/resume`),
+  getPack: (id: string) => call<Pack>("GET", `/jobs/${id}/pack`),
+  makeResume: (id: string) => call<Pack>("POST", `/jobs/${id}/resume`),
+  companies: () => call<CompanyRow[]>("GET", "/companies"),
+  openings: (id: string) => call<{ title: string; location: string; url: string }[]>("GET", `/companies/${id}/openings`),
+  reportMissed: (url: string, note: string) =>
+    call<{ companyId: string; name: string; ats: string; count: number; error: string }>("POST", "/companies/missed", { url, note }),
 
   plans: () => call<Plan[]>("GET", "/plans"),
   checkout: (plan: PlanId) => call<{ url: string }>("POST", "/checkout", { plan }),

@@ -1,10 +1,11 @@
 import { useState, type FormEvent } from "react";
-import { Link, Navigate, useLocation } from "react-router-dom";
+import { Link, Navigate, useLocation, useNavigate } from "react-router-dom";
 import { api } from "../api";
 import { useSession } from "../session";
 
 export function AuthPage({ mode }: { mode: "login" | "signup" }) {
   const { account, refresh } = useSession();
+  const navigate = useNavigate();
   const location = useLocation();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -19,7 +20,12 @@ export function AuthPage({ mode }: { mode: "login" | "signup" }) {
     setError("");
     setBusy(true);
     try {
-      await (mode === "signup" ? api.signup(email, password) : api.login(email, password));
+      if (mode === "signup") {
+        await api.signup(email, password);
+        navigate(`/verify?email=${encodeURIComponent(email)}`);
+        return;
+      }
+      await api.login(email, password);
       await refresh();
     } catch (err) {
       setError((err as Error).message);
@@ -50,7 +56,7 @@ export function AuthPage({ mode }: { mode: "login" | "signup" }) {
               value={password}
               onChange={(e) => setPassword(e.target.value)}
             />
-            {mode === "signup" && <small className="muted">At least 10 characters.</small>}
+            {mode === "signup" ? <small className="muted">At least 10 characters. We email you a 6-digit code.</small> : <small className="muted"><Link to="/reset">Forgot password?</Link></small>}
           </label>
           {error && <div className="alert alert-error">{error}</div>}
           <button className="btn btn-primary btn-block" disabled={busy}>

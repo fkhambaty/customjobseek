@@ -1,10 +1,12 @@
 import { Hono } from "hono";
 import { secureHeaders } from "hono/secure-headers";
 import { PLANS, PLAN_ORDER, type PlanId } from "../shared/plans";
-import { HttpError, type AppEnv } from "./env";
+import { HttpError, type AppEnv, type Env } from "./env";
 import { auth } from "./routes/auth";
+import { companies } from "./routes/companies";
 import { jobs } from "./routes/jobs";
 import { profile } from "./routes/profile";
+import { scanDue } from "./scan";
 import { requireUser } from "./session";
 
 const app = new Hono<AppEnv>();
@@ -14,7 +16,8 @@ app.use("/api/*", secureHeaders());
 // Every state-changing call must be JSON. A cross-site form post cannot set this header,
 // which, together with SameSite=Lax cookies, closes the CSRF hole without tokens.
 app.use("/api/*", async (c, next) => {
-  if (c.req.method !== "GET" && c.req.method !== "HEAD" && !c.req.header("content-type")?.includes("application/json")) {
+  const pdfUpload = c.req.path === "/api/profile/resume-file" && (c.req.header("content-type") ?? "").includes("pdf");
+  if (c.req.method !== "GET" && c.req.method !== "HEAD" && !pdfUpload && !c.req.header("content-type")?.includes("application/json")) {
     throw new HttpError(400, "Requests must be JSON.");
   }
   await next();
@@ -23,6 +26,7 @@ app.use("/api/*", async (c, next) => {
 app.route("/api/auth", auth);
 app.route("/api/profile", profile);
 app.route("/api/jobs", jobs);
+app.route("/api/companies", companies);
 
 app.get("/api/plans", (c) => c.json(PLAN_ORDER.map((id) => PLANS[id])));
 
@@ -43,4 +47,9 @@ app.onError((err, c) => {
   return c.json({ error: "Something went wrong on our side. Please try again." }, 500);
 });
 
-export default app;
+export default {
+  fetch: (request: Request, env: Env, ctx: ExecutionContext) => app.fetch(request, env, ctx),
+  scheduled: (_event: ScheduledEvent, env: Env, ctx: ExecutionContext) => {
+    ctx.waitUntil(scanDue(env));
+  },
+};

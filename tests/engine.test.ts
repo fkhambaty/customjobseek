@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { classifyTerms, evaluateFit, parseSalaryLpa, parseYearsRequired, titleAlignment, type JobInput } from "../shared/engine/fit";
+import { detectBoard } from "../shared/engine/boards";
+import { buildApplication } from "../shared/engine/documents";
+import { classifyTerms, evaluateFit, parseSalary, parseYearsRequired, titleAlignment, type JobInput } from "../shared/engine/fit";
+import { profileFromResumeText } from "../shared/engine/importResume";
 import { SKILL_CATALOGUE, mentions, normalise, termForName } from "../shared/engine/text";
 import { tailorResume } from "../shared/engine/tailor";
 import { emptyProfile, type Profile } from "../shared/types";
@@ -37,10 +40,13 @@ function profile(overrides: Partial<Profile> = {}): Profile {
       },
     ],
     preferences: {
-      cities: ["Pune", "Bangalore"],
+      country: "IN",
+      cities: ["Pune", "Bengaluru"],
       remoteOk: true,
-      minSalaryLpa: 30,
-      maxSalaryLpa: 50,
+      currency: "INR",
+      minSalary: 30,
+      maxSalary: 50,
+      salaryPeriod: "lpa",
       targetRoles: ["Analytics Engineer", "Data Engineer"],
       excludedTitleWords: ["Intern"],
     },
@@ -78,13 +84,15 @@ describe("text matching", () => {
 });
 
 describe("parsers", () => {
-  it("parses Indian salary formats", () => {
-    expect(parseSalaryLpa("₹30 - 40 LPA")).toEqual({ min: 30, max: 40 });
-    expect(parseSalaryLpa("25 lakhs per annum")).toEqual({ min: 25, max: 25 });
-    expect(parseSalaryLpa("INR 3,000,000 - 4,500,000")).toEqual({ min: 30, max: 45 });
-    expect(parseSalaryLpa("1.2 Cr")).toEqual({ min: 120, max: 120 });
-    expect(parseSalaryLpa("₹80,000 per month")).toBeNull();
-    expect(parseSalaryLpa("Competitive")).toBeNull();
+  it("parses pay in the currency and unit the posting used", () => {
+    expect(parseSalary("₹30 - 40 LPA")).toMatchObject({ min: 30, max: 40, currency: "INR", period: "lpa" });
+    expect(parseSalary("25 lakhs per annum")).toMatchObject({ min: 25, max: 25, currency: "INR" });
+    expect(parseSalary("1.2 Cr")).toMatchObject({ min: 120, max: 120, currency: "INR", period: "lpa" });
+    expect(parseSalary("$120,000 - $150,000")).toMatchObject({ min: 120000, max: 150000, currency: "USD", period: "year" });
+    expect(parseSalary("£60k-£80k")).toMatchObject({ min: 60000, max: 80000, currency: "GBP" });
+    expect(parseSalary("SGD 8,000 per month")).toMatchObject({ currency: "SGD", period: "month", annualMin: 96000 });
+    expect(parseSalary("3-5 years of experience and $140,000 a year")).toMatchObject({ min: 140000, currency: "USD" });
+    expect(parseSalary("Competitive")).toBeNull();
   });
 
   it("reads the years-of-experience requirement", () => {
@@ -121,11 +129,20 @@ describe("evaluateFit", () => {
     expect(fit.blockers.map((b) => b.kind)).toContain("salary");
   });
 
-  it("blocks cities the candidate will not work in, but allows remote", () => {
-    expect(evaluateFit(job({ location: "Chennai" }), profile()).blockers.map((b) => b.kind)).toContain("location");
+  it("blocks cities and countries the candidate will not work in, and allows remote", () => {
+    expect(evaluateFit(job({ location: "Chennai, India" }), profile()).blockers.map((b) => b.kind)).toContain("location");
+    expect(evaluateFit(job({ location: "Bengaluru, India" }), profile()).blockers).toEqual([]);
     expect(evaluateFit(job({ location: "Remote, India" }), profile()).blockers).toEqual([]);
+    expect(evaluateFit(job({ location: "Berlin, Germany" }), profile()).blockers.map((b) => b.kind)).toContain("location");
+    expect(evaluateFit(job({ location: "Remote - United States" }), profile()).blockers.map((b) => b.kind)).toContain("location");
     const noRemote = profile({ preferences: { ...profile().preferences, remoteOk: false } });
     expect(evaluateFit(job({ location: "Remote" }), noRemote).blockers.map((b) => b.kind)).toContain("location");
+  });
+
+  it("does not compare pay across currencies", () => {
+    const fit = evaluateFit(job({ salaryText: "$150,000 - $180,000" }), profile());
+    expect(fit.blockers.map((b) => b.kind)).not.toContain("salary");
+    expect(fit.notes.some((n) => n.includes("USD"))).toBe(true);
   });
 
   it("blocks excluded title words and required never-claim skills", () => {
@@ -177,7 +194,59 @@ describe("sanitiseProfile", () => {
     expect(p.fullName).toBe("Asha");
     expect(p.skills).toEqual([{ name: "SQL", level: "working" }]);
     expect(p.experience).toEqual([]);
-    expect(p.preferences.minSalaryLpa).toBeNull();
+    expect(p.preferences.minSalary).toBeNull();
+  });
+
+  it("keeps an older India-only salary floor", () => {
+    const p = sanitiseProfile({ preferences: { minSalaryLpa: 30 } });
+    expect(p.preferences).toMatchObject({ currency: "INR", salaryPeriod: "lpa", minSalary: 30 });
+  });
+});
+
+describe("boards, application file, resume import", () => {
+  it("turns a job link into the company career page", () => {
+    expect(detectBoard("https://job-boards.greenhouse.io/anthropic/jobs/4461450008")).toMatchObject({ ats: "greenhouse", token: "anthropic" });
+    expect(detectBoard("https://jobs.lever.co/palantir/abc")?.careerUrl).toBe("https://jobs.lever.co/palantir");
+    expect(detectBoard("https://jobs.ashbyhq.com/paxos/f8cbcedf")?.ats).toBe("ashby");
+  });
+
+  it("builds the application only from profile lines", () => {
+    const p = profile();
+    const fit = evaluateFit(job(), p);
+    const file = buildApplication(p, fit, tailorResume(p, fit, { id: "j", title: "Senior Analytics Engineer", company: "Beta" }));
+    const source = p.experience.flatMap((e) => e.bullets.map((b) => b.text));
+    for (const line of file.evidence) expect(source).toContain(line.text);
+    expect(file.paragraphs[0]).toContain("Asha Rao");
+    expect(file.paragraphs.join(" ")).toContain("SQL");
+  });
+
+  it("reads a plain-text resume into a draft profile", () => {
+    const text = `Asha Rao
+asha@example.com | +91 90000 00000
+
+PROFILE
+Analytics engineer who builds tested models.
+
+SKILLS
+SQL, dbt, Snowflake
+
+PROFESSIONAL EXPERIENCE
+Senior Analytics Engineer, Acme
+Jan 2021 – Present
+Built 120 dbt models on Snowflake
+Scheduled pipelines in Airflow
+
+EDUCATION
+B.E. Computer Engineering, Pune University 2016`;
+    const p = profileFromResumeText(text);
+    expect(p.fullName).toBe("Asha Rao");
+    expect(p.email).toBe("asha@example.com");
+    expect(p.skills.map((s) => s.name)).toEqual(expect.arrayContaining(["SQL", "dbt", "Snowflake"]));
+    expect(p.experience[0]?.company).toContain("Acme");
+    expect(p.experience[0]?.bullets.map((b) => b.text)).toEqual([
+      "Built 120 dbt models on Snowflake",
+      "Scheduled pipelines in Airflow",
+    ]);
   });
 });
 
@@ -198,6 +267,6 @@ describe("parseJobHtml", () => {
     expect(job.title).toBe("Data Engineer");
     expect(job.company).toBe("Gamma");
     expect(job.location).toBe("Pune, IN");
-    expect(parseSalaryLpa(job.salaryText)).toEqual({ min: 30, max: 40 });
+    expect(parseSalary(job.salaryText)).toMatchObject({ min: 3000000, max: 4000000, currency: "INR", period: "year" });
   });
 });

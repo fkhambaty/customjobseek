@@ -22,7 +22,8 @@
     "hono": "^4.13.13",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
-    "react-router-dom": "^7.18.4"
+    "react-router-dom": "^7.18.4",
+    "unpdf": "^1.8.1"
   },
   "devDependencies": {
     "@cloudflare/vite-plugin": "^1.63.2",

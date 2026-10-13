@@ -239,7 +239,8 @@ input:focus, textarea:focus, select:focus { outline: none; border-color: var(--b
 .badge-applied { background: #e8eefc; color: #2948a8; }
 .badge-interview { background: var(--warn-soft); color: var(--warn); }
 .badge-offer { background: var(--ok-soft); color: var(--ok); }
-.badge-rejected, .badge-withdrawn { background: #f1f1f1; color: #777; }
+.badge-rejected, .badge-withdrawn, .badge-closed { background: #f1f1f1; color: #777; }
+.imported-mark { width: 84px; height: 84px; border-radius: 50%; border: 6px solid #e6edf1; display: grid; place-items: center; font-size: 12px; font-weight: 800; color: var(--muted); text-align: center; flex-shrink: 0; }
 .empty { text-align: center; padding: 48px 24px; }
 
 /* Tracker */
@@ -249,6 +250,8 @@ input:focus, textarea:focus, select:focus { outline: none; border-color: var(--b
 
 /* Resume preview */
 .resume-preview { background: #e8edf2; border-radius: 12px; padding: 24px 12px; overflow-x: auto; margin-top: 8px; }
+.doc-block { border-top: 1px solid var(--line); margin-top: 18px; padding-top: 12px; }
+.doc-block ul { margin: 6px 0 0 18px; }
 
 /* Pricing */
 .plans { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; align-items: stretch; }

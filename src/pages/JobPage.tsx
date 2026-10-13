@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
+import type { ApplicationFile, JobDescriptionFile } from "../../shared/engine/documents";
+import { formatSalary } from "../../shared/engine/fit";
 import { JOB_STATUSES, type JobRecord, type JobStatus, type TailoredResume } from "../../shared/types";
 import { api, ApiError } from "../api";
 import { FitCard, statusLabel } from "../components/FitCard";
@@ -56,6 +58,8 @@ export function JobPage() {
   const { account, refresh } = useSession();
   const [job, setJob] = useState<JobRecord | null>(null);
   const [resume, setResume] = useState<TailoredResume | null>(null);
+  const [application, setApplication] = useState<ApplicationFile | null>(null);
+  const [jobFile, setJobFile] = useState<JobDescriptionFile | null>(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
 
@@ -63,7 +67,16 @@ export function JobPage() {
     api.getJob(id).then(
       (j) => {
         setJob(j);
-        if (j.hasResume) api.getResume(id).then(setResume, () => undefined);
+        if (j.hasResume) {
+          api.getPack(id).then(
+            (p) => {
+              setResume(p.resume);
+              setApplication(p.application);
+              setJobFile(p.jobFile);
+            },
+            () => api.getResume(id).then(setResume, () => undefined),
+          );
+        }
       },
       (e: Error) => setError(e.message),
     );
@@ -74,7 +87,10 @@ export function JobPage() {
     setBusy(true);
     setError("");
     try {
-      setResume(await api.makeResume(job.id));
+      const pack = await api.makeResume(job.id);
+      setResume(pack.resume);
+      setApplication(pack.application);
+      setJobFile(pack.jobFile);
       setJob(await api.getJob(job.id));
       await refresh();
     } catch (e) {
@@ -166,6 +182,34 @@ export function JobPage() {
             <div className="resume-preview">
               <Resume resume={resume} />
             </div>
+            {application && (
+              <div className="doc-block">
+                <h3>Application file</h3>
+                {application.paragraphs.map((p) => <p key={p}>{p}</p>)}
+                {application.evidence.length > 0 && (
+                  <ul>{application.evidence.map((e) => <li key={e.text}><strong>{e.label}.</strong> {e.text}</li>)}</ul>
+                )}
+                {application.gaps.length > 0 && (
+                  <>
+                    <h3>Be ready to discuss</h3>
+                    <ul>{application.gaps.map((g) => <li key={g}>{g}</li>)}</ul>
+                  </>
+                )}
+              </div>
+            )}
+            {jobFile && (
+              <div className="doc-block">
+                <h3>Job description file</h3>
+                <p className="muted small">
+                  {[jobFile.location, jobFile.salary ? formatSalary(jobFile.salary) : jobFile.salaryText, jobFile.yearsRequired ? `${jobFile.yearsRequired}+ years` : ""]
+                    .filter(Boolean)
+                    .join(" · ")}
+                </p>
+                {jobFile.requiredSkills.length > 0 && <p><strong>Required: </strong>{jobFile.requiredSkills.join(", ")}</p>}
+                {jobFile.preferredSkills.length > 0 && <p><strong>Preferred: </strong>{jobFile.preferredSkills.join(", ")}</p>}
+                {jobFile.requirementLines.length > 0 && <ul>{jobFile.requirementLines.map((l) => <li key={l}>{l}</li>)}</ul>}
+              </div>
+            )}
           </>
         )}
       </div>
