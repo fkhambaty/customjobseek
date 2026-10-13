@@ -17,10 +17,10 @@ export const PLANS: Record<PlanId, Plan> = {
     name: "Free",
     priceInr: 0,
     evalCredits: 3,
-    resumeCredits: 1,
+    resumeCredits: 3,
     validityDays: 0,
     blurb: "See if it works for you.",
-    features: ["3 job fit checks", "1 tailored resume", "Application tracker"],
+    features: ["3 complete application packs", "Fit check + tailored resume per job", "Application tracker"],
   },
   starter: {
     id: "starter",

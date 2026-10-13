@@ -9,6 +9,7 @@ import { tailorResume } from "../shared/engine/tailor";
 import { emptyProfile, type Profile } from "../shared/types";
 import { sanitiseProfile } from "../shared/validate";
 import { parseJobHtml } from "../worker/jobFetch";
+import { contactsFrom, meaningfulTitleMatch } from "../worker/routes/discover";
 
 function profile(overrides: Partial<Profile> = {}): Profile {
   return {
@@ -322,5 +323,21 @@ describe("parseJobHtml", () => {
     expect(job.company).toBe("Gamma");
     expect(job.location).toBe("Pune, IN");
     expect(parseSalary(job.salaryText)).toMatchObject({ min: 3000000, max: 4000000, currency: "INR", period: "year" });
+  });
+
+  it("keeps only contacts explicitly printed in a job posting", () => {
+    expect(contactsFrom("Questions? Contact Priya Sharma at priya@example.com or jobs@example.com.")).toEqual([
+      expect.objectContaining({ name: "Priya Sharma", email: "priya@example.com" }),
+      expect.objectContaining({ name: "", email: "jobs@example.com" }),
+    ]);
+    expect(contactsFrom("Our hiring team will contact shortlisted applicants.")).toEqual([]);
+  });
+
+  it("does not call a role relevant because it only shares a generic title word", () => {
+    const targets = ["Corporate Communications", "Internal Communications", "Communications Consultant"];
+    expect(meaningfulTitleMatch("Manager, Internal Communications", targets)).toBe(1);
+    expect(meaningfulTitleMatch("Senior SAP Consultant", targets)).toBe(0);
+    expect(meaningfulTitleMatch("Internal Sales Representative", targets)).toBe(0);
+    expect(meaningfulTitleMatch("Senior Product Marketing Manager", [...targets, "Product Marketing"])).toBe(1);
   });
 });

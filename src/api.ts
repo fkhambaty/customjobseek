@@ -79,6 +79,12 @@ export interface DiscoverRow {
   locationNote: string;
 }
 
+export interface DiscoverScan {
+  prepared: JobRecord[];
+  locked: DiscoverRow[];
+  checked: number;
+}
+
 export interface ResumeLibrary {
   tailored: { jobId: string; title: string; company: string; status: JobStatus; madeAt: string; built: boolean; saved: boolean }[];
   base: { id: string; label: string; format: string; createdAt: string }[];
@@ -148,6 +154,7 @@ export const api = {
   activity: () => call<Activity[]>("GET", "/jobs/activity"),
   people: () => call<Person[]>("GET", "/jobs/people"),
   discover: () => call<{ needsTargets: boolean; rows: DiscoverRow[] }>("GET", "/discover"),
+  scanDiscover: () => call<DiscoverScan>("POST", "/discover/scan"),
   resumes: () => call<ResumeLibrary>("GET", "/resumes"),
   masterResume: () => call<TailoredResume>("GET", "/resumes/master"),
   deleteBaseResume: (id: string) => call<{ ok: true }>("DELETE", `/resumes/base/${id}`),

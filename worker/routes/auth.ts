@@ -24,8 +24,9 @@ export const auth = new Hono<AppEnv>()
     if (!existing) {
       const id = crypto.randomUUID();
       await c.env.DB.batch([
-        c.env.DB.prepare("INSERT INTO users (id, email, password_hash, email_verified) VALUES (?, ?, ?, 0)").bind(id, email, await hashPassword(password)),
-        c.env.DB.prepare("INSERT INTO credit_ledger (user_id, kind, eval_delta, resume_delta, note) VALUES (?, 'grant', 3, 1, 'free plan')").bind(id),
+        c.env.DB.prepare("INSERT INTO users (id, email, password_hash, email_verified, eval_credits, resume_credits) VALUES (?, ?, ?, 0, 3, 3)")
+          .bind(id, email, await hashPassword(password)),
+        c.env.DB.prepare("INSERT INTO credit_ledger (user_id, kind, eval_delta, resume_delta, note) VALUES (?, 'grant', 3, 3, 'free plan')").bind(id),
       ]);
     } else {
       await c.env.DB.prepare("UPDATE users SET password_hash = ? WHERE id = ?").bind(await hashPassword(password), existing.id).run();

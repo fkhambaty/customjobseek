@@ -141,6 +141,34 @@ async function fetchFromAtsApi(url: URL): Promise<FetchedJob | null> {
   const host = url.hostname.toLowerCase();
   const parts = url.pathname.split("/").filter(Boolean);
 
+  if (host === "api.smartrecruiters.com" || host === "jobs.smartrecruiters.com") {
+    const companiesAt = parts.indexOf("companies");
+    const postingsAt = parts.indexOf("postings");
+    const company = companiesAt >= 0 ? parts[companiesAt + 1] : parts[0];
+    const id = postingsAt >= 0 ? parts[postingsAt + 1] : parts[1];
+    if (!company || !id) return null;
+    const d = await getJson(
+      `https://api.smartrecruiters.com/v1/companies/${encodeURIComponent(company)}/postings/${encodeURIComponent(id)}`,
+    );
+    if (!d) return null;
+    const location = (d.location as JsonLd | undefined) ?? {};
+    const companyInfo = (d.company as JsonLd | undefined) ?? {};
+    const jobAd = (d.jobAd as JsonLd | undefined) ?? {};
+    const sections = (jobAd.sections as JsonLd | undefined) ?? {};
+    const description = Object.values(sections)
+      .map((section) => htmlToText(str((section as JsonLd | undefined)?.text)))
+      .filter(Boolean)
+      .join("\n");
+    return {
+      title: str(d.name),
+      company: str(companyInfo.name) || company,
+      location: [str(location.city), str(location.region), str(location.country)].filter(Boolean).join(", "),
+      salaryText: "",
+      description,
+      source: "structured",
+    };
+  }
+
   if (/(^|\.)greenhouse\.io$/.test(host)) {
     const jobsAt = parts.indexOf("jobs");
     const board = parts[jobsAt - 1] ?? url.searchParams.get("for");
