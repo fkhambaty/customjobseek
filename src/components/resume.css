@@ -1,0 +1,72 @@
+.resume {
+  width: 210mm;
+  min-height: 297mm;
+  margin: 0 auto;
+  padding: 11mm 14mm 12mm;
+  background: #fff;
+  color: #182534;
+  font-family: Calibri, Carlito, "Segoe UI", Arial, sans-serif;
+  font-size: 10pt;
+  line-height: 1.33;
+  box-shadow: 0 10px 35px rgba(17, 37, 58, 0.14);
+  text-align: left;
+}
+.resume header {
+  border-bottom: 2px solid #0e4a52;
+  padding-bottom: 7px;
+  margin-bottom: 7px;
+}
+.resume h1 {
+  margin: 0;
+  color: #0e4a52;
+  font-size: 21pt;
+  line-height: 1;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+}
+.resume .headline {
+  margin-top: 5px;
+  color: #0e4a52;
+  font-size: 9.8pt;
+  font-weight: 700;
+  letter-spacing: 0.35px;
+}
+.resume .contact {
+  margin-top: 5px;
+  color: #2c3d4a;
+  font-size: 9.2pt;
+  white-space: pre-wrap;
+}
+.resume h2 {
+  margin: 10px 0 5px;
+  padding-bottom: 3px;
+  border-bottom: 2px solid #0e4a52;
+  color: #0e4a52;
+  font-size: 10.2pt;
+  letter-spacing: 0.85px;
+  text-transform: uppercase;
+  break-after: avoid;
+}
+.resume p { margin: 0 0 4px; white-space: pre-wrap; }
+.resume ul { margin: 2px 0 0 16px; padding: 0; }
+.resume li { margin: 0 0 4.5px; padding-left: 1px; }
+.resume .job { margin-bottom: 11px; }
+.resume .job-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: baseline;
+  margin-bottom: 1px;
+  break-after: avoid;
+  break-inside: avoid;
+}
+.resume .job-title { color: #0e4a52; font-size: 10pt; font-weight: 700; }
+.resume .job-company { color: #182534; font-weight: 700; }
+.resume .job-date { color: #3d4f5c; font-size: 9pt; white-space: nowrap; }
+.resume .subrole { color: #3d4f5c; font-size: 9pt; margin-bottom: 2px; }
+.resume li { break-inside: avoid; }
+
+@media print {
+  @page { size: A4; margin: 11mm 14mm 12mm; }
+  .resume { box-shadow: none; margin: 0; padding: 0; width: auto; min-height: auto; }
+}

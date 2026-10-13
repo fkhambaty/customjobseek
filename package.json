@@ -1,0 +1,38 @@
+{
+  "name": "customjobseek",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Paste a job. Get an honest fit decision and a tailored, ATS-friendly resume built only from your verified experience.",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/fkhambaty/customjobseek.git"
+  },
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "npm run build && vite preview",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run",
+    "db:migrate:local": "wrangler d1 migrations apply customjobseek --local",
+    "db:migrate:remote": "wrangler d1 migrations apply customjobseek --remote",
+    "deploy": "npm run build && wrangler deploy"
+  },
+  "dependencies": {
+    "hono": "^4.13.13",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0",
+    "react-router-dom": "^7.18.4"
+  },
+  "devDependencies": {
+    "@cloudflare/vite-plugin": "^1.63.2",
+    "@cloudflare/workers-types": "^5.20261013.1",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^6.1.2",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.4",
+    "vitest": "^5.0.4",
+    "wrangler": "^4.150.0"
+  }
+}
