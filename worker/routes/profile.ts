@@ -1,5 +1,6 @@
 import { Hono } from "hono";
 import { profileFromResumeText } from "../../shared/engine/importResume";
+import { resumeTextInReadingOrder, type ResumeTextPage } from "../../shared/engine/resumeLayout";
 import { emptyProfile, type Profile } from "../../shared/types";
 import { profileReadiness, sanitiseProfile } from "../../shared/validate";
 import { decryptJson, encryptJson } from "../crypto";
@@ -36,8 +37,24 @@ export const profile = new Hono<AppEnv>()
     if (bytes.byteLength < 100 || bytes.byteLength > 2_000_000) throw new HttpError(400, "Upload a PDF under 2 MB.");
     const doc = await getDocumentProxy(bytes).catch(() => null);
     if (!doc) throw new HttpError(422, "That file could not be read. Use a text-based PDF, not a scanned image.");
-    const extracted = await extractText(doc, { mergePages: true });
-    const text = Array.isArray(extracted.text) ? extracted.text.join("\n") : extracted.text;
+    const pages: ResumeTextPage[] = [];
+    for (let pageNumber = 1; pageNumber <= doc.numPages; pageNumber++) {
+      const page = await doc.getPage(pageNumber);
+      const content = await page.getTextContent();
+      pages.push({
+        width: page.getViewport({ scale: 1 }).width,
+        items: content.items.flatMap((item) =>
+          "str" in item && item.str.trim()
+            ? [{ str: item.str, x: item.transform[4] ?? 0, y: item.transform[5] ?? 0 }]
+            : [],
+        ),
+      });
+    }
+    let text = resumeTextInReadingOrder(pages);
+    if (!text.trim()) {
+      const fallback = await extractText(doc, { mergePages: true });
+      text = Array.isArray(fallback.text) ? fallback.text.join("\n") : fallback.text;
+    }
     if (!text || text.trim().length < 80) throw new HttpError(422, "Almost no text came out of that PDF. It may be a scan.");
     const draft = sanitiseProfile(profileFromResumeText(text, user.email));
     const filename = (c.req.header("x-file-name") ?? "").replace(/[^\w .()-]/g, "").slice(0, 120) || "Uploaded resume.pdf";

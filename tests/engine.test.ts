@@ -3,6 +3,7 @@ import { detectBoard } from "../shared/engine/boards";
 import { buildApplication } from "../shared/engine/documents";
 import { classifyTerms, evaluateFit, parseSalary, parseYearsRequired, titleAlignment, type JobInput } from "../shared/engine/fit";
 import { profileFromResumeText } from "../shared/engine/importResume";
+import { resumeTextInReadingOrder } from "../shared/engine/resumeLayout";
 import { SKILL_CATALOGUE, mentions, normalise, termForName } from "../shared/engine/text";
 import { tailorResume } from "../shared/engine/tailor";
 import { emptyProfile, type Profile } from "../shared/types";
@@ -251,6 +252,55 @@ B.E. Computer Engineering, Pune University 2016`;
       "Built 120 dbt models on Snowflake",
       "Scheduled pipelines in Airflow",
     ]);
+  });
+
+  it("restores a two-column resume before assigning fields", () => {
+    const item = (str: string, x: number, y: number) => ({ str, x, y });
+    const text = resumeTextInReadingOrder([{
+      width: 600,
+      items: [
+        item("PRIYA SHARMA", 235, 815),
+        item("Communications professional passionate about bringing stories to life.", 235, 798),
+        item("WORK EXPERIENCE", 235, 767),
+        item("Internal Communications Associate Lead", 408, 748),
+        item("November 2025- Present", 473, 738),
+        item("Infosys is a leading global provider of digital services", 237, 727),
+        item("Develop and execute internal communications strategy", 241, 715),
+        item("9000000000", 53, 688),
+        item("priya@example.com", 53, 675),
+        item("Bengaluru, India", 53, 650),
+        item("EDUCATION", 39, 625),
+        item("Master’s in Media and Communication Studies", 39, 613),
+        item("(Advertising and Corporate Communication) - 8.2 / 10 CGPA", 39, 603),
+        item("Christ University - 2021 – 2023", 39, 582),
+        item("INTERESTS", 38, 506),
+        item("Integrated Marketing & Communications", 39, 492),
+      ],
+    }]);
+    const p = profileFromResumeText(text);
+    expect(p).toMatchObject({
+      fullName: "PRIYA SHARMA",
+      email: "priya@example.com",
+      phone: "9000000000",
+      headline: "Internal Communications Associate Lead",
+    });
+    expect(p.experience).toEqual([
+      expect.objectContaining({
+        title: "Internal Communications Associate Lead",
+        company: "Infosys",
+        start: "November 2025",
+        end: "Present",
+        bullets: [{ id: "exp0b0", text: "Develop and execute internal communications strategy" }],
+      }),
+    ]);
+    expect(p.education).toEqual([
+      expect.objectContaining({
+        institution: "Christ University",
+        degree: "Master’s in Media and Communication Studies (Advertising and Corporate Communication) - 8.2 / 10 CGPA",
+        year: "2021 – 2023",
+      }),
+    ]);
+    expect(p.skills.map((skill) => skill.name)).toContain("Integrated Marketing & Communications");
   });
 });
 
