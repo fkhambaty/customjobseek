@@ -73,7 +73,7 @@ export function JobsPage() {
       <div className="job-list">
         {shown.map((j) => (
           <Link to={`/jobs/${j.id}`} key={j.id} className="card job-row">
-            <ScoreRing score={j.fit.score} size="sm" />
+            {j.fit.imported ? <span className="badge">Saved</span> : <ScoreRing score={j.fit.score} size="sm" />}
             <div className="job-row-main">
               <div className="job-row-title">{j.title}</div>
               <div className="muted small">

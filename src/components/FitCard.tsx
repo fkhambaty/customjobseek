@@ -31,6 +31,8 @@ export function statusLabel(s: JobStatus): string {
       return "Rejected";
     case "withdrawn":
       return "Withdrawn";
+    case "closed":
+      return "Closed";
     default: {
       const never: never = s;
       return never;
@@ -61,9 +63,11 @@ export function FitCard({ fit }: { fit: FitResult }) {
   return (
     <div className="card fit-card">
       <div className="fit-head">
-        <ScoreRing score={fit.score} />
+        {fit.imported ? <div className="imported-mark">Not scored</div> : <ScoreRing score={fit.score} />}
         <div>
-          <div className={`decision decision-${fit.decision}`}>{decisionLabel(fit.decision)}</div>
+          <div className={`decision decision-${fit.imported ? "stretch" : fit.decision}`}>
+            {fit.imported ? "Imported from your records. Re-check fit to score it." : decisionLabel(fit.decision)}
+          </div>
           <p className="muted small">
             The score weighs required skills you hold, other skills mentioned, how close the title is to your targets,
             and years of experience. It is evidence, not a promise of an interview.

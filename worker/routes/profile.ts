@@ -1,9 +1,11 @@
 import { Hono } from "hono";
+import { profileFromResumeText } from "../../shared/engine/importResume";
 import { emptyProfile, type Profile } from "../../shared/types";
 import { profileReadiness, sanitiseProfile } from "../../shared/validate";
 import { decryptJson, encryptJson } from "../crypto";
-import type { AppEnv, Env } from "../env";
+import { HttpError, type AppEnv, type Env } from "../env";
 import { requireUser } from "../session";
+import { extractText, getDocumentProxy } from "unpdf";
 
 export async function loadProfile(env: Env, userId: string, email: string): Promise<Profile> {
   const row = await env.DB.prepare("SELECT ciphertext FROM profiles WHERE user_id = ?").bind(userId).first<{ ciphertext: string }>();
@@ -27,4 +29,19 @@ export const profile = new Hono<AppEnv>()
       .bind(user.id, await encryptJson(c.env.DATA_KEY, p))
       .run();
     return c.json({ profile: p, missing: profileReadiness(p) });
+  })
+  .post("/resume-file", async (c) => {
+    const user = c.get("user");
+    const bytes = new Uint8Array(await c.req.arrayBuffer());
+    if (bytes.byteLength < 100 || bytes.byteLength > 2_000_000) throw new HttpError(400, "Upload a PDF under 2 MB.");
+    const doc = await getDocumentProxy(bytes).catch(() => null);
+    if (!doc) throw new HttpError(422, "That file could not be read. Use a text-based PDF, not a scanned image.");
+    const extracted = await extractText(doc, { mergePages: true });
+    const text = Array.isArray(extracted.text) ? extracted.text.join("\n") : extracted.text;
+    if (!text || text.trim().length < 80) throw new HttpError(422, "Almost no text came out of that PDF. It may be a scan.");
+    const draft = sanitiseProfile(profileFromResumeText(text, user.email));
+    await c.env.DB.prepare("INSERT INTO resume_uploads (id, user_id, filename, text_ciphertext) VALUES (?, ?, ?, ?)")
+      .bind(crypto.randomUUID(), user.id, "upload.pdf", await encryptJson(c.env.DATA_KEY, { text: text.slice(0, 100_000) }))
+      .run();
+    return c.json({ profile: draft, missing: profileReadiness(draft) });
   });

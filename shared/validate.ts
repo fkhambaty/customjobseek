@@ -1,8 +1,9 @@
-import type { Profile, SkillLevel } from "./types";
+import type { Profile, SalaryPeriod, SkillLevel } from "./types";
 
 type Raw = Record<string, unknown>;
 
 const LEVELS: SkillLevel[] = ["expert", "working", "familiar"];
+const PERIODS: SalaryPeriod[] = ["year", "month", "hour", "lpa"];
 
 function obj(v: unknown): Raw {
   return v && typeof v === "object" && !Array.isArray(v) ? (v as Raw) : {};
@@ -83,14 +84,26 @@ export function sanitiseProfile(input: unknown): Profile {
       const name = text(o.name, 160);
       return name ? { id: id(o.id, `cert${i}`), name, issuer: text(o.issuer, 120), year: text(o.year, 20) } : null;
     }),
-    preferences: {
-      cities: words(prefs.cities, 15),
-      remoteOk: prefs.remoteOk !== false,
-      minSalaryLpa: num(prefs.minSalaryLpa, 0, 1000),
-      maxSalaryLpa: num(prefs.maxSalaryLpa, 0, 1000),
-      targetRoles: words(prefs.targetRoles, 15),
-      excludedTitleWords: words(prefs.excludedTitleWords, 20),
-    },
+    preferences: readPreferences(prefs),
+  };
+}
+
+function readPreferences(prefs: Raw): Profile["preferences"] {
+  // Older profiles stored an India-only floor in lakhs per year.
+  const legacyMin = num(prefs.minSalaryLpa, 0, 1000);
+  const legacyMax = num(prefs.maxSalaryLpa, 0, 1000);
+  const period = PERIODS.includes(prefs.salaryPeriod as SalaryPeriod) ? (prefs.salaryPeriod as SalaryPeriod) : legacyMin !== null ? "lpa" : "year";
+  const currency = /^[A-Za-z]{3}$/.test(text(prefs.currency, 3)) ? text(prefs.currency, 3).toUpperCase() : period === "lpa" ? "INR" : "USD";
+  return {
+    country: /^[A-Za-z]{2}$/.test(text(prefs.country, 2)) ? text(prefs.country, 2).toUpperCase() : "",
+    cities: words(prefs.cities, 20),
+    remoteOk: prefs.remoteOk !== false,
+    currency: period === "lpa" ? "INR" : currency,
+    minSalary: num(prefs.minSalary, 0, 100_000_000) ?? legacyMin,
+    maxSalary: num(prefs.maxSalary, 0, 100_000_000) ?? legacyMax,
+    salaryPeriod: period,
+    targetRoles: words(prefs.targetRoles, 15),
+    excludedTitleWords: words(prefs.excludedTitleWords, 20),
   };
 }
 

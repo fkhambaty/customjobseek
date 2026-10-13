@@ -1,4 +1,5 @@
-import type { Blocker, Decision, FitResult, Profile } from "../types";
+import { COUNTRIES, cityNames, countryByCode, countryNames } from "../geo";
+import type { Blocker, Decision, FitResult, ParsedSalary, Profile, SalaryPeriod } from "../types";
 import { SKILL_CATALOGUE, mentions, normalise, termForName, termPattern, uniqueBy, type Term } from "./text";
 
 export interface JobInput {
@@ -75,28 +76,125 @@ export function parseYearsRequired(description: string): number | null {
   return best;
 }
 
-// Indian salaries are compared in lakhs per annum. Monthly figures are ignored rather than guessed.
-export function parseSalaryLpa(text: string): { min: number; max: number } | null {
-  const t = normalise(text).replace(/,(?=\d{2,3}\b)/g, "");
-  if (!t || /per month|\/month|monthly|p\.m\./.test(t)) return null;
+const CURRENCY_MARKS: [RegExp, string][] = [
+  [/\ba\$|\baud\b/, "AUD"],
+  [/\bc\$|\bcad\b/, "CAD"],
+  [/\bs\$|\bsgd\b/, "SGD"],
+  [/\bnz\$|\bnzd\b/, "NZD"],
+  [/\bhk\$|\bhkd\b/, "HKD"],
+  [/\bus\$|\busd\b/, "USD"],
+  [/₹|\binr\b|\brs\.?\b/, "INR"],
+  [/€|\beur\b/, "EUR"],
+  [/£|\bgbp\b/, "GBP"],
+  [/\baed\b/, "AED"],
+  [/\bjpy\b|¥/, "JPY"],
+  [/\bchf\b/, "CHF"],
+  [/\bzar\b/, "ZAR"],
+  [/\bbrl\b|r\$/, "BRL"],
+  [/\bmxn\b/, "MXN"],
+  [/\bpln\b/, "PLN"],
+  [/\bsek\b/, "SEK"],
+  [/\bnok\b/, "NOK"],
+  [/\bdkk\b/, "DKK"],
+  [/\bmyr\b/, "MYR"],
+  [/\bthb\b/, "THB"],
+  [/\bphp\b/, "PHP"],
+  [/\bidr\b/, "IDR"],
+  [/\bkrw\b/, "KRW"],
+  [/\bcny\b/, "CNY"],
+  [/\bsar\b/, "SAR"],
+  [/\bqar\b/, "QAR"],
+];
 
-  const range = t.match(/(\d+(?:\.\d+)?)\s*(?:lpa|lakhs?|lacs?|l)?\s*(?:-|to)\s*(\d+(?:\.\d+)?)\s*(lpa|lakhs?|lacs?|l\b|cr|crores?)/);
-  if (range) {
-    const mult = /cr/.test(range[3] ?? "") ? 100 : 1;
-    return { min: Number(range[1]) * mult, max: Number(range[2]) * mult };
+function detectCurrency(text: string): string | null {
+  for (const [re, code] of CURRENCY_MARKS) if (re.test(text)) return code;
+  if (text.includes("$")) return "USD";
+  return null;
+}
+
+function scaleNumber(raw: string, textAfter: string): number {
+  const n = Number(raw);
+  if (/^\s*k\b/i.test(textAfter)) return n * 1000;
+  if (/^\s*m\b/i.test(textAfter)) return n * 1_000_000;
+  return n;
+}
+
+function writtenPeriod(text: string): SalaryPeriod | null {
+  if (/\b(per hour|an hour|\/hour|\/hr|hourly|p\.h\.)\b/.test(text)) return "hour";
+  if (/\b(per month|a month|\/month|monthly|p\.m\.|per mo)\b/.test(text)) return "month";
+  if (/\b(per year|per annum|p\.a\.|annually|\/year|yearly)\b/.test(text)) return "year";
+  return null;
+}
+
+export function annualise(amount: number, period: SalaryPeriod): number {
+  switch (period) {
+    case "year":
+      return amount;
+    case "month":
+      return amount * 12;
+    case "hour":
+      return amount * 2080;
+    case "lpa":
+      return amount * 100_000;
+    default: {
+      const never: never = period;
+      return never;
+    }
   }
-  const single = t.match(/(\d+(?:\.\d+)?)\s*(lpa|lakhs?|lacs?|cr|crores?)\b/);
-  if (single) {
-    const v = Number(single[1]) * (/cr/.test(single[2] ?? "") ? 100 : 1);
-    return { min: v, max: v };
+}
+
+function salaryResult(min: number, max: number, currency: string, period: SalaryPeriod): ParsedSalary {
+  const lo = Math.min(min, max);
+  const hi = Math.max(min, max);
+  return { min: lo, max: hi, currency, period, annualMin: annualise(lo, period), annualMax: annualise(hi, period) };
+}
+
+// Reads a pay range in the currency and unit the posting actually used.
+// Lakhs and crores are Indian. A trailing k means thousands. Hourly and monthly are kept as such
+// and also converted to a year (hourly assumes 2,080 hours) so two ranges can be compared.
+export function parseSalary(text: string): ParsedSalary | null {
+  const t = normalise(text).replace(/,(?=\d{3}\b)/g, "");
+  if (!t) return null;
+
+  const lakhRange = t.match(/(\d+(?:\.\d+)?)\s*(?:lpa|lakhs?|lacs?|l)?\s*(?:-|to)\s*(\d+(?:\.\d+)?)\s*(lpa|lakhs?|lacs?|l\b|cr|crores?)/);
+  if (lakhRange) {
+    const unit = lakhRange[3] ?? "";
+    const crore = /cr/.test(unit);
+    const min = Number(lakhRange[1]) * (crore ? 100 : 1);
+    const max = Number(lakhRange[2]) * (crore ? 100 : 1);
+    return salaryResult(min, max, "INR", "lpa");
   }
-  const rupees = t.match(/(?:₹|inr|rs\.?)\s*(\d{6,9})(?:\s*(?:-|to)\s*(?:₹|inr|rs\.?)?\s*(\d{6,9}))?/);
-  if (rupees) {
-    const min = Number(rupees[1]) / 100000;
-    const max = rupees[2] ? Number(rupees[2]) / 100000 : min;
-    return { min: Math.round(min * 10) / 10, max: Math.round(max * 10) / 10 };
+  const lakhSingle = t.match(/(\d+(?:\.\d+)?)\s*(lpa|lakhs?|lacs?|cr|crores?)\b/);
+  if (lakhSingle) {
+    const crore = /cr/.test(lakhSingle[2] ?? "");
+    const v = Number(lakhSingle[1]) * (crore ? 100 : 1);
+    return salaryResult(v, v, "INR", "lpa");
+  }
+
+  const currency = detectCurrency(t);
+  const period = writtenPeriod(t) ?? "year";
+  // Only the words next to the currency mark, so "3-5 years" elsewhere in the posting is not a salary.
+  const mark = CURRENCY_MARKS.find(([re]) => re.test(t))?.[0].exec(t);
+  const at = mark?.index ?? t.indexOf("$");
+  const window = at >= 0 ? t.slice(Math.max(0, at - 24), at + 48) : t;
+  const range = window.match(/(\d+(?:\.\d+)?)(\s*[km])?\s*(?:-|to)\s*\D{0,8}?(\d+(?:\.\d+)?)(\s*[km])?/i);
+  if (range && currency) {
+    return salaryResult(scaleNumber(range[1] ?? "0", range[2] ?? ""), scaleNumber(range[3] ?? "0", range[4] ?? ""), currency, period);
+  }
+  const single = window.match(/(\d+(?:\.\d+)?)(\s*[km])?/i);
+  if (single && currency && Number(single[1]) >= (period === "hour" ? 5 : 1000)) {
+    const v = scaleNumber(single[1] ?? "0", single[2] ?? "");
+    return salaryResult(v, v, currency, period);
   }
   return null;
+}
+
+export function formatSalary(s: ParsedSalary): string {
+  const symbol = s.currency === "INR" ? "₹" : s.currency === "USD" ? "$" : s.currency === "GBP" ? "£" : s.currency === "EUR" ? "€" : `${s.currency} `;
+  const n = (v: number) => (s.period === "lpa" || v >= 100 ? v.toLocaleString("en-US") : String(v));
+  const range = s.min === s.max ? n(s.min) : `${n(s.min)}–${n(s.max)}`;
+  const unit = s.period === "lpa" ? " LPA" : s.period === "month" ? " per month" : s.period === "hour" ? " per hour" : " per year";
+  return `${symbol}${range}${unit}`;
 }
 
 function titleTokens(s: string): string[] {
@@ -118,40 +216,92 @@ export function titleAlignment(jobTitle: string, targetRoles: string[]): number 
   return best;
 }
 
-function locationCheck(job: JobInput, profile: Profile): { blocker?: Blocker; note?: string } {
-  const prefs = profile.preferences;
-  if (!prefs.cities.length) return {};
-  const where = normalise(`${job.location} ${job.title}`);
-  const body = normalise(job.description).slice(0, 1500);
-  const isRemote = /\b(remote|work from home|wfh|anywhere in india)\b/.test(`${where} ${body}`);
-  const wanted = prefs.cities.flatMap((c) => CITY_ALIASES[c.trim().toLowerCase()] ?? [c.trim().toLowerCase()]);
-  const cityHit = wanted.some((c) => termPattern(c).test(where) || termPattern(c).test(body));
-
-  if (cityHit) return {};
-  if (isRemote && prefs.remoteOk) return { note: "Remote role, which you accept." };
-  if (!where.trim() && !isRemote) return { note: "The posting does not state a location. Confirm it before applying." };
-  return {
-    blocker: {
-      kind: "location",
-      message: `Location "${job.location || "as stated in the posting"}" is not one of your cities (${prefs.cities.join(", ")})${isRemote && !prefs.remoteOk ? " and you do not accept remote" : ""}.`,
-    },
-  };
+function mentionsPlace(haystack: string, name: string): boolean {
+  return termPattern(name).test(normalise(haystack));
 }
 
-function salaryCheck(job: JobInput, profile: Profile): { blocker?: Blocker; note?: string; parsed: FitResult["parsedSalaryLpa"] } {
-  const parsed = parseSalaryLpa(`${job.salaryText} ${job.salaryText ? "" : job.description}`);
-  const { minSalaryLpa, maxSalaryLpa } = profile.preferences;
-  if (!parsed) {
-    return { parsed, note: minSalaryLpa ? "Pay is not published. Ask the recruiter for the band before investing time." : undefined };
+// Longest names first so "Papua New Guinea" wins over a shorter name inside it.
+const COUNTRY_SCAN = [...COUNTRIES].sort((a, b) => b.name.length - a.name.length);
+
+function countriesIn(location: string): string[] {
+  const found: string[] = [];
+  for (const country of COUNTRY_SCAN) {
+    const names = countryNames(country.code);
+    const named = names.some((n) => n.length > 2 && mentionsPlace(location, n));
+    const coded = new RegExp(`\\b${country.code}\\b`).test(location);
+    if (named || coded) found.push(country.code);
   }
-  if (minSalaryLpa && parsed.max < minSalaryLpa) {
+  return found;
+}
+
+function locationCheck(job: JobInput, profile: Profile): { blocker?: Blocker; note?: string } {
+  const prefs = profile.preferences;
+  if (!prefs.country && !prefs.cities.length) return {};
+  const where = `${job.location}`.trim();
+  const head = job.description.slice(0, 400);
+  const isRemote = /\b(remote|work from home|wfh)\b/i.test(`${where} ${head}`);
+  const cityHaystack = where || head;
+  const wanted = prefs.cities.flatMap((c) => cityNames(c));
+  const cityHit = wanted.some((c) => mentionsPlace(cityHaystack, c));
+  const found = countriesIn(where);
+  const home = prefs.country;
+  const foreign = found.filter((c) => c !== home);
+
+  if (cityHit) return {};
+  if (isRemote && prefs.remoteOk && foreign.length === 0) return { note: "Remote role, which you accept." };
+  if (isRemote && !prefs.remoteOk) {
+    return { blocker: { kind: "location", message: "This role is remote, and your profile says you do not want remote work." } };
+  }
+  if (isRemote && foreign.length && home) {
+    const names = foreign.map((c) => countryByCode(c)?.name ?? c).join(", ");
+    return { blocker: { kind: "location", message: `Remote, but limited to ${names}. Your country is ${countryByCode(home)?.name ?? home}.` } };
+  }
+  if (home && found.includes(home) && !prefs.cities.length) return {};
+  if (!where && !isRemote) return { note: "The posting does not state a location. Confirm it before applying." };
+  if (prefs.cities.length) {
     return {
-      parsed,
-      blocker: { kind: "salary", message: `Pay tops out at ₹${parsed.max} LPA, below your minimum of ₹${minSalaryLpa} LPA.` },
+      blocker: {
+        kind: "location",
+        message: `Location "${where || "as stated in the posting"}" is not one of your cities (${prefs.cities.join(", ")}).`,
+      },
     };
   }
-  if (maxSalaryLpa && parsed.min > maxSalaryLpa * 1.5) {
-    return { parsed, note: `Pay starts at ₹${parsed.min} LPA, well above your stated range. Check the seniority is right for you.` };
+  if (foreign.length && home) {
+    return {
+      blocker: {
+        kind: "location",
+        message: `This role is in ${foreign.map((c) => countryByCode(c)?.name ?? c).join(", ")}, not ${countryByCode(home)?.name ?? home}.`,
+      },
+    };
+  }
+  return {};
+}
+
+function salaryCheck(job: JobInput, profile: Profile): { blocker?: Blocker; note?: string; parsed: ParsedSalary | null } {
+  const parsed = parseSalary(job.salaryText || job.description.slice(0, 800));
+  const { minSalary, maxSalary, currency, salaryPeriod } = profile.preferences;
+  if (!parsed) {
+    return { parsed, note: minSalary ? "Pay is not published. Ask for the band before investing time." : undefined };
+  }
+  if (parsed.currency !== currency) {
+    return {
+      parsed,
+      note: `Pay is published in ${parsed.currency} (${formatSalary(parsed)}). Your range is in ${currency}, so this is not compared automatically.`,
+    };
+  }
+  const floor = minSalary === null ? null : annualise(minSalary, salaryPeriod);
+  const ceiling = maxSalary === null ? null : annualise(maxSalary, salaryPeriod);
+  if (floor !== null && parsed.annualMax < floor) {
+    return {
+      parsed,
+      blocker: {
+        kind: "salary",
+        message: `Pay tops out at ${formatSalary(parsed)}, below your minimum of ${formatSalary(salaryResult(minSalary ?? 0, minSalary ?? 0, currency, salaryPeriod))}.`,
+      },
+    };
+  }
+  if (ceiling !== null && parsed.annualMin > ceiling * 1.5) {
+    return { parsed, note: `Pay starts at ${formatSalary(parsed)}, well above your stated range. Check the seniority is right for you.` };
   }
   return { parsed };
 }
@@ -241,6 +391,6 @@ export function evaluateFit(job: JobInput, profile: Profile): FitResult {
     blockers,
     notes,
     jdYearsRequired: jdYears,
-    parsedSalaryLpa: pay.parsed,
+    parsedSalary: pay.parsed,
   };
 }

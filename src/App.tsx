@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { Link, Navigate, NavLink, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import { AccountPage } from "./pages/AccountPage";
+import { CompaniesPage } from "./pages/CompaniesPage";
 import { AuthPage } from "./pages/AuthPage";
 import { JobPage } from "./pages/JobPage";
 import { JobsPage } from "./pages/JobsPage";
@@ -8,6 +9,7 @@ import { Landing } from "./pages/Landing";
 import { NewJobPage } from "./pages/NewJobPage";
 import { PricingPage } from "./pages/PricingPage";
 import { PrintResume } from "./pages/PrintResume";
+import { ResetPage, VerifyPage } from "./pages/VerifyPage";
 import { ProfilePage } from "./pages/ProfilePage";
 import { SessionProvider, useSession } from "./session";
 
@@ -40,6 +42,7 @@ function Header() {
           {account ? (
             <>
               <NavLink to="/jobs">Jobs</NavLink>
+              <NavLink to="/companies">Companies</NavLink>
               <NavLink to="/profile">Profile</NavLink>
               <NavLink to="/pricing">Plans</NavLink>
               <NavLink to="/account" className="credits-pill" title="Fit checks / tailored resumes left">
@@ -106,9 +109,12 @@ export function App() {
                 <Route path="/" element={<Landing />} />
                 <Route path="/login" element={<AuthPage mode="login" />} />
                 <Route path="/signup" element={<AuthPage mode="signup" />} />
+                <Route path="/verify" element={<VerifyPage />} />
+                <Route path="/reset" element={<ResetPage />} />
                 <Route path="/pricing" element={<PricingPage />} />
                 <Route path="/profile" element={<RequireAuth><ProfilePage /></RequireAuth>} />
                 <Route path="/jobs" element={<RequireAuth><JobsPage /></RequireAuth>} />
+                <Route path="/companies" element={<RequireAuth><CompaniesPage /></RequireAuth>} />
                 <Route path="/jobs/new" element={<RequireAuth><NewJobPage /></RequireAuth>} />
                 <Route path="/jobs/:id" element={<RequireAuth><JobPage /></RequireAuth>} />
                 <Route path="/account" element={<RequireAuth><AccountPage /></RequireAuth>} />
