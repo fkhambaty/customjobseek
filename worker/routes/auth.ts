@@ -98,11 +98,14 @@ export const auth = new Hono<AppEnv>()
       throw new HttpError(403, "Enter your password to delete the account.");
     }
     // Foreign keys cascade, but D1 enforcement depends on the connection, so every table is cleared explicitly.
-    await c.env.DB.batch(
-      ["resumes", "jobs", "profiles", "credit_ledger", "sessions"].map((t) =>
+    await c.env.DB.batch([
+      ...["packs", "resume_uploads", "missed_reports", "resumes", "jobs", "profiles", "credit_ledger", "sessions"].map((t) =>
         c.env.DB.prepare(`DELETE FROM ${t} WHERE user_id = ?`).bind(user.id),
-      ).concat(c.env.DB.prepare("DELETE FROM users WHERE id = ?").bind(user.id)),
-    );
+      ),
+      c.env.DB.prepare("UPDATE companies SET added_by = NULL WHERE added_by = ?").bind(user.id),
+      c.env.DB.prepare("DELETE FROM email_codes WHERE email = ?").bind(user.email),
+      c.env.DB.prepare("DELETE FROM users WHERE id = ?").bind(user.id),
+    ]);
     await endSession(c);
     return c.json({ ok: true });
   });

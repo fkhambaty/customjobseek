@@ -205,7 +205,11 @@ describe("sanitiseProfile", () => {
 
 describe("boards, application file, resume import", () => {
   it("turns a job link into the company career page", () => {
-    expect(detectBoard("https://job-boards.greenhouse.io/anthropic/jobs/4461450008")).toMatchObject({ ats: "greenhouse", token: "anthropic" });
+    expect(detectBoard("https://job-boards.greenhouse.io/anthropic/jobs/4461450008")).toMatchObject({
+      ats: "greenhouse",
+      token: "anthropic",
+      careerUrl: "https://boards.greenhouse.io/anthropic",
+    });
     expect(detectBoard("https://jobs.lever.co/palantir/abc")?.careerUrl).toBe("https://jobs.lever.co/palantir");
     expect(detectBoard("https://jobs.ashbyhq.com/paxos/f8cbcedf")?.ats).toBe("ashby");
   });

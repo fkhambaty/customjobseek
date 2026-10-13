@@ -9,25 +9,11 @@
 
 import { readFileSync } from "node:fs";
 import { webcrypto as crypto } from "node:crypto";
+import { ROOT, d1, envFile } from "./cloud.mjs";
 
-const ROOT = new URL("..", import.meta.url);
 const CC = process.env.COMMAND_CENTER ?? "/Users/fakhruddinkhambaty/Desktop/FK";
 
-function envFile(path) {
-  const out = {};
-  for (const line of readFileSync(path, "utf8").split("\n")) {
-    if (!line || line.startsWith("#") || !line.includes("=")) continue;
-    const [k, ...rest] = line.split("=");
-    out[k.trim()] = rest.join("=").trim().replace(/^["']|["']$/g, "");
-  }
-  return out;
-}
-
-const cf = envFile(`${process.env.HOME}/.config/fk-products/cloudflare.env`);
 const dev = envFile(new URL(".dev.vars", ROOT));
-const wrangler = readFileSync(new URL("wrangler.jsonc", ROOT), "utf8");
-const databaseId = wrangler.match(/"database_id":\s*"([^"]+)"/)?.[1];
-if (!databaseId || databaseId.startsWith("00000000")) throw new Error("Set the real D1 database_id in wrangler.jsonc first.");
 
 const b64 = (bytes) => Buffer.from(bytes).toString("base64");
 const fromB64 = (s) => new Uint8Array(Buffer.from(s, "base64"));
@@ -52,17 +38,6 @@ async function encryptJson(value) {
   const iv = crypto.getRandomValues(new Uint8Array(12));
   const ct = await crypto.subtle.encrypt({ name: "AES-GCM", iv }, key, new TextEncoder().encode(JSON.stringify(value)));
   return `${b64(iv)}.${b64(ct)}`;
-}
-
-async function d1(sql, params = []) {
-  const res = await fetch(`https://api.cloudflare.com/client/v4/accounts/${cf.CLOUDFLARE_ACCOUNT_ID}/d1/database/${databaseId}/query`, {
-    method: "POST",
-    headers: { authorization: `Bearer ${cf.CLOUDFLARE_API_TOKEN}`, "content-type": "application/json" },
-    body: JSON.stringify({ sql, params }),
-  });
-  const body = await res.json();
-  if (!body.success) throw new Error(JSON.stringify(body.errors));
-  return body.result?.[0]?.results ?? [];
 }
 
 function strip(s) {

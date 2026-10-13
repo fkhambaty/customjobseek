@@ -7,7 +7,7 @@ import { requireUser } from "../session";
 export const companies = new Hono<AppEnv>()
   .get("/", async (c) => {
     const { results } = await c.env.DB.prepare(
-      "SELECT id, name, career_url, ats, scan_status, opening_count, last_scan_at FROM companies ORDER BY opening_count DESC, name LIMIT 200",
+      "SELECT id, name, career_url, ats, scan_status, opening_count, last_scan_at FROM companies ORDER BY opening_count DESC, name LIMIT 2000",
     ).all();
     return c.json(results);
   })

@@ -60,6 +60,8 @@ function Header() {
             </>
           ) : (
             <>
+              <NavLink to="/companies">Companies</NavLink>
+              <a href="/#faq">FAQ</a>
               <NavLink to="/pricing">Pricing</NavLink>
               <NavLink to="/login">Sign in</NavLink>
               <Link to="/signup" className="btn btn-primary">
@@ -89,6 +91,10 @@ function Shell({ children }: { children: ReactNode }) {
       <footer className="footer">
         <div className="footer-inner">
           <span>© {new Date().getFullYear()} CustomJobSeek</span>
+          <span className="footer-links">
+            <Link to="/companies">Companies we scan</Link>
+            <a href="/#faq">FAQ</a>
+          </span>
           <span className="muted">Your data is encrypted and yours to delete at any time.</span>
         </div>
       </footer>
@@ -114,7 +120,7 @@ export function App() {
                 <Route path="/pricing" element={<PricingPage />} />
                 <Route path="/profile" element={<RequireAuth><ProfilePage /></RequireAuth>} />
                 <Route path="/jobs" element={<RequireAuth><JobsPage /></RequireAuth>} />
-                <Route path="/companies" element={<RequireAuth><CompaniesPage /></RequireAuth>} />
+                <Route path="/companies" element={<CompaniesPage />} />
                 <Route path="/jobs/new" element={<RequireAuth><NewJobPage /></RequireAuth>} />
                 <Route path="/jobs/:id" element={<RequireAuth><JobPage /></RequireAuth>} />
                 <Route path="/account" element={<RequireAuth><AccountPage /></RequireAuth>} />

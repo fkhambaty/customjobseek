@@ -1,4 +1,5 @@
-import { Link } from "react-router-dom";
+import { useEffect, type ReactNode } from "react";
+import { Link, useLocation } from "react-router-dom";
 import { useSession } from "../session";
 
 const STEPS = [
@@ -25,6 +26,74 @@ const PROMISES = [
   ["Readable by people and parsers", "Single-column, real text, standard headings. It prints to a two-page PDF that applicant tracking systems can read."],
   ["Every application tracked", "Status, notes and a follow-up date for each job, so nothing quietly goes cold."],
 ];
+
+const FAQS: { q: string; a: ReactNode }[] = [
+  {
+    q: "Does it scan for new jobs on its own?",
+    a: (
+      <>
+        Yes, around the clock, not just at night. Every hour it reads the next batch of career boards, oldest first, so each
+        board is refreshed several times a day. See <Link to="/companies">every company we scan</Link>, with the time each
+        one was last read.
+      </>
+    ),
+  },
+  {
+    q: "Which websites does it read?",
+    a: (
+      <>
+        Company career boards on Greenhouse, Lever, Ashby, Workable and SmartRecruiters are read automatically. Workday and
+        other company sites are kept on the <Link to="/companies">list</Link> and read once support for them is added. You
+        can always paste any job link or description to check it straight away.
+      </>
+    ),
+  },
+  {
+    q: "What if it missed a company or a job?",
+    a: (
+      <>
+        Paste the link on the <Link to="/companies">Companies</Link> page. That company's whole career page joins the scan
+        list for everyone, and its open roles are read immediately.
+      </>
+    ),
+  },
+  {
+    q: "Does it use AI to write my resume?",
+    a: "No. The resume, application file and job file are assembled by rules from the lines you wrote. It picks and orders your own experience for each job and never adds a claim you did not make.",
+  },
+  {
+    q: "Will it apply for me?",
+    a: "No. It tells you whether a job is worth your time and gives you a resume for it. You decide and you click apply.",
+  },
+  {
+    q: "Does it work outside India?",
+    a: "Yes. Pick any country and city, set your pay range in any currency and per year, month or hour. Pay is only compared when the job uses the same currency, so nothing is converted by guesswork.",
+  },
+  {
+    q: "Who can see my data?",
+    a: "Only you. Your profile, resumes and files are encrypted before they are stored, and deleting your account removes all of it.",
+  },
+];
+
+function Faq() {
+  const location = useLocation();
+  useEffect(() => {
+    if (location.hash === "#faq") document.getElementById("faq")?.scrollIntoView();
+  }, [location.hash]);
+  return (
+    <section id="faq" className="section">
+      <h2 className="section-title">Questions people ask</h2>
+      <div className="faq">
+        {FAQS.map((f) => (
+          <details key={f.q} className="faq-item">
+            <summary>{f.q}</summary>
+            <p>{f.a}</p>
+          </details>
+        ))}
+      </div>
+    </section>
+  );
+}
 
 function SampleFit() {
   return (
@@ -117,6 +186,8 @@ export function Landing() {
           application you send is relevant, truthful and easy to read.
         </p>
       </section>
+
+      <Faq />
 
       <section className="section cta-band">
         <h2>Stop sending the same resume to every job.</h2>

@@ -26,7 +26,7 @@ export function detectBoard(raw: string): BoardRef | null {
     const jobsAt = parts.indexOf("jobs");
     const token = (jobsAt > 0 ? parts[jobsAt - 1] : parts[0]) ?? "";
     if (!token) return null;
-    return { ats: "greenhouse", token, careerUrl: `https://${host}/${token}`, nameHint: tidy(token) };
+    return { ats: "greenhouse", token, careerUrl: `https://boards.greenhouse.io/${token}`, nameHint: tidy(token) };
   }
   if (host === "jobs.lever.co" && parts[0]) {
     return { ats: "lever", token: parts[0], careerUrl: `https://jobs.lever.co/${parts[0]}`, nameHint: tidy(parts[0]) };
