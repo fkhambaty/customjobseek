@@ -5,9 +5,25 @@ import { addCareerPage } from "../scan";
 import { requireUser } from "../session";
 
 export const companies = new Hono<AppEnv>()
+  .get("/stats", async (c) => {
+    const row = await c.env.DB.prepare(
+      `SELECT COUNT(*) AS employers,
+       SUM(CASE WHEN active = 1 AND scan_status = 'ok' THEN 1 ELSE 0 END) AS readable,
+       SUM(CASE WHEN active = 1 THEN opening_count ELSE 0 END) AS openings,
+       MAX(last_scan_at) AS freshest_at
+       FROM companies WHERE country = 'IN'`,
+    ).first<{ employers: number; readable: number; openings: number; freshest_at: string | null }>();
+    return c.json({
+      employers: row?.employers ?? 0,
+      readable: row?.readable ?? 0,
+      openings: row?.openings ?? 0,
+      freshestAt: row?.freshest_at ?? null,
+    });
+  })
   .get("/", async (c) => {
     const { results } = await c.env.DB.prepare(
-      "SELECT id, name, career_url, ats, scan_status, opening_count, last_scan_at FROM companies ORDER BY opening_count DESC, name LIMIT 2000",
+      `SELECT id, name, career_url, ats, scan_status, opening_count, last_scan_at, country, sectors,
+       verified_at, active FROM companies ORDER BY active DESC, scan_priority DESC, opening_count DESC, name LIMIT 5000`,
     ).all();
     return c.json(results);
   })

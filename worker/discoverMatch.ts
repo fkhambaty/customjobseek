@@ -39,6 +39,14 @@ export function meaningfulTitleMatch(title: string, targets: string[]): number {
   return best >= 0.5 ? best : 0;
 }
 
+export function indiaMarketLocation(location: string): boolean {
+  const value = location.trim().toLowerCase();
+  if (!value) return true;
+  if (/\b(india|bengaluru|bangalore|hyderabad|pune|gurugram|gurgaon|noida|mumbai|chennai|kolkata|ahmedabad|delhi|ncr|kochi|cochin|jaipur|chandigarh|indore|bhubaneswar|thiruvananthapuram)\b/.test(value)) return true;
+  if (!/\b(remote|work from home|anywhere)\b/.test(value)) return false;
+  return !/\b(us|usa|uk|ca|canada|be|belgium|au|australia|europe|emea|americas|latin america|united states|united kingdom|germany|france|spain|netherlands|singapore|japan)\b/.test(value);
+}
+
 export async function matchingRows(env: Env, userId: string, profile: Profile): Promise<DiscoverRow[]> {
   const targets = profile.preferences.targetRoles;
   const keywords = [...new Set(targets.flatMap(titleTokens))].filter((w) => w.length >= 3).slice(0, MAX_KEYWORDS);
@@ -57,6 +65,7 @@ export async function matchingRows(env: Env, userId: string, profile: Profile): 
   const excluded = profile.preferences.excludedTitleWords.map((w) => w.toLowerCase()).filter(Boolean);
   const rows: DiscoverRow[] = [];
   for (const o of results) {
+    if (profile.preferences.country === "IN" && !indiaMarketLocation(o.location)) continue;
     const lower = o.title.toLowerCase();
     if (excluded.some((w) => lower.includes(w))) continue;
     const match = meaningfulTitleMatch(o.title, targets);

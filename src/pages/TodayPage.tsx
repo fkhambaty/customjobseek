@@ -4,6 +4,7 @@ import { computeAnalytics, todayQueues } from "../../shared/engine/insights";
 import type { JobRecord, Profile } from "../../shared/types";
 import { profileReadiness } from "../../shared/validate";
 import { JobLine, type LineMode } from "../components/JobLine";
+import { MarketScanConsole } from "../components/MarketScanConsole";
 import { useJobs } from "../data";
 import { pct, plural, today } from "../format";
 import { useSession } from "../session";
@@ -37,11 +38,17 @@ function Welcome({ greeting, name, profile }: { greeting: string; name: string |
   const missing = profile ? profileReadiness(profile) : ["your profile"];
   const ready = missing.length === 0;
   const scanUsed = ready && (account?.scanRuns ?? 1) < 1;
-  const action = !ready
-    ? { href: "/profile", label: "Finish your profile" }
-    : scanUsed
-      ? { href: "/jobs/new", label: "Check a job" }
-      : { href: "/discover", label: "Scan for your first 3 jobs" };
+  if (ready) {
+    return (
+      <div className="page">
+        <p className="kicker">Your search starts here</p>
+        <h1 className="page-title">{greeting}{name ? `, ${name}` : ""}.</h1>
+        <p className="lede today-scan-lede">One scan reads the strongest openings for your roles and prepares the work worth doing next.</p>
+        <MarketScanConsole />
+        <p className="welcome-note">Prefer to start with one role? <Link to="/jobs/new">Paste a job yourself</Link>.</p>
+      </div>
+    );
+  }
   const steps = [
     { when: ready ? "Done" : "Now", title: "Write what is true", body: ready ? "Your roles, skills and the places you accept are saved." : `Still needed: ${missing.join(", ")}.` },
     { when: !ready || scanUsed ? "Then" : "Now", title: "Let one scan prepare three jobs", body: scanUsed ? "Your free scan has been used." : "The strongest matches get a fit score, a resume and an application pack." },
@@ -66,9 +73,7 @@ function Welcome({ greeting, name, profile }: { greeting: string; name: string |
             ))}
           </ol>
           <div className="welcome-actions">
-            <Link to={action.href} className="btn btn-primary btn-lg">{action.label}</Link>
-            {ready && !scanUsed && <Link to="/jobs/new" className="welcome-quiet">Or paste one job yourself</Link>}
-            {scanUsed && <Link to="/pricing" className="welcome-quiet">Daily scans come with a paid plan</Link>}
+            <Link to="/profile" className="btn btn-primary btn-lg">Finish your profile</Link>
           </div>
         </div>
         <div>
@@ -119,6 +124,8 @@ export function TodayPage() {
         </div>
         <Link to="/jobs/new" className="btn btn-ghost">Check a job</Link>
       </div>
+
+      <MarketScanConsole compact />
 
       <dl className="tally">
         <div><dt>To apply</dt><dd>{count(["evaluated", "resume_ready"])}</dd></div>

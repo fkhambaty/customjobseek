@@ -29,7 +29,10 @@ async function save(company: Company, openings: Awaited<ReturnType<typeof listOp
       chunk.flatMap((o) => [company.id, o.externalId, o.title.slice(0, 200), o.location.slice(0, 200), o.url.slice(0, 1000), now]),
     );
   }
-  await query("UPDATE companies SET scan_status = 'ok', last_error = '', opening_count = ?, last_scan_at = ? WHERE id = ?", [listed.length, now, company.id]);
+  await query(
+    "UPDATE companies SET scan_status = 'ok', last_error = '', opening_count = ?, last_scan_at = ?, next_scan_at = ?, consecutive_failures = 0 WHERE id = ?",
+    [listed.length, now, new Date(Date.now() + 6 * 60 * 60_000).toISOString(), company.id],
+  );
   return listed.length;
 }
 
@@ -45,7 +48,9 @@ async function scan(company: Company): Promise<void> {
 }
 
 const companies = (await query(
-  "SELECT id, name, ats, board_token, career_url FROM companies WHERE ats IN ('greenhouse','lever','ashby','workable','smartrecruiters') ORDER BY last_scan_at IS NOT NULL, last_scan_at",
+  `SELECT id, name, ats, board_token, career_url FROM companies
+   WHERE active = 1 AND ats IN ('greenhouse','lever','ashby','workable','smartrecruiters','workday')
+   ORDER BY scan_priority DESC, last_scan_at IS NOT NULL, last_scan_at`,
 )) as unknown as Company[];
 
 const queue = [...companies];

@@ -3,6 +3,58 @@ export const IST_OFFSET_MS = (5 * 60 + 30) * 60 * 1000;
 export const MANUAL_COOLDOWN_MS = 6 * 60 * 60 * 1000;
 export const SCAN_LOCK_MS = 2 * 60 * 1000;
 export const SCHEDULES_PER_TICK = 10;
+export const SCANS_PER_TICK = 2;
+
+export type ScanStage =
+  | "queued"
+  | "searching"
+  | "reading"
+  | "checking_fit"
+  | "building_resumes"
+  | "building_packs"
+  | "complete"
+  | "failed";
+
+export const SCAN_STAGE_LABELS: Record<ScanStage, string> = {
+  queued: "Waiting for a scan slot",
+  searching: "Searching the India market",
+  reading: "Reading the strongest openings",
+  checking_fit: "Checking fit and deal-breakers",
+  building_resumes: "Building truthful resumes",
+  building_packs: "Finishing application packs",
+  complete: "Your handpicked jobs are ready",
+  failed: "The scan stopped",
+};
+
+export function estimatedScanSeconds(completedDurations: number[], queueAhead: number): number {
+  const usable = completedDurations.filter((seconds) => Number.isFinite(seconds) && seconds >= 10 && seconds <= 900);
+  const own = usable.length ? Math.round(usable.reduce((sum, seconds) => sum + seconds, 0) / usable.length) : 120;
+  return Math.max(45, Math.min(900, own * (queueAhead + 1)));
+}
+
+export function scanProgress(stage: ScanStage, checked: number, candidates: number): number | null {
+  switch (stage) {
+    case "queued":
+      return 0;
+    case "searching":
+      return null;
+    case "reading":
+      return candidates > 0 ? Math.min(62, 12 + Math.round((checked / candidates) * 50)) : null;
+    case "checking_fit":
+      return 68;
+    case "building_resumes":
+      return 78;
+    case "building_packs":
+      return 90;
+    case "complete":
+    case "failed":
+      return 100;
+    default: {
+      const unexpected: never = stage;
+      return unexpected;
+    }
+  }
+}
 
 export function nextRunAt(hourIst: number, now: Date): string {
   if (!Number.isInteger(hourIst) || hourIst < 0 || hourIst > 23) throw new Error("Pick an hour from 0 to 23.");

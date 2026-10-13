@@ -1,22 +1,67 @@
-import { canRunManual, formatIstClock, nextRunAt, SCAN_LOCK_MS, SCHEDULES_PER_TICK, shouldCharge } from "../shared/engine/scanRules";
+import {
+  canRunManual,
+  estimatedScanSeconds,
+  formatIstClock,
+  nextRunAt,
+  SCAN_LOCK_MS,
+  SCANS_PER_TICK,
+  SCHEDULES_PER_TICK,
+  scanProgress,
+  type ScanStage,
+} from "../shared/engine/scanRules";
 import type { JobRecord } from "../shared/types";
 import { profileReadiness } from "../shared/validate";
-import { MAX_DEEP_CHECKS, PACKS_PER_SCAN, checkOpening, matchingRows, packStatements, type CheckedOpening, type DiscoverRow } from "./discoverMatch";
+import { MAX_DEEP_CHECKS, PACKS_PER_SCAN, checkOpening, matchingRows, packStatements, type CheckedOpening } from "./discoverMatch";
 import { HttpError, type Env, type UserRow } from "./env";
 import { loadProfile } from "./routes/profile";
 import { JOB_SELECT, toJob, type JobRow } from "./routes/serialise";
 
-export interface ScanResult {
-  prepared: JobRecord[];
-  locked: DiscoverRow[];
-  checked: number;
-  charged: boolean;
+type ScanTrigger = "manual" | "scheduled";
+type ScanStatus = "queued" | "processing" | "complete" | "failed";
+
+interface MarketScanRow {
+  id: string;
+  user_id: string;
+  trigger: ScanTrigger;
+  status: ScanStatus;
+  stage: ScanStage;
+  queued_at: string;
+  started_at: string | null;
+  updated_at: string;
+  completed_at: string | null;
+  estimated_seconds: number;
+  candidate_count: number;
+  checked_count: number;
+  handpicked_count: number;
+  charged: number;
+  result_job_ids: string;
+  error: string;
 }
 
-async function logRun(env: Env, userId: string, trigger: "manual" | "scheduled", prepared: number, charged: boolean, note: string): Promise<void> {
+export interface MarketScanView {
+  id: string;
+  trigger: ScanTrigger;
+  status: ScanStatus;
+  stage: ScanStage;
+  queuedAt: string;
+  startedAt: string | null;
+  completedAt: string | null;
+  estimatedSeconds: number;
+  elapsedSeconds: number;
+  queueAhead: number;
+  candidateCount: number;
+  checkedCount: number;
+  handpickedCount: number;
+  charged: boolean;
+  progress: number | null;
+  error: string;
+  prepared: JobRecord[];
+}
+
+async function logRun(env: Env, scanId: string, userId: string, trigger: ScanTrigger, prepared: number, charged: boolean, note: string): Promise<void> {
   await env.DB.prepare(
-    "INSERT INTO scan_runs_log (id, user_id, trigger, prepared_count, charged, note) VALUES (?, ?, ?, ?, ?, ?)",
-  ).bind(crypto.randomUUID(), userId, trigger, prepared, charged ? 1 : 0, note.slice(0, 300)).run();
+    "INSERT INTO scan_runs_log (id, user_id, trigger, prepared_count, charged, note, market_scan_id) VALUES (?, ?, ?, ?, ?, ?, ?)",
+  ).bind(crypto.randomUUID(), userId, trigger, prepared, charged ? 1 : 0, note.slice(0, 300), scanId).run();
 }
 
 async function pauseSchedule(env: Env, userId: string, reason: string): Promise<void> {
@@ -31,15 +76,23 @@ async function advanceSchedule(env: Env, userId: string, now: Date): Promise<voi
     .run();
 }
 
-async function choose(env: Env, userId: string, profile: Awaited<ReturnType<typeof loadProfile>>, limit: number): Promise<{ chosen: CheckedOpening[]; rows: DiscoverRow[]; checked: number }> {
-  const rows = await matchingRows(env, userId, profile);
-  const readable = (await Promise.all(rows.slice(0, MAX_DEEP_CHECKS).map((row) => checkOpening(row, profile))))
-    .filter((item): item is CheckedOpening => item !== null && item.fit.blockers.length === 0);
-  const chosen = readable.sort((a, b) => b.row.match - a.row.match || b.fit.score - a.fit.score).slice(0, limit);
-  return { chosen, rows, checked: Math.min(rows.length, MAX_DEEP_CHECKS) };
+async function updateStage(env: Env, scanId: string, stage: ScanStage, values: { candidates?: number; checked?: number } = {}): Promise<void> {
+  await env.DB.prepare(
+    `UPDATE market_scans SET stage = ?, candidate_count = COALESCE(?, candidate_count),
+     checked_count = COALESCE(?, checked_count), heartbeat_at = ?, updated_at = ? WHERE id = ?`,
+  ).bind(stage, values.candidates ?? null, values.checked ?? null, new Date().toISOString(), new Date().toISOString(), scanId).run();
 }
 
-export async function runScan(env: Env, user: UserRow, trigger: "manual" | "scheduled"): Promise<ScanResult> {
+async function averageDurations(env: Env): Promise<number[]> {
+  const { results } = await env.DB.prepare(
+    `SELECT CAST((julianday(completed_at) - julianday(started_at)) * 86400 AS INTEGER) AS seconds
+     FROM market_scans WHERE status = 'complete' AND started_at IS NOT NULL AND completed_at IS NOT NULL
+     ORDER BY completed_at DESC LIMIT 20`,
+  ).all<{ seconds: number }>();
+  return results.map((row) => row.seconds);
+}
+
+export async function enqueueScan(env: Env, user: UserRow, trigger: ScanTrigger): Promise<MarketScanView | null> {
   const now = new Date();
   const profile = await loadProfile(env, user.id, user.email);
   const missing = profileReadiness(profile);
@@ -49,8 +102,7 @@ export async function runScan(env: Env, user: UserRow, trigger: "manual" | "sche
       : "Add the job titles you want to your profile first.";
     if (trigger === "scheduled") {
       await pauseSchedule(env, user.id, message);
-      await logRun(env, user.id, trigger, 0, false, message);
-      return { prepared: [], locked: [], checked: 0, charged: false };
+      return null;
     }
     throw new HttpError(400, message);
   }
@@ -68,11 +120,15 @@ export async function runScan(env: Env, user: UserRow, trigger: "manual" | "sche
     const reason = runs < 1 ? "No scan runs left." : "No application packs left.";
     if (trigger === "scheduled") {
       await pauseSchedule(env, user.id, reason);
-      await logRun(env, user.id, trigger, 0, false, reason);
-      return { prepared: [], locked: [], checked: 0, charged: false };
+      return null;
     }
     throw new HttpError(402, runs < 1 ? "You have used your scans. A paid plan or a run pack adds more." : "You have used all your application packs. Pick a plan to scan again.");
   }
+
+  const active = await env.DB.prepare(
+    "SELECT id FROM market_scans WHERE user_id = ? AND status IN ('queued', 'processing') ORDER BY queued_at DESC LIMIT 1",
+  ).bind(user.id).first<{ id: string }>();
+  if (active) return marketScanView(env, user.id, active.id);
 
   const lockUntil = new Date(now.getTime() + SCAN_LOCK_MS).toISOString();
   const locked = await env.DB.prepare(
@@ -81,53 +137,108 @@ export async function runScan(env: Env, user: UserRow, trigger: "manual" | "sche
   if (!locked.meta.changes) throw new HttpError(409, "A scan is already running. Give it a minute.");
 
   try {
-    const { chosen, rows, checked } = await choose(env, user.id, profile, packs);
-    if (!chosen.length) {
-      if (trigger === "manual") {
-        await env.DB.prepare("UPDATE users SET last_manual_scan_at = ? WHERE id = ?").bind(now.toISOString(), user.id).run();
-      } else {
-        await advanceSchedule(env, user.id, now);
-      }
-      await logRun(env, user.id, trigger, 0, false, "Nothing new was ready to prepare.");
-      throw new HttpError(422, "The strongest title matches could not be read or had a deal-breaker. Nothing was charged.");
+    const queued = await env.DB.prepare("SELECT COUNT(*) AS n FROM market_scans WHERE status IN ('queued', 'processing')")
+      .first<{ n: number }>();
+    const estimate = estimatedScanSeconds(await averageDurations(env), queued?.n ?? 0);
+    const id = crypto.randomUUID();
+    await env.DB.prepare(
+      `INSERT INTO market_scans (id, user_id, trigger, estimated_seconds)
+       VALUES (?, ?, ?, ?)`,
+    ).bind(id, user.id, trigger, estimate).run();
+    if (trigger === "manual") {
+      await env.DB.prepare("UPDATE users SET last_manual_scan_at = ? WHERE id = ?").bind(now.toISOString(), user.id).run();
+    } else {
+      await advanceSchedule(env, user.id, now);
     }
-
-    const reserved = await env.DB.prepare(
-      `UPDATE users SET eval_credits = eval_credits - ?, resume_credits = resume_credits - ?, scan_runs = scan_runs - 1,
-         last_manual_scan_at = CASE WHEN ? = 'manual' THEN ? ELSE last_manual_scan_at END
-       WHERE id = ? AND eval_credits >= ? AND resume_credits >= ? AND scan_runs >= 1`,
-    ).bind(chosen.length, chosen.length, trigger, now.toISOString(), user.id, chosen.length, chosen.length).run();
-    if (!reserved.meta.changes) throw new HttpError(409, "Your credits changed while this scan was running. Refresh and try again.");
-
-    let packsSaved: { id: string; statements: D1PreparedStatement[] }[];
-    try {
-      packsSaved = [];
-      for (const item of chosen) packsSaved.push(await packStatements(env, user.id, profile, item));
-      await env.DB.batch([
-        ...packsSaved.flatMap((pack) => pack.statements),
-        env.DB.prepare(
-          "INSERT INTO credit_ledger (user_id, kind, runs_delta, note) VALUES (?, 'spend_scan_run', -1, ?)",
-        ).bind(user.id, trigger === "manual" ? "manual scan" : "daily scan"),
-      ]);
-    } catch (error) {
-      await env.DB.prepare(
-        "UPDATE users SET eval_credits = eval_credits + ?, resume_credits = resume_credits + ?, scan_runs = scan_runs + 1 WHERE id = ?",
-      ).bind(chosen.length, chosen.length, user.id).run();
-      throw error;
-    }
-
-    const prepared = await Promise.all(packsSaved.map(async (pack) => {
-      const row = await env.DB.prepare(`${JOB_SELECT} WHERE j.id = ? AND j.user_id = ?`).bind(pack.id, user.id).first<JobRow>();
-      if (!row) throw new Error("Prepared job was not saved");
-      return toJob(row);
-    }));
-    if (trigger === "scheduled") await advanceSchedule(env, user.id, now);
-    await logRun(env, user.id, trigger, prepared.length, shouldCharge(prepared.length), "");
-    const preparedUrls = new Set(prepared.map((job) => job.url));
-    return { prepared, locked: rows.filter((row) => !preparedUrls.has(row.url)), checked, charged: true };
+    return marketScanView(env, user.id, id);
   } finally {
     await env.DB.prepare("UPDATE users SET scan_lock_until = NULL WHERE id = ?").bind(user.id).run();
   }
+}
+
+async function completeWithNothing(env: Env, scan: MarketScanRow, message: string): Promise<void> {
+  const now = new Date().toISOString();
+  await env.DB.prepare(
+    `UPDATE market_scans SET status = 'complete', stage = 'complete', completed_at = ?, updated_at = ?,
+     handpicked_count = 0, charged = 0, note = ? WHERE id = ?`,
+  ).bind(now, now, message, scan.id).run();
+  await env.DB.prepare("DELETE FROM market_scan_candidates WHERE scan_id = ?").bind(scan.id).run();
+  await logRun(env, scan.id, scan.user_id, scan.trigger, 0, false, message);
+}
+
+async function processScan(env: Env, scan: MarketScanRow): Promise<void> {
+  const user = await env.DB.prepare("SELECT * FROM users WHERE id = ?").bind(scan.user_id).first<UserRow>();
+  if (!user) throw new Error("Account not found");
+  const profile = await loadProfile(env, user.id, user.email);
+  const packs = Math.min(PACKS_PER_SCAN, user.eval_credits, user.resume_credits);
+  if ((user.scan_runs ?? 0) < 1 || packs < 1) {
+    await completeWithNothing(env, scan, (user.scan_runs ?? 0) < 1 ? "No scan runs left." : "No application packs left.");
+    return;
+  }
+
+  await updateStage(env, scan.id, "searching");
+  const rows = await matchingRows(env, user.id, profile);
+  const candidates = rows.slice(0, MAX_DEEP_CHECKS);
+  if (!candidates.length) {
+    await completeWithNothing(env, scan, "No new title and location matches were found. Nothing was charged.");
+    return;
+  }
+  await env.DB.batch(candidates.map((row, position) =>
+    env.DB.prepare(
+      "INSERT OR IGNORE INTO market_scan_candidates (scan_id, position, url) VALUES (?, ?, ?)",
+    ).bind(scan.id, position, row.url),
+  ));
+  await updateStage(env, scan.id, "reading", { candidates: candidates.length, checked: 0 });
+  const readable: CheckedOpening[] = [];
+  for (let i = 0; i < candidates.length; i += 4) {
+    const batch = await Promise.all(candidates.slice(i, i + 4).map((row) => checkOpening(row, profile)));
+    for (const checked of batch) {
+      if (checked && checked.fit.blockers.length === 0) readable.push(checked);
+    }
+    const done = Math.min(i + 4, candidates.length);
+    await updateStage(env, scan.id, "reading", { checked: done });
+    await env.DB.batch(candidates.slice(i, i + 4).map((row) =>
+      env.DB.prepare("UPDATE market_scan_candidates SET status = 'checked' WHERE scan_id = ? AND url = ?").bind(scan.id, row.url),
+    ));
+  }
+  await updateStage(env, scan.id, "checking_fit", { checked: candidates.length });
+  const chosen = readable.sort((a, b) => b.row.match - a.row.match || b.fit.score - a.fit.score).slice(0, packs);
+  if (!chosen.length) {
+    await completeWithNothing(env, scan, "The strongest openings had a deal-breaker or could not be read. Nothing was charged.");
+    return;
+  }
+
+  await updateStage(env, scan.id, "building_resumes");
+  const packsSaved: { id: string; statements: D1PreparedStatement[] }[] = [];
+  for (const item of chosen) packsSaved.push(await packStatements(env, user.id, profile, item));
+  await updateStage(env, scan.id, "building_packs");
+  const reserved = await env.DB.prepare(
+    `UPDATE users SET eval_credits = eval_credits - ?, resume_credits = resume_credits - ?, scan_runs = scan_runs - 1
+     WHERE id = ? AND eval_credits >= ? AND resume_credits >= ? AND scan_runs >= 1`,
+  ).bind(chosen.length, chosen.length, user.id, chosen.length, chosen.length).run();
+  if (!reserved.meta.changes) throw new Error("Credits changed while this scan was running.");
+
+  try {
+    await env.DB.batch([
+      ...packsSaved.flatMap((pack) => pack.statements),
+      env.DB.prepare(
+        "INSERT INTO credit_ledger (user_id, kind, runs_delta, note) VALUES (?, 'spend_scan_run', -1, ?)",
+      ).bind(user.id, scan.trigger === "manual" ? "manual market scan" : "daily market scan"),
+    ]);
+  } catch (error) {
+    await env.DB.prepare(
+      "UPDATE users SET eval_credits = eval_credits + ?, resume_credits = resume_credits + ?, scan_runs = scan_runs + 1 WHERE id = ?",
+    ).bind(chosen.length, chosen.length, user.id).run();
+    throw error;
+  }
+  const now = new Date().toISOString();
+  const ids = packsSaved.map((pack) => pack.id);
+  await env.DB.prepare(
+    `UPDATE market_scans SET status = 'complete', stage = 'complete', completed_at = ?, updated_at = ?,
+     handpicked_count = ?, charged = 1, result_job_ids = ? WHERE id = ?`,
+  ).bind(now, now, ids.length, JSON.stringify(ids), scan.id).run();
+  await env.DB.prepare("DELETE FROM market_scan_candidates WHERE scan_id = ?").bind(scan.id).run();
+  await logRun(env, scan.id, user.id, scan.trigger, ids.length, true, "");
 }
 
 export async function runDueSchedules(env: Env): Promise<void> {
@@ -139,10 +250,82 @@ export async function runDueSchedules(env: Env): Promise<void> {
   ).bind(now, SCHEDULES_PER_TICK).all<UserRow>();
   for (const user of results) {
     try {
-      await runScan(env, user, "scheduled");
+      await enqueueScan(env, user, "scheduled");
     } catch (error) {
-      if (error instanceof HttpError && error.status === 422) continue;
       console.error("scheduled scan failed", user.id, error);
     }
   }
+}
+
+export async function processQueuedScans(env: Env): Promise<void> {
+  const stale = new Date(Date.now() - 5 * 60_000).toISOString();
+  await env.DB.prepare(
+    `UPDATE market_scans SET status = 'queued', stage = 'queued', error = ''
+     WHERE status = 'processing' AND (heartbeat_at IS NULL OR heartbeat_at < ?) AND charged = 0`,
+  ).bind(stale).run();
+  const { results } = await env.DB.prepare(
+    "SELECT * FROM market_scans WHERE status = 'queued' ORDER BY queued_at LIMIT ?",
+  ).bind(SCANS_PER_TICK).all<MarketScanRow>();
+  for (const scan of results) {
+    const now = new Date().toISOString();
+    const claimed = await env.DB.prepare(
+      `UPDATE market_scans SET status = 'processing', stage = 'searching', started_at = COALESCE(started_at, ?),
+       heartbeat_at = ?, updated_at = ? WHERE id = ? AND status = 'queued'`,
+    ).bind(now, now, now, scan.id).run();
+    if (!claimed.meta.changes) continue;
+    try {
+      await processScan(env, { ...scan, status: "processing", stage: "searching", started_at: scan.started_at ?? now });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "The scan stopped unexpectedly.";
+      if (scan.trigger === "manual") {
+        await env.DB.prepare("UPDATE users SET last_manual_scan_at = NULL WHERE id = ?").bind(scan.user_id).run();
+      }
+      await env.DB.prepare(
+        `UPDATE market_scans SET status = 'failed', stage = 'failed', error = ?, completed_at = ?, updated_at = ?
+         WHERE id = ?`,
+      ).bind(message.slice(0, 300), new Date().toISOString(), new Date().toISOString(), scan.id).run();
+      await env.DB.prepare("DELETE FROM market_scan_candidates WHERE scan_id = ?").bind(scan.id).run();
+      await logRun(env, scan.id, scan.user_id, scan.trigger, 0, false, message);
+      console.error("market scan failed", scan.id, error);
+    }
+  }
+}
+
+export async function marketScanView(env: Env, userId: string, scanId?: string): Promise<MarketScanView | null> {
+  const row = scanId
+    ? await env.DB.prepare("SELECT * FROM market_scans WHERE id = ? AND user_id = ?").bind(scanId, userId).first<MarketScanRow>()
+    : await env.DB.prepare(
+      "SELECT * FROM market_scans WHERE user_id = ? ORDER BY queued_at DESC LIMIT 1",
+    ).bind(userId).first<MarketScanRow>();
+  if (!row) return null;
+  const { results: ahead } = await env.DB.prepare(
+    "SELECT id FROM market_scans WHERE status IN ('queued','processing') AND queued_at < ?",
+  ).bind(row.queued_at).all<{ id: string }>();
+  const ids = JSON.parse(row.result_job_ids || "[]") as string[];
+  const prepared: JobRecord[] = [];
+  for (const id of ids) {
+    const job = await env.DB.prepare(`${JOB_SELECT} WHERE j.id = ? AND j.user_id = ?`).bind(id, userId).first<JobRow>();
+    if (job) prepared.push(toJob(job));
+  }
+  const rawStarted = row.started_at ?? row.queued_at;
+  const started = new Date(rawStarted.includes("T") ? rawStarted : `${rawStarted.replace(" ", "T")}Z`).getTime();
+  return {
+    id: row.id,
+    trigger: row.trigger,
+    status: row.status,
+    stage: row.stage,
+    queuedAt: row.queued_at,
+    startedAt: row.started_at,
+    completedAt: row.completed_at,
+    estimatedSeconds: row.estimated_seconds,
+    elapsedSeconds: Math.max(0, Math.round((Date.now() - started) / 1000)),
+    queueAhead: ahead.length,
+    candidateCount: row.candidate_count,
+    checkedCount: row.checked_count,
+    handpickedCount: row.handpicked_count,
+    charged: Boolean(row.charged),
+    progress: scanProgress(row.stage, row.checked_count, row.candidate_count),
+    error: row.error,
+    prepared,
+  };
 }

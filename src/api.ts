@@ -85,6 +85,43 @@ export interface DiscoverScan {
   checked: number;
 }
 
+export type MarketScanStage =
+  | "queued"
+  | "searching"
+  | "reading"
+  | "checking_fit"
+  | "building_resumes"
+  | "building_packs"
+  | "complete"
+  | "failed";
+
+export interface MarketScan {
+  id: string;
+  trigger: "manual" | "scheduled";
+  status: "queued" | "processing" | "complete" | "failed";
+  stage: MarketScanStage;
+  queuedAt: string;
+  startedAt: string | null;
+  completedAt: string | null;
+  estimatedSeconds: number;
+  elapsedSeconds: number;
+  queueAhead: number;
+  candidateCount: number;
+  checkedCount: number;
+  handpickedCount: number;
+  charged: boolean;
+  progress: number | null;
+  error: string;
+  prepared: JobRecord[];
+}
+
+export interface MarketStats {
+  employers: number;
+  readable: number;
+  openings: number;
+  freshestAt: string | null;
+}
+
 export interface ScanSchedule {
   schedule: { hourIst: number; enabled: boolean; nextRunAt: string | null; pausedReason: string } | null;
   scanRuns: number;
@@ -122,6 +159,10 @@ export interface CompanyRow {
   scan_status: string;
   opening_count: number;
   last_scan_at: string | null;
+  country: string;
+  sectors: string;
+  verified_at: string | null;
+  active: number;
 }
 
 export const api = {
@@ -162,7 +203,9 @@ export const api = {
   activity: () => call<Activity[]>("GET", "/jobs/activity"),
   people: () => call<Person[]>("GET", "/jobs/people"),
   discover: () => call<{ needsTargets: boolean; rows: DiscoverRow[] }>("GET", "/discover"),
-  scanDiscover: () => call<DiscoverScan>("POST", "/discover/scan"),
+  scanDiscover: () => call<{ scan: MarketScan }>("POST", "/discover/scan"),
+  currentMarketScan: () => call<{ scan: MarketScan | null }>("GET", "/discover/scan/current"),
+  marketScan: (id: string) => call<{ scan: MarketScan }>("GET", `/discover/scan/${enc(id)}`),
   scanSchedule: () => call<ScanSchedule>("GET", "/discover/schedule"),
   saveScanSchedule: (body: { enabled: boolean; hourIst: number }) => call<ScanSchedule>("PUT", "/discover/schedule", body),
   resumes: () => call<ResumeLibrary>("GET", "/resumes"),
@@ -173,6 +216,7 @@ export const api = {
   getPack: (id: string) => call<Pack>("GET", `/jobs/${enc(id)}/pack`),
   makeResume: (id: string) => call<Pack>("POST", `/jobs/${enc(id)}/resume`),
   companies: () => call<CompanyRow[]>("GET", "/companies"),
+  companyStats: () => call<MarketStats>("GET", "/companies/stats"),
   openings: (id: string) => call<{ title: string; location: string; url: string }[]>("GET", `/companies/${id}/openings`),
   reportMissed: (url: string, note: string) =>
     call<{ companyId: string; name: string; ats: string; count: number; error: string }>("POST", "/companies/missed", { url, note }),

@@ -1,12 +1,12 @@
 import { Hono } from "hono";
 import { canRunManual, formatIstClock, nextRunAt } from "../../shared/engine/scanRules";
-import { runScan } from "../autoScan";
+import { enqueueScan, marketScanView } from "../autoScan";
 import { matchingRows } from "../discoverMatch";
 import { HttpError, type AppEnv } from "../env";
 import { requireUser } from "../session";
 import { loadProfile } from "./profile";
 
-export { contactsFrom, meaningfulTitleMatch } from "../discoverMatch";
+export { contactsFrom, indiaMarketLocation, meaningfulTitleMatch } from "../discoverMatch";
 export type { DiscoverRow } from "../discoverMatch";
 
 interface ScheduleRow {
@@ -84,7 +84,18 @@ export const discover = new Hono<AppEnv>()
     ).bind(user.id, hourIst, enabled ? 1 : 0, enabled ? next : null).run();
     return c.json(await scheduleView(c.env, user.id, user.scan_runs ?? 0, user.last_manual_scan_at ?? null));
   })
+  .get("/scan/current", async (c) => {
+    const user = c.get("user");
+    return c.json({ scan: await marketScanView(c.env, user.id) });
+  })
+  .get("/scan/:id", async (c) => {
+    const user = c.get("user");
+    const scan = await marketScanView(c.env, user.id, c.req.param("id"));
+    if (!scan) throw new HttpError(404, "Scan not found.");
+    return c.json({ scan });
+  })
   .post("/scan", async (c) => {
-    const result = await runScan(c.env, c.get("user"), "manual");
-    return c.json({ prepared: result.prepared, locked: result.locked, checked: result.checked });
+    const scan = await enqueueScan(c.env, c.get("user"), "manual");
+    if (!scan) throw new HttpError(500, "The scan could not be queued.");
+    return c.json({ scan }, 202);
   });

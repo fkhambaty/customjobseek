@@ -8,7 +8,7 @@ import { discover } from "./routes/discover";
 import { jobs } from "./routes/jobs";
 import { profile } from "./routes/profile";
 import { resumes } from "./routes/resumes";
-import { runDueSchedules } from "./autoScan";
+import { processQueuedScans, runDueSchedules } from "./autoScan";
 import { scanDue } from "./scan";
 import { requireUser } from "./session";
 
@@ -53,10 +53,10 @@ app.onError((err, c) => {
   return c.json({ error: "Something went wrong on our side. Please try again." }, 500);
 });
 
-type Schedule = "17 * * * *" | "30 * * * *";
+type Schedule = "17 * * * *" | "30 * * * *" | "* * * * *";
 
 function knownSchedule(cron: string): Schedule | null {
-  if (cron === "17 * * * *" || cron === "30 * * * *") return cron;
+  if (cron === "17 * * * *" || cron === "30 * * * *" || cron === "* * * * *") return cron;
   return null;
 }
 
@@ -74,6 +74,9 @@ export default {
         return;
       case "30 * * * *":
         ctx.waitUntil(runDueSchedules(env));
+        return;
+      case "* * * * *":
+        ctx.waitUntil(processQueuedScans(env));
         return;
       default: {
         const unexpected: never = job;

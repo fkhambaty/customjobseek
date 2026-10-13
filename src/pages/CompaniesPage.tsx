@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { Link } from "react-router-dom";
-import { api, type CompanyRow } from "../api";
+import { api, type CompanyRow, type MarketStats } from "../api";
 import { useSession } from "../session";
 
-const SCANNED = new Set(["greenhouse", "lever", "ashby", "workable", "smartrecruiters"]);
+const SCANNED = new Set(["greenhouse", "lever", "ashby", "workable", "smartrecruiters", "workday"]);
 
 const ATS_LABEL: Record<string, string> = {
   greenhouse: "Greenhouse",
@@ -18,13 +18,14 @@ const ATS_LABEL: Record<string, string> = {
 function lastScan(c: CompanyRow): string {
   if (!SCANNED.has(c.ats)) return "Saved, not read automatically yet";
   if (!c.last_scan_at) return "Waiting for its first scan";
-  const when = new Date(`${c.last_scan_at.replace(" ", "T")}Z`);
+  const when = new Date(c.last_scan_at.includes("T") ? c.last_scan_at : `${c.last_scan_at.replace(" ", "T")}Z`);
   return `${c.opening_count} openings · scanned ${when.toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" })}`;
 }
 
 export function CompaniesPage() {
   const { account } = useSession();
   const [rows, setRows] = useState<CompanyRow[] | null>(null);
+  const [stats, setStats] = useState<MarketStats | null>(null);
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState<string | null>(null);
   const [jobs, setJobs] = useState<{ title: string; location: string; url: string }[]>([]);
@@ -36,6 +37,7 @@ export function CompaniesPage() {
 
   function load() {
     api.companies().then(setRows, (e: Error) => setError(e.message));
+    api.companyStats().then(setStats, () => undefined);
   }
   useEffect(load, []);
 
@@ -44,8 +46,6 @@ export function CompaniesPage() {
     if (!q) return rows ?? [];
     return (rows ?? []).filter((c) => c.name.toLowerCase().includes(q) || c.career_url.toLowerCase().includes(q));
   }, [rows, query]);
-
-  const scannedCount = (rows ?? []).filter((c) => SCANNED.has(c.ats)).length;
 
   async function submit(e: FormEvent) {
     e.preventDefault();
@@ -70,14 +70,16 @@ export function CompaniesPage() {
     <div className="page">
       <h1>Companies we scan</h1>
       <p className="muted">
-        The list started with career boards known to be hiring and grows each time someone reports a link we missed. Greenhouse, Lever, Ashby, Workable and
-        SmartRecruiters boards are read every hour, oldest first, so each one is refreshed several times a day. Workday
-        and other sites are kept on the list and will be read once support for them is added.
+        A source-qualified catalog of employers hiring in India across technology, consulting, GCCs, telecom, media and communications.
+        Verified career boards are refreshed continuously; unsupported websites stay visible and are never presented as scanned.
       </p>
-      {rows && (
-        <p className="small">
-          <strong>{rows.length}</strong> career pages listed, <strong>{scannedCount}</strong> of them read automatically.
-        </p>
+      {stats && (
+        <div className="market-ready company-coverage">
+          <div><strong>{stats.employers.toLocaleString("en-IN")}</strong><span>India employers</span></div>
+          <div><strong>{stats.readable.toLocaleString("en-IN")}</strong><span>boards refreshed</span></div>
+          <div><strong>{stats.openings.toLocaleString("en-IN")}</strong><span>current openings</span></div>
+          <p>The catalog has no fixed cap. A reported career page is verified, deduplicated and added to the same refresh queue.</p>
+        </div>
       )}
 
       {account ? (
@@ -114,7 +116,11 @@ export function CompaniesPage() {
           <div className="card job-row" key={c.id}>
             <div className="job-row-main">
               <div className="job-row-title">{c.name}</div>
-              <div className="muted small">{ATS_LABEL[c.ats] ?? c.ats} · {lastScan(c)}</div>
+              <div className="muted small">
+                {ATS_LABEL[c.ats] ?? c.ats} · {lastScan(c)}
+                {c.country === "IN" && " · India catalog"}
+                {!c.active && " · needs URL review"}
+              </div>
               {open === c.id && (
                 <ul className="notes">
                   {jobs.length === 0 && <li>No openings stored yet.</li>}

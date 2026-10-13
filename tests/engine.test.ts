@@ -9,7 +9,7 @@ import { tailorResume } from "../shared/engine/tailor";
 import { emptyProfile, type Profile } from "../shared/types";
 import { sanitiseProfile } from "../shared/validate";
 import { parseJobHtml } from "../worker/jobFetch";
-import { contactsFrom, meaningfulTitleMatch } from "../worker/routes/discover";
+import { contactsFrom, indiaMarketLocation, meaningfulTitleMatch } from "../worker/routes/discover";
 
 function profile(overrides: Partial<Profile> = {}): Profile {
   return {
@@ -339,5 +339,13 @@ describe("parseJobHtml", () => {
     expect(meaningfulTitleMatch("Senior SAP Consultant", targets)).toBe(0);
     expect(meaningfulTitleMatch("Internal Sales Representative", targets)).toBe(0);
     expect(meaningfulTitleMatch("Senior Product Marketing Manager", [...targets, "Product Marketing"])).toBe(1);
+  });
+
+  it("keeps an India search out of foreign remote markets", () => {
+    expect(indiaMarketLocation("Bengaluru, Karnataka, India")).toBe(true);
+    expect(indiaMarketLocation("Remote")).toBe(true);
+    expect(indiaMarketLocation("Remote, IN")).toBe(true);
+    expect(indiaMarketLocation("Remote, CA")).toBe(false);
+    expect(indiaMarketLocation("London, UK")).toBe(false);
   });
 });
