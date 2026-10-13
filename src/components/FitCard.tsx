@@ -63,14 +63,15 @@ export function FitCard({ fit }: { fit: FitResult }) {
   return (
     <div className="card fit-card">
       <div className="fit-head">
-        {fit.imported ? <div className="imported-mark">Not scored</div> : <ScoreRing score={fit.score} />}
+        {fit.imported && !fit.score ? <div className="imported-mark">Not scored</div> : <ScoreRing score={fit.score} />}
         <div>
           <div className={`decision decision-${fit.imported ? "stretch" : fit.decision}`}>
-            {fit.imported ? "Imported from your records. Re-check fit to score it." : decisionLabel(fit.decision)}
+            {fit.imported ? (fit.score ? "Score carried over from your own records" : "Imported from your records") : decisionLabel(fit.decision)}
           </div>
           <p className="muted small">
-            The score weighs required skills you hold, other skills mentioned, how close the title is to your targets,
-            and years of experience. It is evidence, not a promise of an interview.
+            {fit.imported
+              ? "Re-check fit to score it against your profile here. Your earlier notes stay as they are."
+              : "The score weighs required skills you hold, other skills mentioned, how close the title is to your targets, and years of experience. It is evidence, not a promise of an interview."}
           </p>
         </div>
       </div>

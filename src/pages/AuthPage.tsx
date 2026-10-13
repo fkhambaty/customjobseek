@@ -13,7 +13,7 @@ export function AuthPage({ mode }: { mode: "login" | "signup" }) {
   const [busy, setBusy] = useState(false);
 
   const from = (location.state as { from?: string } | null)?.from;
-  if (account) return <Navigate to={mode === "signup" ? "/profile" : (from ?? "/jobs")} replace />;
+  if (account) return <Navigate to={mode === "signup" ? "/profile" : (from ?? "/today")} replace />;
 
   async function submit(e: FormEvent) {
     e.preventDefault();

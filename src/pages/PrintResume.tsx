@@ -10,7 +10,7 @@ export function PrintResume() {
   const [error, setError] = useState("");
 
   useEffect(() => {
-    api.getResume(id).then(setResume, (e: Error) => setError(e.message));
+    (id === "master" ? api.masterResume() : api.getResume(id)).then(setResume, (e: Error) => setError(e.message));
   }, [id]);
 
   useEffect(() => {

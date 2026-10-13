@@ -134,6 +134,49 @@ export const JOB_STATUSES = [
 ] as const;
 export type JobStatus = (typeof JOB_STATUSES)[number];
 
+export interface Contact {
+  id: string;
+  name: string;
+  role: string;
+  url: string;
+  email: string;
+}
+
+export interface LiveCheck {
+  verdict: string;
+  evidence: string;
+  on: string;
+}
+
+/** Private, per-job research. Stored encrypted. */
+export interface JobDetails {
+  verification: string;
+  compensation: string;
+  payNote: string;
+  fitNarrative: string;
+  evidence: string[];
+  warnings: string[];
+  contacts: Contact[];
+  liveCheck: LiveCheck | null;
+}
+
+export const EVENT_KINDS = ["status", "message", "reply", "note"] as const;
+export type EventKind = (typeof EVENT_KINDS)[number];
+
+export const CHANNELS = ["linkedin", "email", "phone", "referral", "other"] as const;
+export type Channel = (typeof CHANNELS)[number];
+
+export interface JobEvent {
+  id: string;
+  jobId: string;
+  kind: EventKind;
+  status: JobStatus | "";
+  channel: Channel | "";
+  at: string;
+  person: string;
+  note: string;
+}
+
 export interface JobRecord {
   id: string;
   title: string;
@@ -150,6 +193,30 @@ export interface JobRecord {
   createdAt: string;
   updatedAt: string;
   hasResume: boolean;
+  lane: string;
+  route: string;
+  family: string;
+  requisition: string;
+  /** Yearly pay in the job's currency. Estimated when the posting did not publish it. */
+  payLow: number | null;
+  payHigh: number | null;
+  payEstimated: boolean;
+  postedAt: string | null;
+  rejectedAt: string | null;
+  closedAt: string | null;
+  contactCount: number;
+  messagesSent: number;
+  replies: number;
+  lastTouchAt: string | null;
+}
+
+export interface JobFull extends JobRecord {
+  details: JobDetails;
+  events: JobEvent[];
+}
+
+export function emptyDetails(): JobDetails {
+  return { verification: "", compensation: "", payNote: "", fitNarrative: "", evidence: [], warnings: [], contacts: [], liveCheck: null };
 }
 
 export interface Account {

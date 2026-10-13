@@ -1,104 +1,83 @@
 import type { ReactNode } from "react";
-import { Link, Navigate, NavLink, Route, Routes, useLocation, useNavigate } from "react-router-dom";
+import { Link, Navigate, NavLink, Outlet, Route, Routes, useLocation } from "react-router-dom";
+import { AppShell } from "./components/AppShell";
+import { JobsProvider } from "./data";
 import { AccountPage } from "./pages/AccountPage";
-import { CompaniesPage } from "./pages/CompaniesPage";
+import { AnalyticsPage } from "./pages/AnalyticsPage";
 import { AuthPage } from "./pages/AuthPage";
+import { CompaniesPage } from "./pages/CompaniesPage";
+import { DiscoverPage } from "./pages/DiscoverPage";
 import { JobPage } from "./pages/JobPage";
-import { JobsPage } from "./pages/JobsPage";
 import { Landing } from "./pages/Landing";
 import { NewJobPage } from "./pages/NewJobPage";
+import { OutreachPage } from "./pages/OutreachPage";
+import { PipelinePage } from "./pages/PipelinePage";
 import { PricingPage } from "./pages/PricingPage";
 import { PrintResume } from "./pages/PrintResume";
-import { ResetPage, VerifyPage } from "./pages/VerifyPage";
 import { ProfilePage } from "./pages/ProfilePage";
+import { ResumesPage } from "./pages/ResumesPage";
+import { TodayPage } from "./pages/TodayPage";
+import { ResetPage, VerifyPage } from "./pages/VerifyPage";
 import { SessionProvider, useSession } from "./session";
 
-function Brand() {
-  return (
-    <Link to="/" className="brand">
-      <span className="brand-mark" aria-hidden>
-        <svg viewBox="0 0 32 32" width="26" height="26">
-          <rect width="32" height="32" rx="8" fill="currentColor" />
-          <path d="M9 17l4.5 4.5L23 11" stroke="white" strokeWidth="3.2" fill="none" strokeLinecap="round" strokeLinejoin="round" />
-        </svg>
-      </span>
-      CustomJobSeek
-    </Link>
-  );
-}
-
-function plural(n: number, word: string): string {
-  return `${n} ${word}${n === 1 ? "" : "s"}`;
-}
-
-function Header() {
-  const { account, signOut } = useSession();
-  const navigate = useNavigate();
-  return (
-    <header className="topbar">
-      <div className="topbar-inner">
-        <Brand />
-        <nav className="nav">
-          {account ? (
-            <>
-              <NavLink to="/jobs">Jobs</NavLink>
-              <NavLink to="/companies">Companies</NavLink>
-              <NavLink to="/profile">Profile</NavLink>
-              <NavLink to="/pricing">Plans</NavLink>
-              <NavLink to="/account" className="credits-pill" title="Fit checks / tailored resumes left">
-                {plural(account.evalCredits, "check")} · {plural(account.resumeCredits, "resume")}
-              </NavLink>
-              <button
-                className="btn btn-ghost"
-                onClick={async () => {
-                  await signOut();
-                  navigate("/");
-                }}
-              >
-                Sign out
-              </button>
-            </>
-          ) : (
-            <>
-              <NavLink to="/companies">Companies</NavLink>
-              <a href="/#faq">FAQ</a>
-              <NavLink to="/pricing">Pricing</NavLink>
-              <NavLink to="/login">Sign in</NavLink>
-              <Link to="/signup" className="btn btn-primary">
-                Start free
-              </Link>
-            </>
-          )}
-        </nav>
-      </div>
-    </header>
-  );
-}
-
-function RequireAuth({ children }: { children: ReactNode }) {
-  const { account, loading } = useSession();
-  const location = useLocation();
-  if (loading) return <div className="page"><p className="muted">Loading…</p></div>;
-  if (!account) return <Navigate to="/login" state={{ from: location.pathname }} replace />;
-  return <>{children}</>;
-}
-
-function Shell({ children }: { children: ReactNode }) {
+function PublicShell({ children }: { children: ReactNode }) {
+  const { account } = useSession();
   return (
     <>
-      <Header />
+      <header className="topbar">
+        <div className="topbar-inner">
+          <Link to="/" className="wordmark">CustomJobSeek</Link>
+          <nav className="nav">
+            <NavLink to="/companies">Companies we scan</NavLink>
+            <a href="/#faq">Questions</a>
+            <NavLink to="/pricing">Pricing</NavLink>
+            {account ? (
+              <Link to="/today" className="btn btn-primary btn-sm">Open your search</Link>
+            ) : (
+              <>
+                <NavLink to="/login">Sign in</NavLink>
+                <Link to="/signup" className="btn btn-primary btn-sm">Start free</Link>
+              </>
+            )}
+          </nav>
+        </div>
+      </header>
       <main>{children}</main>
       <footer className="footer">
         <div className="footer-inner">
           <span>© {new Date().getFullYear()} CustomJobSeek</span>
           <span className="footer-links">
             <Link to="/companies">Companies we scan</Link>
-            <a href="/#faq">FAQ</a>
+            <a href="/#faq">Questions</a>
+            <Link to="/pricing">Pricing</Link>
           </span>
-          <span className="muted">Your data is encrypted and yours to delete at any time.</span>
+          <span className="muted">Your data is encrypted and yours to delete.</span>
         </div>
       </footer>
     </>
+  );
+}
+
+const OPEN_PATHS = new Set(["/pricing", "/companies"]);
+
+/**
+ * One layout for every signed-in page so the job list loads once and the sidebar never remounts.
+ * Pricing and the companies list are readable signed out, in the public frame.
+ */
+function AppLayout() {
+  const { account, loading } = useSession();
+  const location = useLocation();
+  if (loading) return <div className="boot">Opening your search…</div>;
+  if (!account) {
+    if (OPEN_PATHS.has(location.pathname)) return <PublicShell><Outlet /></PublicShell>;
+    return <Navigate to="/login" state={{ from: location.pathname }} replace />;
+  }
+  return (
+    <JobsProvider>
+      <AppShell>
+        <Outlet />
+      </AppShell>
+    </JobsProvider>
   );
 }
 
@@ -106,29 +85,28 @@ export function App() {
   return (
     <SessionProvider>
       <Routes>
-        <Route path="/print/:id" element={<RequireAuth><PrintResume /></RequireAuth>} />
-        <Route
-          path="*"
-          element={
-            <Shell>
-              <Routes>
-                <Route path="/" element={<Landing />} />
-                <Route path="/login" element={<AuthPage mode="login" />} />
-                <Route path="/signup" element={<AuthPage mode="signup" />} />
-                <Route path="/verify" element={<VerifyPage />} />
-                <Route path="/reset" element={<ResetPage />} />
-                <Route path="/pricing" element={<PricingPage />} />
-                <Route path="/profile" element={<RequireAuth><ProfilePage /></RequireAuth>} />
-                <Route path="/jobs" element={<RequireAuth><JobsPage /></RequireAuth>} />
-                <Route path="/companies" element={<CompaniesPage />} />
-                <Route path="/jobs/new" element={<RequireAuth><NewJobPage /></RequireAuth>} />
-                <Route path="/jobs/:id" element={<RequireAuth><JobPage /></RequireAuth>} />
-                <Route path="/account" element={<RequireAuth><AccountPage /></RequireAuth>} />
-                <Route path="*" element={<Navigate to="/" replace />} />
-              </Routes>
-            </Shell>
-          }
-        />
+        <Route path="/print/:id" element={<PrintResume />} />
+        <Route path="/" element={<PublicShell><Landing /></PublicShell>} />
+        <Route path="/login" element={<PublicShell><AuthPage mode="login" /></PublicShell>} />
+        <Route path="/signup" element={<PublicShell><AuthPage mode="signup" /></PublicShell>} />
+        <Route path="/verify" element={<PublicShell><VerifyPage /></PublicShell>} />
+        <Route path="/reset" element={<PublicShell><ResetPage /></PublicShell>} />
+        <Route element={<AppLayout />}>
+          <Route path="/pricing" element={<PricingPage />} />
+          <Route path="/companies" element={<CompaniesPage />} />
+          <Route path="/today" element={<TodayPage />} />
+          <Route path="/pipeline" element={<PipelinePage />} />
+          <Route path="/outreach" element={<OutreachPage />} />
+          <Route path="/analytics" element={<AnalyticsPage />} />
+          <Route path="/discover" element={<DiscoverPage />} />
+          <Route path="/resumes" element={<ResumesPage />} />
+          <Route path="/profile" element={<ProfilePage />} />
+          <Route path="/jobs/new" element={<NewJobPage />} />
+          <Route path="/jobs/:id" element={<JobPage />} />
+          <Route path="/account" element={<AccountPage />} />
+        </Route>
+        <Route path="/jobs" element={<Navigate to="/pipeline" replace />} />
+        <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </SessionProvider>
   );

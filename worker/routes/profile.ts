@@ -40,8 +40,9 @@ export const profile = new Hono<AppEnv>()
     const text = Array.isArray(extracted.text) ? extracted.text.join("\n") : extracted.text;
     if (!text || text.trim().length < 80) throw new HttpError(422, "Almost no text came out of that PDF. It may be a scan.");
     const draft = sanitiseProfile(profileFromResumeText(text, user.email));
-    await c.env.DB.prepare("INSERT INTO resume_uploads (id, user_id, filename, text_ciphertext) VALUES (?, ?, ?, ?)")
-      .bind(crypto.randomUUID(), user.id, "upload.pdf", await encryptJson(c.env.DATA_KEY, { text: text.slice(0, 100_000) }))
+    const filename = (c.req.header("x-file-name") ?? "").replace(/[^\w .()-]/g, "").slice(0, 120) || "Uploaded resume.pdf";
+    await c.env.DB.prepare("INSERT INTO resume_uploads (id, user_id, filename, label, format, text_ciphertext) VALUES (?, ?, ?, ?, 'text', ?)")
+      .bind(crypto.randomUUID(), user.id, filename, filename.replace(/\.pdf$/i, ""), await encryptJson(c.env.DATA_KEY, { text: text.slice(0, 100_000) }))
       .run();
     return c.json({ profile: draft, missing: profileReadiness(draft) });
   });

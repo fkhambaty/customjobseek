@@ -4,8 +4,10 @@ import { PLANS, PLAN_ORDER, type PlanId } from "../shared/plans";
 import { HttpError, type AppEnv, type Env } from "./env";
 import { auth } from "./routes/auth";
 import { companies } from "./routes/companies";
+import { discover } from "./routes/discover";
 import { jobs } from "./routes/jobs";
 import { profile } from "./routes/profile";
+import { resumes } from "./routes/resumes";
 import { scanDue } from "./scan";
 import { requireUser } from "./session";
 
@@ -27,6 +29,8 @@ app.route("/api/auth", auth);
 app.route("/api/profile", profile);
 app.route("/api/jobs", jobs);
 app.route("/api/companies", companies);
+app.route("/api/discover", discover);
+app.route("/api/resumes", resumes);
 
 app.get("/api/plans", (c) => c.json(PLAN_ORDER.map((id) => PLANS[id])));
 

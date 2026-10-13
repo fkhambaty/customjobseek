@@ -99,7 +99,7 @@ export const auth = new Hono<AppEnv>()
     }
     // Foreign keys cascade, but D1 enforcement depends on the connection, so every table is cleared explicitly.
     await c.env.DB.batch([
-      ...["packs", "resume_uploads", "missed_reports", "resumes", "jobs", "profiles", "credit_ledger", "sessions"].map((t) =>
+      ...["job_events", "packs", "resume_uploads", "missed_reports", "resumes", "jobs", "profiles", "credit_ledger", "sessions"].map((t) =>
         c.env.DB.prepare(`DELETE FROM ${t} WHERE user_id = ?`).bind(user.id),
       ),
       c.env.DB.prepare("UPDATE companies SET added_by = NULL WHERE added_by = ?").bind(user.id),

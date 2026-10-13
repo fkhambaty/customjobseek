@@ -88,7 +88,7 @@ export function ResetPage() {
     try {
       await api.reset(email, code, password);
       await refresh();
-      navigate("/jobs");
+      navigate("/today");
     } catch (err) {
       setError((err as Error).message);
     } finally {

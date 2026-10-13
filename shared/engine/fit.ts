@@ -197,7 +197,7 @@ export function formatSalary(s: ParsedSalary): string {
   return `${symbol}${range}${unit}`;
 }
 
-function titleTokens(s: string): string[] {
+export function titleTokens(s: string): string[] {
   return normalise(s)
     .split(/[^a-z0-9+#.]+/)
     .filter((w) => w && !TITLE_STOPWORDS.has(w));
@@ -234,7 +234,7 @@ function countriesIn(location: string): string[] {
   return found;
 }
 
-function locationCheck(job: JobInput, profile: Profile): { blocker?: Blocker; note?: string } {
+export function locationCheck(job: JobInput, profile: Profile): { blocker?: Blocker; note?: string } {
   const prefs = profile.preferences;
   if (!prefs.country && !prefs.cities.length) return {};
   const where = `${job.location}`.trim();

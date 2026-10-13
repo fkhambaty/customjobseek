@@ -1,13 +1,15 @@
 // Reads the private Command Center on this machine and copies this user's own
-// profile and job history into their CustomJobSeek account. It never writes
-// back to the Command Center, and it does not copy recruiter contact details.
+// profile, jobs, per-job files, contacts, outreach history and resumes into
+// their CustomJobSeek account. It never writes back to the Command Center.
+// Contacts and files are encrypted and only ever visible to that account.
 //
 //   node scripts/seed-from-command-center.mjs
+//   OVERWRITE_PROFILE=1 node scripts/seed-from-command-center.mjs   # also replace the profile
 //
 // Requires CLOUDFLARE_API_TOKEN, CLOUDFLARE_ACCOUNT_ID and a database id in wrangler.jsonc.
-// After it runs, the account password is unset: use "Forgot password" with the same email.
+// A new account starts with no usable password: use "Forgot password" with the same email.
 
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { webcrypto as crypto } from "node:crypto";
 import { ROOT, d1, envFile } from "./cloud.mjs";
 
@@ -115,8 +117,6 @@ const profile = {
   },
 };
 
-const STATUS = { applied: "applied", rejected: "rejected", closed: "closed", toapply: "evaluated", blocked: "withdrawn" };
-
 const email = profile.email.toLowerCase();
 const existing = await d1("SELECT id FROM users WHERE email = ?", [email]);
 let userId = existing[0]?.id;
@@ -133,44 +133,134 @@ if (!userId) {
   );
 }
 
+// The profile is written once. After that it belongs to the person and edits on the site win.
 await d1(
   `INSERT INTO profiles (user_id, ciphertext, updated_at) VALUES (?, ?, datetime('now'))
-   ON CONFLICT(user_id) DO UPDATE SET ciphertext = excluded.ciphertext, updated_at = excluded.updated_at`,
+   ON CONFLICT(user_id) DO ${process.env.OVERWRITE_PROFILE ? "UPDATE SET ciphertext = excluded.ciphertext, updated_at = excluded.updated_at" : "NOTHING"}`,
   [userId, await encryptJson(profile)],
 );
 
-const fit = JSON.stringify({
-  score: 0,
-  decision: "stretch",
-  imported: true,
-  matchedRequired: [],
-  matchedOther: [],
-  missingRequired: [],
-  missingOther: [],
-  blockers: [],
-  notes: ["Imported from your existing search records. Use Re-check fit to score this job."],
-  jdYearsRequired: null,
-  parsedSalary: null,
-});
+const MONTHS = { jan: 1, feb: 2, mar: 3, apr: 4, may: 5, jun: 6, jul: 7, aug: 8, sep: 9, oct: 10, nov: 11, dec: 12 };
 
-let n = 0;
+/** "Applied 13 Sep 2026" -> "2026-09-13". */
+function flagDate(flag, word) {
+  const m = String(flag ?? "").match(new RegExp(`^${word}\\s+(\\d{1,2})\\s+([A-Za-z]{3})[a-z]*\\s+(\\d{4})`));
+  if (!m) return null;
+  const month = MONTHS[m[2].toLowerCase()];
+  return month ? `${m[3]}-${String(month).padStart(2, "0")}-${m[1].padStart(2, "0")}` : null;
+}
+
+function termList(text, label) {
+  const m = String(text ?? "").match(new RegExp(`${label}:?\\s*([^.]+)\\.`, "i"));
+  return m ? m[1].split(/,\s*/).map((t) => strip(t)).filter((t) => t && t.length < 40) : [];
+}
+
+function readIf(path) {
+  try {
+    return readFileSync(path, "utf8");
+  } catch {
+    return null;
+  }
+}
+
+/** The per-job resume the Command Center tailored, else its standard one. */
+function resumeHtml(dir) {
+  const files = readdirSync(dir).filter((f) => f.endsWith("_Resume.html"));
+  const tailored = files.find((f) => f !== "FakhruddinKhambaty_Resume.html");
+  const pick = tailored ?? files[0];
+  return pick ? readIf(`${dir}${pick}`) : null;
+}
+
+function contactsOf(job) {
+  const people = (job.contacts ?? [])
+    .filter((c) => c && c.name)
+    .map((c, i) => ({ id: `p${i}`, name: strip(c.name).slice(0, 120), role: "", url: String(c.url ?? "").startsWith("https://") ? c.url : "", email: "" }));
+  const mailboxes = (job.emails ?? [])
+    .map(String)
+    .filter((e) => !/do not use/i.test(e))
+    .map((e, i) => {
+      const address = (e.match(/[\w.+-]+@[\w-]+(\.[\w-]+)+/) ?? [""])[0];
+      return { id: `m${i}`, name: "", role: strip(e.replace(address, "").replace(/^[\s—–-]+/, "")).slice(0, 160), url: "", email: address };
+    })
+    .filter((c) => c.email);
+  return [...people, ...mailboxes];
+}
+
+const STATUS = { applied: "applied", rejected: "rejected", closed: "closed", toapply: "resume_ready", blocked: "withdrawn" };
+const at = (date) => (date ? `${date}T12:00:00.000Z` : null);
+
+async function pool(items, size, fn) {
+  let next = 0;
+  await Promise.all(
+    Array.from({ length: size }, async () => {
+      while (next < items.length) {
+        const i = next++;
+        await fn(items[i], i);
+      }
+    }),
+  );
+}
+
 const usedIds = new Set();
-for (const job of jobs) {
-  const status = STATUS[job.status] ?? "evaluated";
+const planned = jobs.map((job) => {
   let id = `cc:${job.id}`.slice(0, 170);
   while (usedIds.has(id)) id = `${id}-${usedIds.size}`.slice(0, 180);
   usedIds.add(id);
+  return { job, id };
+});
+
+let packs = 0;
+await pool(planned, 6, async ({ job, id }) => {
+  let status = STATUS[job.status] ?? "evaluated";
+  if (job.stage === "interview") status = "interview";
+  const appliedOn =
+    flagDate(job.flag, "Applied") ?? (["applied", "rejected", "interview"].includes(status) || job.closed_after_apply ? job.added : null);
+  const rejectedOn = status === "rejected" ? flagDate(job.flag, "Rejected") : null;
+  const closedOn = status === "closed" ? flagDate(job.flag, "Closed") : null;
+  const folder = `${CC}/${job.folder.replace(/^\.\//, "")}`;
+  const jd = readIf(`${folder}JOB_DESCRIPTION.md`);
   const low = job.salary_low ?? job.band_low;
   const high = job.salary_high ?? job.band_high;
-  const salary = low && high ? `${low}–${high} LPA` : low ? `${low} LPA` : "";
-  const description = [`${job.role} at ${job.company}`, job.location ? `Location: ${job.location}` : "", strip(job.compensation).slice(0, 400)]
-    .filter(Boolean)
-    .join("\n");
+  const salary = job.salary_low && job.salary_high ? `₹${job.salary_low}–${job.salary_high} LPA` : "";
+  const description = (jd ?? [`${job.role} at ${job.company}`, job.location ? `Location: ${job.location}` : ""].join("\n")).slice(0, 30000);
+  const score = job.screening_score ?? job.screening_probability ?? 0;
+  const matched = Object.values(job.screening_matches ?? {}).flat().map(strip);
+  const fit = {
+    score: Math.max(0, Math.min(100, Math.round(score))),
+    decision: score >= 65 ? "apply" : "stretch",
+    imported: true,
+    matchedRequired: [...new Set([...matched, ...termList(job.fit, "Also matched")])].slice(0, 20),
+    matchedOther: [],
+    missingRequired: [...new Set([...termList(job.fit, "NOT EVIDENCED in the record"), ...(job.screening_gaps ?? []).map(strip)])].slice(0, 15),
+    missingOther: [],
+    blockers: [],
+    notes: [strip(job.flag), ...(job.screening_gate ? [strip(job.screening_gate)] : [])].filter(Boolean),
+    jdYearsRequired: null,
+    parsedSalary: null,
+  };
+  const contacts = contactsOf(job);
+  const details = {
+    verification: strip(job.verification),
+    compensation: strip(job.compensation),
+    payNote: strip(job.band_note),
+    fitNarrative: strip(job.fit),
+    evidence: (job.screening_evidence ?? []).map(strip),
+    warnings: (job.warnings ?? []).map(strip),
+    contacts,
+    liveCheck: job.live_check ? { verdict: job.live_check.verdict ?? "", evidence: job.live_check.evidence ?? "", on: job.live_check.on ?? "" } : null,
+  };
+  const lakh = (n) => (typeof n === "number" ? n * 100_000 : null);
+
   await d1(
-    `INSERT INTO jobs (id, user_id, title, company, location, url, salary_text, description, status, fit_json, notes, applied_at, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '', ?, ?, datetime('now'))
+    `INSERT INTO jobs (id, user_id, title, company, location, url, salary_text, description, status, fit_json, notes,
+       applied_at, rejected_at, closed_at, posted_at, lane, requisition, pay_low, pay_high, pay_estimated, contact_count, details_ciphertext,
+       created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, '', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
      ON CONFLICT(id) DO UPDATE SET status = excluded.status, fit_json = excluded.fit_json, salary_text = excluded.salary_text,
-       description = excluded.description, updated_at = datetime('now')`,
+       description = excluded.description, applied_at = excluded.applied_at, rejected_at = excluded.rejected_at,
+       closed_at = excluded.closed_at, posted_at = excluded.posted_at, lane = excluded.lane, requisition = excluded.requisition,
+       pay_low = excluded.pay_low, pay_high = excluded.pay_high, pay_estimated = excluded.pay_estimated,
+       contact_count = excluded.contact_count, details_ciphertext = excluded.details_ciphertext, updated_at = datetime('now')`,
     [
       id,
       userId,
@@ -178,16 +268,90 @@ for (const job of jobs) {
       strip(job.company).slice(0, 200),
       strip(job.location).slice(0, 200),
       strip(job.apply_url).slice(0, 1000),
-      salary.slice(0, 200),
-      description.slice(0, 5000),
+      salary,
+      description,
       status,
-      fit,
-      status === "applied" ? `${job.added}T00:00:00.000Z` : null,
-      `${job.added}T00:00:00.000Z`,
+      JSON.stringify(fit),
+      at(appliedOn),
+      rejectedOn,
+      closedOn,
+      /^\d{4}-\d{2}-\d{2}$/.test(job.posted_on ?? "") ? job.posted_on : null,
+      strip(job.lane),
+      strip(job.requisition_id ?? job.job_id).slice(0, 80),
+      lakh(low),
+      lakh(high),
+      job.salary_low ? 0 : 1,
+      contacts.length,
+      await encryptJson(details),
+      at(job.added),
     ],
   );
-  n += 1;
+
+  // History rows from the import carry a cc- id so a re-run replaces them without touching events logged on the site.
+  await d1("DELETE FROM job_events WHERE job_id = ? AND id LIKE 'cc-%'", [id]);
+  const none = { person: "", note: "" };
+  const events = [];
+  if (appliedOn) events.push(["status", "applied", "", at(appliedOn), none]);
+  if (rejectedOn) events.push(["status", "rejected", "", at(rejectedOn), none]);
+  if (closedOn) events.push(["status", "closed", "", at(closedOn), none]);
+  if (status === "interview") events.push(["status", "interview", "", at(job.stage_on ?? job.added), none]);
+  for (const o of job.outreach ?? []) {
+    const channel = ["linkedin", "email", "phone", "referral"].includes(o.channel) ? o.channel : "other";
+    events.push(["message", "", channel, at(o.on ?? job.added), { person: strip(o.to), note: strip(o.note) }]);
+    if (o.reply) {
+      const replyOn = typeof o.reply === "string" && /^\d{4}-\d{2}-\d{2}/.test(o.reply) ? o.reply.slice(0, 10) : o.on;
+      events.push(["reply", "", channel, at(replyOn ?? job.added), { person: strip(o.to), note: typeof o.reply === "string" ? strip(o.reply) : "" }]);
+    }
+  }
+  if (/^(Recruiter call|Technical screening)/.test(job.flag ?? "")) events.push(["reply", "", "other", at(job.added), { person: "", note: strip(job.flag) }]);
+  for (const [i, [kind, st, channel, when, body]] of events.entries()) {
+    await d1("INSERT INTO job_events (id, job_id, user_id, kind, status, channel, at, ciphertext) VALUES (?, ?, ?, ?, ?, ?, ?, ?)", [
+      `cc-${i}-${id}`.slice(0, 200),
+      id,
+      userId,
+      kind,
+      st,
+      channel,
+      when ?? at(job.added),
+      await encryptJson(body),
+    ]);
+  }
+
+  const files = [
+    ["resume_html", resumeHtml(folder)],
+    ["application_md", readIf(`${folder}APPLICATION_PACK.md`)],
+    ["jd_md", jd],
+    ["status_md", readIf(`${folder}JOB_STATUS.md`)],
+  ].filter(([, body]) => body);
+  for (const [kind, body] of files) {
+    await d1(
+      `INSERT INTO packs (job_id, user_id, kind, ciphertext) VALUES (?, ?, ?, ?)
+       ON CONFLICT(job_id, kind) DO UPDATE SET ciphertext = excluded.ciphertext`,
+      [id, userId, kind, await encryptJson(body.slice(0, 400_000))],
+    );
+    packs++;
+  }
+});
+
+const bases = [["Generic resume", `${CC}/Generic_Resume_Platinum/FakhruddinKhambaty_Generic_Resume_Platinum.html`]];
+for (const dir of readdirSync(`${CC}/Resumes_Standard`, { withFileTypes: true })) {
+  if (!dir.isDirectory()) continue;
+  const label = dir.name.replace(/^\d+_/, "").replace(/_/g, " ");
+  bases.push([label, `${CC}/Resumes_Standard/${dir.name}/FakhruddinKhambaty_Resume.html`]);
 }
+let baseCount = 0;
+for (const [i, [label, path]] of bases.entries()) {
+  const html = readIf(path);
+  if (!html) continue;
+  await d1(
+    `INSERT INTO resume_uploads (id, user_id, filename, label, format, text_ciphertext) VALUES (?, ?, ?, ?, 'html', ?)
+     ON CONFLICT(id) DO UPDATE SET label = excluded.label, text_ciphertext = excluded.text_ciphertext`,
+    [`cc-base-${i}-${userId}`, userId, path.split("/").pop(), label, await encryptJson({ text: html })],
+  );
+  baseCount++;
+}
+const n = planned.length;
+console.log(`${packs} job files and ${baseCount} base resumes stored.`);
 
 if (process.env.SITE_URL) {
   const res = await fetch(`${process.env.SITE_URL}/api/auth/forgot`, {

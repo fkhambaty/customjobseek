@@ -1,6 +1,7 @@
 import type { Plan, PlanId } from "../shared/plans";
 import type { ApplicationFile, JobDescriptionFile } from "../shared/engine/documents";
-import type { Account, JobRecord, JobStatus, Profile, TailoredResume } from "../shared/types";
+import type { MessageSet } from "../shared/engine/outreach";
+import type { Account, Channel, Contact, JobEvent, JobFull, JobRecord, JobStatus, Profile, TailoredResume } from "../shared/types";
 
 export class ApiError extends Error {
   constructor(
@@ -10,6 +11,8 @@ export class ApiError extends Error {
     super(message);
   }
 }
+
+const enc = encodeURIComponent;
 
 async function call<T>(method: string, path: string, body?: unknown): Promise<T> {
   const res = await fetch(`/api${path}`, {
@@ -43,9 +46,58 @@ export interface NewJob {
 }
 
 export interface Pack {
-  resume: TailoredResume;
-  application: ApplicationFile;
-  jobFile: JobDescriptionFile;
+  resume: TailoredResume | null;
+  application: ApplicationFile | null;
+  jobFile: JobDescriptionFile | null;
+  savedResume: boolean;
+  applicationNotes: string | null;
+  jobNotes: string | null;
+  statusNotes: string | null;
+}
+
+export interface Activity extends JobEvent {
+  title: string;
+  company: string;
+}
+
+export interface Person {
+  jobId: string;
+  title: string;
+  company: string;
+  status: JobStatus;
+  contact: Contact;
+}
+
+export interface DiscoverRow {
+  title: string;
+  location: string;
+  url: string;
+  company: string;
+  ats: string;
+  seenAt: string;
+  match: number;
+  locationNote: string;
+}
+
+export interface ResumeLibrary {
+  tailored: { jobId: string; title: string; company: string; status: JobStatus; madeAt: string; built: boolean; saved: boolean }[];
+  base: { id: string; label: string; format: string; createdAt: string }[];
+}
+
+export interface JobPatch {
+  status?: JobStatus;
+  notes?: string;
+  nextActionAt?: string | null;
+  on?: string;
+  appliedAt?: string;
+}
+
+export interface NewEvent {
+  kind: "message" | "reply" | "note";
+  channel?: Channel | "";
+  person?: string;
+  note?: string;
+  on?: string;
 }
 
 export interface CompanyRow {
@@ -72,7 +124,12 @@ export const api = {
   getProfile: () => call<{ profile: Profile; missing: string[] }>("GET", "/profile"),
   saveProfile: (p: Profile) => call<{ profile: Profile; missing: string[] }>("PUT", "/profile", p),
   importResume: async (file: File) => {
-    const res = await fetch("/api/profile/resume-file", { method: "POST", credentials: "same-origin", headers: { "content-type": "application/pdf" }, body: await file.arrayBuffer() });
+    const res = await fetch("/api/profile/resume-file", {
+      method: "POST",
+      credentials: "same-origin",
+      headers: { "content-type": "application/pdf", "x-file-name": file.name.replace(/[^\w .()-]/g, "") },
+      body: await file.arrayBuffer(),
+    });
     const data = (await res.json().catch(() => ({}))) as { error?: string; profile?: Profile; missing?: string[] };
     if (!res.ok) throw new ApiError(res.status, data.error ?? "Upload failed");
     return data as { profile: Profile; missing: string[] };
@@ -81,14 +138,23 @@ export const api = {
   fetchJob: (url: string) => call<FetchedJob>("POST", "/jobs/fetch", { url }),
   listJobs: () => call<JobRecord[]>("GET", "/jobs"),
   createJob: (j: NewJob) => call<JobRecord>("POST", "/jobs", j),
-  getJob: (id: string) => call<JobRecord>("GET", `/jobs/${id}`),
-  updateJob: (id: string, patch: { status?: JobStatus; notes?: string; nextActionAt?: string | null }) =>
-    call<JobRecord>("PATCH", `/jobs/${id}`, patch),
-  rescoreJob: (id: string) => call<JobRecord>("POST", `/jobs/${id}/rescore`),
-  deleteJob: (id: string) => call<{ ok: true }>("DELETE", `/jobs/${id}`),
-  getResume: (id: string) => call<TailoredResume>("GET", `/jobs/${id}/resume`),
-  getPack: (id: string) => call<Pack>("GET", `/jobs/${id}/pack`),
-  makeResume: (id: string) => call<Pack>("POST", `/jobs/${id}/resume`),
+  getJob: (id: string) => call<JobFull>("GET", `/jobs/${enc(id)}`),
+  updateJob: (id: string, patch: JobPatch) => call<JobFull>("PATCH", `/jobs/${enc(id)}`, patch),
+  rescoreJob: (id: string) => call<JobFull>("POST", `/jobs/${enc(id)}/rescore`),
+  saveContacts: (id: string, contacts: Contact[]) => call<JobFull>("PUT", `/jobs/${enc(id)}/contacts`, { contacts }),
+  logEvent: (id: string, e: NewEvent) => call<JobFull>("POST", `/jobs/${enc(id)}/events`, e),
+  deleteEvent: (id: string, eventId: string) => call<JobFull>("DELETE", `/jobs/${enc(id)}/events/${eventId}`),
+  messages: (id: string) => call<MessageSet[]>("GET", `/jobs/${enc(id)}/messages`),
+  activity: () => call<Activity[]>("GET", "/jobs/activity"),
+  people: () => call<Person[]>("GET", "/jobs/people"),
+  discover: () => call<{ needsTargets: boolean; rows: DiscoverRow[] }>("GET", "/discover"),
+  resumes: () => call<ResumeLibrary>("GET", "/resumes"),
+  masterResume: () => call<TailoredResume>("GET", "/resumes/master"),
+  deleteBaseResume: (id: string) => call<{ ok: true }>("DELETE", `/resumes/base/${id}`),
+  deleteJob: (id: string) => call<{ ok: true }>("DELETE", `/jobs/${enc(id)}`),
+  getResume: (id: string) => call<TailoredResume>("GET", `/jobs/${enc(id)}/resume`),
+  getPack: (id: string) => call<Pack>("GET", `/jobs/${enc(id)}/pack`),
+  makeResume: (id: string) => call<Pack>("POST", `/jobs/${enc(id)}/resume`),
   companies: () => call<CompanyRow[]>("GET", "/companies"),
   openings: (id: string) => call<{ title: string; location: string; url: string }[]>("GET", `/companies/${id}/openings`),
   reportMissed: (url: string, note: string) =>
