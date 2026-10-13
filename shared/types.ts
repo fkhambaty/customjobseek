@@ -47,6 +47,8 @@ export interface Preferences {
   salaryPeriod: SalaryPeriod;
   targetRoles: string[];
   excludedTitleWords: string[];
+  /** IANA zone used for the daily scan hour. Empty profiles default to Asia/Kolkata. */
+  timezone: string;
 }
 
 export interface Profile {
@@ -208,6 +210,12 @@ export interface JobRecord {
   messagesSent: number;
   replies: number;
   lastTouchAt: string | null;
+  /** List-safe source check. People and message text stay off this row. */
+  liveStatus?: "live" | "stale" | "closed" | "unknown";
+  sourceCheckedAt?: string | null;
+  payProvenance?: "posting" | "estimated" | "stated" | "unknown" | "";
+  interviewStage?: "recruiter" | "hiring_manager" | "panel" | "final" | "";
+  hasPack?: boolean;
 }
 
 export interface JobFull extends JobRecord {
@@ -252,6 +260,7 @@ export function emptyProfile(email = ""): Profile {
       salaryPeriod: "year",
       targetRoles: [],
       excludedTitleWords: [],
+      timezone: "Asia/Kolkata",
     },
   };
 }

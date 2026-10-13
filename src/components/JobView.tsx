@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { Link } from "react-router-dom";
+import { BAD_MATCH_REASONS, INTERVIEW_STAGES, interviewStageLabel, parseBadMatchReason, parseInterviewStage, rowEvidence, type BadMatchReason } from "../../shared/agency";
 import { formatSalary } from "../../shared/engine/fit";
 import type { MessageSet } from "../../shared/engine/outreach";
 import { CHANNELS, type Channel, type Contact, type JobFull, type JobStatus } from "../../shared/types";
@@ -10,6 +11,7 @@ import { useSession } from "../session";
 import { FitCard, statusLabel } from "./FitCard";
 import { Markdown } from "./Markdown";
 import { Resume } from "./Resume";
+import { UpgradePrompt } from "./UpgradePrompt";
 
 export const JOB_TABS = ["overview", "resume", "application", "jd", "people", "history"] as const;
 export type JobTab = (typeof JOB_TABS)[number];
@@ -117,8 +119,16 @@ function Overview({ job, onChange }: { job: JobFull; onChange: (j: JobFull) => v
   }
 
   const pay = formatPay(job, currency);
+  const evidence = rowEvidence(job, today());
   return (
     <>
+      <p className="muted small">
+        {evidence.stage}
+        {" · "}{evidence.freshness.label}
+        {evidence.payProvenance !== "unknown" ? ` · ${evidence.payLabel}` : ""}
+        {evidence.coverage !== null ? ` · ${evidence.coverage}% of required skills in your profile` : ""}
+        {evidence.outreach.note ? ` · ${evidence.outreach.note}` : ""}
+      </p>
       <Section title="Where it stands">
         <div className="status-flow" role="radiogroup" aria-label="Status">
           {STATUS_FLOW.map((s) => (
@@ -135,6 +145,21 @@ function Overview({ job, onChange }: { job: JobFull; onChange: (j: JobFull) => v
           {job.rejectedAt && <span className="muted">Rejected {shortDate(job.rejectedAt)}</span>}
           {job.closedAt && <span className="muted">Closed {shortDate(job.closedAt)}</span>}
         </div>
+        {(job.status === "interview" || job.status === "offer") && (
+          <label className="field">
+            <span>Interview round</span>
+            <select
+              value={job.interviewStage || ""}
+              onChange={async (e) => {
+                const stage = parseInterviewStage(e.target.value);
+                onChange(await api.updateJob(job.id, { interviewStage: stage }));
+              }}
+            >
+              <option value="">Not set</option>
+              {INTERVIEW_STAGES.map((stage) => <option key={stage} value={stage}>{interviewStageLabel(stage)}</option>)}
+            </select>
+          </label>
+        )}
       </Section>
 
       <Section title="Follow-up and notes" aside={saved && <span className="saved">{saved}</span>}>
@@ -192,7 +217,58 @@ function Overview({ job, onChange }: { job: JobFull; onChange: (j: JobFull) => v
           {d.verification && <p className="muted">{d.verification}</p>}
         </Section>
       )}
+      <ReportMatch jobId={job.id} />
     </>
+  );
+}
+
+function ReportMatch({ jobId }: { jobId: string }) {
+  const [reason, setReason] = useState<BadMatchReason>("wrong_role");
+  const [note, setNote] = useState("");
+  const [sent, setSent] = useState("");
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  async function submit() {
+    setBusy(true);
+    setError("");
+    try {
+      const result = await api.reportMatch(jobId, { reason, note });
+      setSent(result.id);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not send that.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <details className="quiet-fold">
+      <summary>This match looks wrong</summary>
+      {sent ? (
+        <p>Sent to support. Reference {sent}. We do not share your profile with anyone else.</p>
+      ) : (
+        <div className="stack">
+          <label className="field">
+            <span>Why</span>
+            <select value={reason} onChange={(e) => {
+              const next = parseBadMatchReason(e.target.value);
+              if (next) setReason(next);
+            }}>
+              {(Object.keys(BAD_MATCH_REASONS) as BadMatchReason[]).map((item) => (
+                <option key={item} value={item}>{BAD_MATCH_REASONS[item]}</option>
+              ))}
+            </select>
+          </label>
+          <label className="field">
+            <span>Anything else, if you want</span>
+            <textarea rows={3} maxLength={500} value={note} onChange={(e) => setNote(e.target.value)} />
+          </label>
+          {error && <p className="text-error">{error}</p>}
+          <button className="btn btn-ghost btn-sm" disabled={busy} onClick={() => void submit()}>{busy ? "Sending…" : "Send to support"}</button>
+        </div>
+      )}
+    </details>
   );
 }
 
@@ -208,7 +284,7 @@ function ResumeTab({ job, pack, onBuilt }: { job: JobFull; pack: Pack | null; on
     try {
       const made = await api.makeResume(job.id);
       onBuilt({ ...(pack ?? { savedResume: false, applicationNotes: null, jobNotes: null, statusNotes: null }), ...made });
-      put({ ...job, hasResume: true });
+      put({ ...job, hasResume: true, hasPack: true });
       await refresh();
     } catch (e) {
       setError((e as Error).message);
@@ -233,8 +309,9 @@ function ResumeTab({ job, pack, onBuilt }: { job: JobFull; pack: Pack | null; on
         <button className="btn btn-ghost btn-sm" onClick={build} disabled={busy || !canBuild}>
           {busy ? "Building…" : resume ? "Rebuild from profile (free)" : "Build from profile · 1 credit"}
         </button>
-        {!canBuild && <Link to="/pricing" className="small">Out of resume credits</Link>}
+        {!canBuild && job.fit.score <= 0 && <Link to="/pricing" className="small">Out of resume credits</Link>}
       </div>
+      {!canBuild && <UpgradePrompt evidence={job.fit.score > 0} blocked="resumes" />}
       {error && <div className="alert alert-error">{error}</div>}
       {resume && (
         <>

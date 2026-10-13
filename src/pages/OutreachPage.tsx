@@ -2,14 +2,15 @@ import { useEffect, useMemo, useState } from "react";
 import { todayQueues } from "../../shared/engine/insights";
 import { api, type Activity, type Person } from "../api";
 import { statusLabel } from "../components/FitCard";
+import { CompanyThreads } from "../components/CompanyThreads";
 import { JobLine } from "../components/JobLine";
 import { useJobs } from "../data";
 import { shortDate, today } from "../format";
 
-type View = "send" | "log" | "people";
+type View = "send" | "companies" | "log" | "people";
 
 export function OutreachPage() {
-  const { jobs, open } = useJobs();
+  const { jobs, error, notice, open } = useJobs();
   const [view, setView] = useState<View>("send");
   const [activity, setActivity] = useState<Activity[] | null>(null);
   const [people, setPeople] = useState<Person[] | null>(null);
@@ -30,6 +31,15 @@ export function OutreachPage() {
     return !s || `${p.contact.name} ${p.contact.email} ${p.company} ${p.title}`.toLowerCase().includes(s);
   });
 
+  if (error && !jobs) {
+    return (
+      <div className="page">
+        <h1 className="page-title">Outreach</h1>
+        <div className="alert alert-error" role="alert">{error}</div>
+      </div>
+    );
+  }
+
   return (
     <div className="page">
       <div className="page-top">
@@ -38,10 +48,12 @@ export function OutreachPage() {
           <p className="lede">Applications go into a pile. A short note to a named person gets read. This is where you keep that honest.</p>
         </div>
       </div>
-      <div className="seg">
-        <button className={view === "send" ? "on" : ""} onClick={() => setView("send")}>To send <span>{q ? q.messageNow.length + q.nudge.length : ""}</span></button>
-        <button className={view === "log" ? "on" : ""} onClick={() => setView("log")}>Sent and replies</button>
-        <button className={view === "people" ? "on" : ""} onClick={() => setView("people")}>People</button>
+      {notice && <div className="alert alert-warn" role="status">{notice}</div>}
+      <div className="seg" role="group" aria-label="Outreach">
+        <button type="button" className={view === "send" ? "on" : ""} aria-pressed={view === "send"} aria-current={view === "send" ? "true" : undefined} onClick={() => setView("send")}>To send <span>{q ? q.messageNow.length + q.nudge.length : ""}</span></button>
+        <button type="button" className={view === "companies" ? "on" : ""} aria-pressed={view === "companies"} aria-current={view === "companies" ? "true" : undefined} onClick={() => setView("companies")}>Companies</button>
+        <button type="button" className={view === "log" ? "on" : ""} aria-pressed={view === "log"} aria-current={view === "log" ? "true" : undefined} onClick={() => setView("log")}>Sent and replies</button>
+        <button type="button" className={view === "people" ? "on" : ""} aria-pressed={view === "people"} aria-current={view === "people" ? "true" : undefined} onClick={() => setView("people")}>People</button>
       </div>
 
       {view === "send" && q && (
@@ -74,35 +86,54 @@ export function OutreachPage() {
         </>
       )}
 
+      {view === "companies" && <CompanyThreads />}
+
       {view === "log" && (
-        <table className="ledger">
-          <thead>
-            <tr><th>Date</th><th>What</th><th>Who</th><th>Role</th></tr>
-          </thead>
-          <tbody>
-            {(activity ?? []).map((a) => (
-              <tr key={a.id} onClick={() => open(a.jobId, "history")}>
-                <td className="l-date">{shortDate(a.at)}</td>
-                <td>{a.kind === "message" ? `Sent${a.channel ? ` · ${a.channel}` : ""}` : a.kind === "reply" ? <strong>Reply</strong> : "Note"}</td>
-                <td>{a.person || <span className="muted">–</span>}{a.note && <span className="l-sub">{a.note}</span>}</td>
-                <td><span className="l-title">{a.title}</span><span className="l-sub">{a.company}</span></td>
-              </tr>
-            ))}
-          </tbody>
-          {activity?.length === 0 && <caption className="muted">Nothing logged yet. Use “Log as sent” on a job's People &amp; messages tab.</caption>}
-        </table>
+        <div className="table-scroll" tabIndex={0} role="region" aria-label="Sent messages and replies">
+          <table className="ledger">
+            <thead>
+              <tr><th scope="col">Date</th><th scope="col">What</th><th scope="col">Who</th><th scope="col">Role</th></tr>
+            </thead>
+            <tbody>
+              {(activity ?? []).map((a) => (
+                <tr
+                  key={a.id}
+                  tabIndex={0}
+                  onClick={() => open(a.jobId, "history")}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") open(a.jobId, "history");
+                  }}
+                >
+                  <td className="l-date">{shortDate(a.at)}</td>
+                  <td>{a.kind === "message" ? `Sent${a.channel ? ` · ${a.channel}` : ""}` : a.kind === "reply" ? <strong>Reply</strong> : "Note"}</td>
+                  <td>{a.person || <span className="muted">–</span>}{a.note && <span className="l-sub">{a.note}</span>}</td>
+                  <td><span className="l-title">{a.title}</span><span className="l-sub">{a.company}</span></td>
+                </tr>
+              ))}
+            </tbody>
+            {activity?.length === 0 && <caption className="muted">Nothing logged yet. Use “Log as sent” on a job's People &amp; messages tab.</caption>}
+          </table>
+        </div>
       )}
 
       {view === "people" && (
         <>
-          <input className="search" placeholder="Search people or companies" value={query} onChange={(e) => setQuery(e.target.value)} />
+          <input className="search" aria-label="Search people or companies" placeholder="Search people or companies" value={query} onChange={(e) => setQuery(e.target.value)} />
+          <div className="table-scroll" tabIndex={0} role="region" aria-label="People">
           <table className="ledger">
             <thead>
-              <tr><th>Person</th><th>Company and role</th><th>Status</th><th /></tr>
+              <tr><th scope="col">Person</th><th scope="col">Company and role</th><th scope="col">Status</th><th scope="col"><span className="clip">Profile</span></th></tr>
             </thead>
             <tbody>
               {filteredPeople.map((p) => (
-                <tr key={`${p.jobId}-${p.contact.id}`} onClick={() => open(p.jobId, "people")}>
+                <tr
+                  key={`${p.jobId}-${p.contact.id}`}
+                  tabIndex={0}
+                  onClick={() => open(p.jobId, "people")}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") open(p.jobId, "people");
+                  }}
+                >
                   <td>
                     <span className="l-title">{p.contact.name || p.contact.email}</span>
                     {p.contact.role && <span className="l-sub">{p.contact.role}</span>}
@@ -116,6 +147,7 @@ export function OutreachPage() {
               ))}
             </tbody>
           </table>
+          </div>
           {people === null && <p className="muted">Loading…</p>}
         </>
       )}

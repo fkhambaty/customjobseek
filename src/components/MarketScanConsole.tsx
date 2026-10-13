@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
-import { SCAN_STAGE_LABELS, type ScanStage } from "../../shared/engine/scanRules";
+import { scanStageLabel, type ScanStage } from "../../shared/engine/scanRules";
 import { api, type MarketScan, type MarketStats, type ScanSchedule } from "../api";
 import { useJobs } from "../data";
 import { useSession } from "../session";
+import { UpgradePrompt } from "./UpgradePrompt";
 
 const STAGES: ScanStage[] = ["searching", "reading", "checking_fit", "building_resumes", "building_packs", "complete"];
 
@@ -20,14 +21,16 @@ function stageDone(scan: MarketScan, stage: ScanStage): boolean {
   return STAGES.indexOf(stage) < STAGES.indexOf(scan.stage);
 }
 
-function marketCoverage(stats: MarketStats | null): string {
-  if (!stats) return "India career pages, refreshed continuously";
+function marketCoverage(stats: MarketStats | null, countryName: string): string {
+  if (!stats) return "Career pages on file, refreshed as scans run";
   const raw = stats.freshestAt;
   const parsed = raw ? new Date(raw.includes("T") ? raw : `${raw.replace(" ", "T")}Z`) : null;
   const fresh = parsed && !Number.isNaN(parsed.getTime())
     ? ` · latest refresh ${parsed.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}`
     : "";
-  return `${stats.employers.toLocaleString("en-IN")} India employers · ${stats.openings.toLocaleString("en-IN")} current openings${fresh}`;
+  const place = countryName ? ` · matched to ${countryName} when that place is on the opening` : "";
+  const held = stats.unsupported ? ` · ${stats.unsupported.toLocaleString()} saved but not scanned` : "";
+  return `${stats.readable.toLocaleString()} boards with a successful read · ${stats.openings.toLocaleString()} current openings${held}${place}${fresh}`;
 }
 
 export function MarketScanConsole({ compact = false }: { compact?: boolean }) {
@@ -87,16 +90,17 @@ export function MarketScanConsole({ compact = false }: { compact?: boolean }) {
     && Math.min(account?.evalCredits ?? 0, account?.resumeCredits ?? 0) > 0
     && !quota?.manualAllowedAt
     && !active;
-  const coverage = marketCoverage(stats);
+  const countryName = quota?.countryName ?? "";
+  const coverage = marketCoverage(stats, countryName);
 
   return (
     <section className={`market-scan ${compact ? "market-scan-compact" : ""}`}>
       <div className="market-scan-head">
         <div>
-          <p className="kicker">{active ? "Market scan in progress" : complete ? "Latest market scan" : "India job market"}</p>
+          <p className="kicker">{active ? "Market scan in progress" : complete ? "Latest market scan" : countryName ? `${countryName} search` : "Job search"}</p>
           <h2>
             {active
-              ? SCAN_STAGE_LABELS[scan.stage]
+              ? scanStageLabel(scan.stage, countryName)
               : complete
                 ? `${scan.handpickedCount} handpicked job${scan.handpickedCount === 1 ? "" : "s"}`
                 : "Find the work worth applying for"}
@@ -134,7 +138,7 @@ export function MarketScanConsole({ compact = false }: { compact?: boolean }) {
                 <li key={stage} className={done ? "done" : current ? "current" : ""}>
                   <span>{done ? "Done" : current ? "Now" : "Next"}</span>
                   <div>
-                    <strong>{SCAN_STAGE_LABELS[stage]}</strong>
+                    <strong>{scanStageLabel(stage, countryName)}</strong>
                     {stage === "reading" && scan.candidateCount > 0 && (
                       <small>{scan.checkedCount} of {scan.candidateCount} openings read</small>
                     )}
@@ -187,6 +191,9 @@ export function MarketScanConsole({ compact = false }: { compact?: boolean }) {
               <Link to="/discover">See the full market</Link>
             </span>
           </div>
+          {scan.prepared.length > 0 && !canStart && (
+            <UpgradePrompt evidence blocked="scans" />
+          )}
         </div>
       )}
 

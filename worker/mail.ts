@@ -1,7 +1,7 @@
 import { sha256 } from "./crypto";
 import { HttpError, type Env } from "./env";
 
-export async function sendMail(env: Env, to: string, subject: string, text: string): Promise<void> {
+export async function sendMail(env: Env, to: string, subject: string, text: string, headers?: Record<string, string>): Promise<void> {
   if (!env.RESEND_API_KEY || !env.MAIL_FROM) {
     console.log(`Email not configured. Would send to ${to}: ${subject}\n${text}`);
     return;
@@ -9,7 +9,7 @@ export async function sendMail(env: Env, to: string, subject: string, text: stri
   const res = await fetch("https://api.resend.com/emails", {
     method: "POST",
     headers: { authorization: `Bearer ${env.RESEND_API_KEY}`, "content-type": "application/json" },
-    body: JSON.stringify({ from: env.MAIL_FROM, to, subject, text }),
+    body: JSON.stringify({ from: env.MAIL_FROM, to, subject, text, headers }),
   });
   if (!res.ok) {
     console.error("Resend failed", res.status);
@@ -23,21 +23,28 @@ function newCode(): string {
 
 const GAP_MS = 60_000;
 
-export async function issueCode(env: Env, email: string, purpose: "signup" | "reset"): Promise<void> {
+export interface IssuedCode {
+  id: number;
+  createdAt: string;
+}
+
+export async function issueCode(env: Env, email: string, purpose: "signup" | "reset"): Promise<IssuedCode | null> {
   const recent = await env.DB.prepare(
     "SELECT created_at FROM email_codes WHERE email = ? AND purpose = ? ORDER BY created_at DESC LIMIT 1",
   )
     .bind(email, purpose)
     .first<{ created_at: string }>();
-  if (recent && Date.now() - Date.parse(recent.created_at) < GAP_MS) return;
+  if (recent && Date.now() - Date.parse(recent.created_at) < GAP_MS) return null;
 
   const code = newCode();
   const now = new Date();
-  await env.DB.prepare(
-    "INSERT INTO email_codes (email, purpose, code_hash, expires_at, created_at) VALUES (?, ?, ?, ?, ?)",
+  const createdAt = now.toISOString();
+  const row = await env.DB.prepare(
+    "INSERT INTO email_codes (email, purpose, code_hash, expires_at, created_at) VALUES (?, ?, ?, ?, ?) RETURNING id",
   )
-    .bind(email, purpose, await sha256(code), new Date(now.getTime() + 15 * 60_000).toISOString(), now.toISOString())
-    .run();
+    .bind(email, purpose, await sha256(code), new Date(now.getTime() + 15 * 60_000).toISOString(), createdAt)
+    .first<{ id: number }>();
+  if (!row) throw new HttpError(500, "The email could not be sent. Try again in a minute.");
 
   const action = purpose === "signup" ? "confirm your CustomJobSeek account" : "set a new CustomJobSeek password";
   await sendMail(
@@ -46,19 +53,20 @@ export async function issueCode(env: Env, email: string, purpose: "signup" | "re
     purpose === "signup" ? "Your CustomJobSeek code" : "Reset your CustomJobSeek password",
     `Your code to ${action} is ${code}.\n\nIt expires in 15 minutes. If you did not ask for this, ignore the email.`,
   );
+  return { id: row.id, createdAt };
 }
 
-export async function takeCode(env: Env, email: string, purpose: "signup" | "reset", code: string): Promise<boolean> {
+export async function takeCode(env: Env, email: string, purpose: "signup" | "reset", code: string): Promise<IssuedCode | null> {
   const row = await env.DB.prepare(
-    "SELECT id, code_hash, attempts FROM email_codes WHERE email = ? AND purpose = ? AND expires_at > ? ORDER BY created_at DESC LIMIT 1",
+    "SELECT id, code_hash, attempts, created_at FROM email_codes WHERE email = ? AND purpose = ? AND expires_at > ? ORDER BY created_at DESC LIMIT 1",
   )
     .bind(email, purpose, new Date().toISOString())
-    .first<{ id: number; code_hash: string; attempts: number }>();
-  if (!row || row.attempts >= 5) return false;
+    .first<{ id: number; code_hash: string; attempts: number; created_at: string }>();
+  if (!row || row.attempts >= 5) return null;
   if (row.code_hash !== (await sha256(code.trim()))) {
     await env.DB.prepare("UPDATE email_codes SET attempts = attempts + 1 WHERE id = ?").bind(row.id).run();
-    return false;
+    return null;
   }
   await env.DB.prepare("DELETE FROM email_codes WHERE email = ? AND purpose = ?").bind(email, purpose).run();
-  return true;
+  return { id: row.id, createdAt: row.created_at };
 }

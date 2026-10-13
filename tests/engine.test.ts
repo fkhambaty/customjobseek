@@ -51,6 +51,7 @@ function profile(overrides: Partial<Profile> = {}): Profile {
       salaryPeriod: "lpa",
       targetRoles: ["Analytics Engineer", "Data Engineer"],
       excludedTitleWords: ["Intern"],
+      timezone: "Asia/Kolkata",
     },
     ...overrides,
   };

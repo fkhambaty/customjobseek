@@ -1,32 +1,25 @@
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { Link } from "react-router-dom";
+import { PUBLIC_FEEDS, SOURCES, capabilityPhrase, freshnessPhrase, healthLabel, healthPhrase, isAts, sourceLabel } from "../../shared/engine/sources";
 import { api, type CompanyRow, type MarketStats } from "../api";
 import { useSession } from "../session";
 
-const SCANNED = new Set(["greenhouse", "lever", "ashby", "workable", "smartrecruiters", "workday"]);
-
-const ATS_LABEL: Record<string, string> = {
-  greenhouse: "Greenhouse",
-  lever: "Lever",
-  ashby: "Ashby",
-  workable: "Workable",
-  smartrecruiters: "SmartRecruiters",
-  workday: "Workday",
-  website: "Company website",
-};
-
-function lastScan(c: CompanyRow): string {
-  if (!SCANNED.has(c.ats)) return "Saved, not read automatically yet";
-  if (!c.last_scan_at) return "Waiting for its first scan";
-  const when = new Date(c.last_scan_at.includes("T") ? c.last_scan_at : `${c.last_scan_at.replace(" ", "T")}Z`);
-  return `${c.opening_count} openings · scanned ${when.toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" })}`;
+function statusLine(company: CompanyRow): string {
+  const source = isAts(company.ats) ? SOURCES[company.ats] : null;
+  if (!source || source.listing !== "live") return source?.savedNote || "Saved, and not read automatically";
+  if (company.scan_status === "error") return "The last read failed";
+  if (!company.last_scan_at) return "Waiting for its first read";
+  const when = new Date(company.last_scan_at.includes("T") ? company.last_scan_at : `${company.last_scan_at.replace(" ", "T")}Z`);
+  return `${company.opening_count} openings · read ${when.toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" })}`;
 }
 
 export function CompaniesPage() {
   const { account } = useSession();
   const [rows, setRows] = useState<CompanyRow[] | null>(null);
+  const [nextCursor, setNextCursor] = useState<string | null>(null);
   const [stats, setStats] = useState<MarketStats | null>(null);
   const [query, setQuery] = useState("");
+  const [reload, setReload] = useState(0);
   const [open, setOpen] = useState<string | null>(null);
   const [jobs, setJobs] = useState<{ title: string; location: string; url: string }[]>([]);
   const [url, setUrl] = useState("");
@@ -35,17 +28,45 @@ export function CompaniesPage() {
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
 
-  function load() {
-    api.companies().then(setRows, (e: Error) => setError(e.message));
+  useEffect(() => {
     api.companyStats().then(setStats, () => undefined);
-  }
-  useEffect(load, []);
+  }, [reload]);
 
-  const shown = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    if (!q) return rows ?? [];
-    return (rows ?? []).filter((c) => c.name.toLowerCase().includes(q) || c.career_url.toLowerCase().includes(q));
-  }, [rows, query]);
+  useEffect(() => {
+    let cancel = false;
+    const handle = setTimeout(() => {
+      api.companies(undefined, query.trim()).then((page) => {
+        if (cancel) return;
+        setRows(page.companies);
+        setNextCursor(page.nextCursor);
+        setError("");
+      }, (e: Error) => {
+        if (!cancel) setError(e.message);
+      });
+    }, 200);
+    return () => {
+      cancel = true;
+      clearTimeout(handle);
+    };
+  }, [query, reload]);
+
+  async function more() {
+    if (!nextCursor || busy) return;
+    setBusy(true);
+    try {
+      const page = await api.companies(nextCursor, query.trim());
+      setRows((current) => [...(current ?? []), ...page.companies]);
+      setNextCursor(page.nextCursor);
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const health = useMemo(() => new Map((stats?.health ?? []).map((row) => [row.ats, row])), [stats]);
+  const liveSources = (Object.keys(SOURCES) as (keyof typeof SOURCES)[]).filter((id) => SOURCES[id].listing === "live");
+  const heldSources = (["icims", "oracle_recruiting", "successfactors"] as const).map((id) => SOURCES[id]);
 
   async function submit(e: FormEvent) {
     e.preventDefault();
@@ -54,11 +75,11 @@ export function CompaniesPage() {
     setMsg("");
     try {
       const added = await api.reportMissed(url, note);
-      const scan = added.error ? `Scan problem: ${added.error}` : `${added.count} open roles found.`;
-      setMsg(`${added.name} is on the scan list (${ATS_LABEL[added.ats] ?? added.ats}). ${scan}`);
+      const detail = added.message ?? (added.error ? `Scan problem: ${added.error}` : `${added.count} open roles found.`);
+      setMsg(`${added.name} (${sourceLabel(added.ats)}). ${detail}`);
       setUrl("");
       setNote("");
-      load();
+      setReload((value) => value + 1);
     } catch (err) {
       setError((err as Error).message);
     } finally {
@@ -66,25 +87,75 @@ export function CompaniesPage() {
     }
   }
 
+  const fresh = stats?.freshestAt
+    ? new Date(stats.freshestAt.includes("T") ? stats.freshestAt : `${stats.freshestAt.replace(" ", "T")}Z`)
+    : null;
+
   return (
     <div className="page">
       <h1>Companies we scan</h1>
       <p className="muted">
-        A source-qualified catalog of employers hiring in India across technology, consulting, GCCs, telecom, media and communications.
-        Verified career boards are refreshed continuously; unsupported websites stay visible and are never presented as scanned.
+        A curated set of public career boards in India, the United States, the United Kingdom, Canada, Australia, Singapore, New Zealand, Ireland, and South Africa.
+        The curated count is only the boards we have checked. It is not every employer in those countries.
+        A successful read is a board whose public listing answered. Unsupported portals stay visible and are never shown as scanned.
       </p>
       {stats && (
         <div className="market-ready company-coverage">
-          <div><strong>{stats.employers.toLocaleString("en-IN")}</strong><span>India employers</span></div>
-          <div><strong>{stats.readable.toLocaleString("en-IN")}</strong><span>boards refreshed</span></div>
+          <div><strong>{(stats.catalogBoards ?? 0).toLocaleString("en-IN")}</strong><span>curated public boards</span></div>
+          <div><strong>{stats.readable.toLocaleString("en-IN")}</strong><span>boards with a successful read</span></div>
           <div><strong>{stats.openings.toLocaleString("en-IN")}</strong><span>current openings</span></div>
-          <p>The catalog has no fixed cap. A reported career page is verified, deduplicated and added to the same refresh queue.</p>
+          <div><strong>{(stats.unsupported ?? 0).toLocaleString("en-IN")}</strong><span>saved, not scanned</span></div>
+          <p>
+            {fresh && !Number.isNaN(fresh.getTime())
+              ? `Newest successful read ${fresh.toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" })}. `
+              : "No successful read is stored yet. "}
+            Live boards are refreshed about every six hours. Reporting a career page adds it to the same queue when that source can be read.
+          </p>
         </div>
       )}
+
+      {stats?.countries && stats.countries.length > 0 && (
+        <ul className="coverage-countries">
+          {stats.countries.map((country) => (
+            <li key={country.code}>
+              <strong>{country.name}</strong>
+              <span>{country.catalog} curated · {country.readable} read</span>
+            </li>
+          ))}
+        </ul>
+      )}
+
+      <h2>What each source can do</h2>
+      <ul className="source-rows">
+        {liveSources.map((id) => {
+          const source = SOURCES[id];
+          const row = health.get(id);
+          const healthName = healthPhrase(source.listing, row?.lastOkAt ?? null, row?.failures ?? 0);
+          return (
+            <li key={id}>
+              <strong>{source.label}</strong>
+              <span>{capabilityPhrase(source)} · {freshnessPhrase(source)} · {source.compliance.replaceAll("_", " ")}</span>
+              <span>{healthLabel(healthName)}</span>
+            </li>
+          );
+        })}
+        {heldSources.map((source) => (
+          <li key={source.id}>
+            <strong>{source.label}</strong>
+            <span>{source.notes}</span>
+            <span>{healthLabel("not_scanned")}</span>
+          </li>
+        ))}
+      </ul>
+      <p className="muted small">
+        LinkedIn, Indeed, Naukri, SEEK, Glassdoor and the other protected job boards are a partnership or a pasted employer link.
+        Official feeds we know about ({PUBLIC_FEEDS.map((feed) => feed.name).join(", ")}) are registered and not called: none has a live open address connected.
+      </p>
 
       {account ? (
         <form className="card stack" onSubmit={submit}>
           <h2>Report a missed link</h2>
+          <p className="muted small">Paste the employer's own career page. A Greenhouse, Lever, Ashby, Workable, SmartRecruiters, Workday, Teamtailor, or Recruitee link is read. An iCIMS, Oracle, or SuccessFactors link is saved and left unscanned. A LinkedIn, Indeed, or Naukri link is saved as a partnership, not fetched.</p>
           <label className="field">
             <span>Job link or career page</span>
             <input type="url" required placeholder="https://" value={url} onChange={(e) => setUrl(e.target.value)} />
@@ -100,25 +171,25 @@ export function CompaniesPage() {
       ) : (
         <div className="card">
           <strong>Found a job we missed?</strong>{" "}
-          <span className="muted"><Link to="/signup">Create a free account</Link> and paste the link. The whole company is added to this list.</span>
+          <span className="muted"><Link to="/signup">Create a free account</Link> and paste the employer's career page. Job-board links are kept, and not fetched.</span>
         </div>
       )}
 
       <label className="field">
         <span>Search</span>
-        <input value={query} placeholder="Company name or link" onChange={(e) => setQuery(e.target.value)} />
+        <input value={query} placeholder="Company name, source, or link" onChange={(e) => setQuery(e.target.value)} />
       </label>
 
       {rows === null && !error && <p className="muted">Loading…</p>}
       {rows?.length === 0 && <p className="muted">No companies yet. The first missed link starts the list.</p>}
       <div className="job-list">
-        {shown.map((c) => (
+        {(rows ?? []).map((c) => (
           <div className="card job-row" key={c.id}>
             <div className="job-row-main">
               <div className="job-row-title">{c.name}</div>
               <div className="muted small">
-                {ATS_LABEL[c.ats] ?? c.ats} · {lastScan(c)}
-                {c.country === "IN" && " · India catalog"}
+                {sourceLabel(c.ats)} · {statusLine(c)}
+                {c.country ? ` · ${c.country}` : ""}
                 {!c.active && " · needs URL review"}
               </div>
               {open === c.id && (
@@ -149,6 +220,11 @@ export function CompaniesPage() {
           </div>
         ))}
       </div>
+      {nextCursor && (
+        <button className="btn btn-ghost" type="button" onClick={more} disabled={busy}>
+          {busy ? "Loading…" : "Load more companies"}
+        </button>
+      )}
     </div>
   );
 }

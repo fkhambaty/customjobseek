@@ -1,3 +1,5 @@
+import { detectBoard } from "../shared/engine/boards";
+import { greenhouseJobUrl, leverPostingUrl, parseRecruiteeOffers, recruiteeOfferUrl, smartRecruitersPostingUrl } from "../shared/engine/listings";
 import { openingByUrl } from "./scan";
 
 export interface FetchedJob {
@@ -23,6 +25,13 @@ export function isFetchableUrl(raw: string): URL | null {
   if (host === "localhost" || host.endsWith(".local") || host.endsWith(".internal")) return null;
   if (/^\d{1,3}(\.\d{1,3}){3}$/.test(host) || host.includes(":")) return null;
   return url;
+}
+
+/** Protected job boards are not fetched. The caller should ask for the employer's posting or the description. */
+export function aggregatorBlock(url: URL): string | null {
+  const board = detectBoard(url.toString());
+  if (!board || board.ats !== "aggregator") return null;
+  return `${board.nameHint} is a job board we don't read. A partnership would be required to take its feed. Paste the employer's own career page, or paste the job description.`;
 }
 
 function decodeEntities(s: string): string {
@@ -147,9 +156,7 @@ async function fetchFromAtsApi(url: URL): Promise<FetchedJob | null> {
     const company = companiesAt >= 0 ? parts[companiesAt + 1] : parts[0];
     const id = postingsAt >= 0 ? parts[postingsAt + 1] : parts[1];
     if (!company || !id) return null;
-    const d = await getJson(
-      `https://api.smartrecruiters.com/v1/companies/${encodeURIComponent(company)}/postings/${encodeURIComponent(id)}`,
-    );
+    const d = await getJson(smartRecruitersPostingUrl(company, id));
     if (!d) return null;
     const location = (d.location as JsonLd | undefined) ?? {};
     const companyInfo = (d.company as JsonLd | undefined) ?? {};
@@ -174,7 +181,7 @@ async function fetchFromAtsApi(url: URL): Promise<FetchedJob | null> {
     const board = parts[jobsAt - 1] ?? url.searchParams.get("for");
     const id = parts[jobsAt + 1] ?? url.searchParams.get("token");
     if (jobsAt < 0 || !board || !id) return null;
-    const d = await getJson(`https://boards-api.greenhouse.io/v1/boards/${encodeURIComponent(board)}/jobs/${encodeURIComponent(id)}`);
+    const d = await getJson(greenhouseJobUrl(board, id));
     if (!d) return null;
     return {
       title: str(d.title),
@@ -188,7 +195,7 @@ async function fetchFromAtsApi(url: URL): Promise<FetchedJob | null> {
 
   if (host === "jobs.lever.co" && parts.length >= 2) {
     const [company, id] = parts;
-    const d = await getJson(`https://api.lever.co/v0/postings/${encodeURIComponent(company!)}/${encodeURIComponent(id!)}`);
+    const d = await getJson(leverPostingUrl(company!, id!));
     if (!d) return null;
     const cats = (d.categories as JsonLd | undefined) ?? {};
     const lists = ((d.lists as JsonLd[] | undefined) ?? []).map((l) => `${str(l.text)}\n${htmlToText(str(l.content))}`);
@@ -202,10 +209,29 @@ async function fetchFromAtsApi(url: URL): Promise<FetchedJob | null> {
       source: "structured",
     };
   }
+
+  if (host.endsWith(".recruitee.com")) {
+    const token = host.slice(0, -".recruitee.com".length);
+    const offerAt = parts.indexOf("o");
+    const slug = offerAt >= 0 ? parts[offerAt + 1] : "";
+    if (!token || token.includes(".") || !slug) return null;
+    const data = await getJson(recruiteeOfferUrl(token, slug));
+    const offer = parseRecruiteeOffers(data)[0];
+    if (!offer || offer.description.length < 80) return null;
+    return {
+      title: offer.title,
+      company: token.replace(/-/g, " "),
+      location: offer.location,
+      salaryText: "",
+      description: offer.description,
+      source: "structured",
+    };
+  }
   return null;
 }
 
 export async function fetchJob(url: URL): Promise<FetchedJob | null> {
+  if (aggregatorBlock(url)) return null;
   const viaApi = await fetchFromAtsApi(url).catch(() => null);
   if (viaApi && viaApi.description.length >= 80) return viaApi;
 

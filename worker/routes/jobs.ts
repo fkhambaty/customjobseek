@@ -1,4 +1,5 @@
 import { Hono } from "hono";
+import { badMatchSupportMessage, parseBadMatchReason, parseInterviewStage, payProvenanceFor } from "../../shared/agency";
 import { laneFor, routeFromUrl } from "../../shared/engine/classify";
 import { buildApplication, buildJobFile } from "../../shared/engine/documents";
 import { evaluateFit, type JobInput } from "../../shared/engine/fit";
@@ -21,11 +22,17 @@ import {
 import { profileReadiness } from "../../shared/validate";
 import { decryptJson, encryptJson } from "../crypto";
 import { HttpError, type AppEnv, type Env } from "../env";
-import { fetchJob, isFetchableUrl } from "../jobFetch";
+import { notifyOwner } from "../notify";
+import { logCompanyMessage } from "../threads";
+import { aggregatorBlock, fetchJob, isFetchableUrl } from "../jobFetch";
+import { noteOnboarding } from "../onboarding";
+import { enforceRateLimit } from "../rateLimit";
 import { requireUser } from "../session";
+import { noteProductEvent, noteUsage } from "../usage";
 import { loadProfile } from "./profile";
 import { SAVED_FILE_HEADERS } from "./resumes";
-import { JOB_SELECT, toJob, type JobRow } from "./serialise";
+import { nextJobCursor, parseJobListQuery } from "../../shared/capacity";
+import { JOB_LIST_SELECT, JOB_SELECT, toJob, type JobRow } from "./serialise";
 
 function readJobInput(body: Record<string, unknown>): JobInput & { url: string } {
   const s = (k: string, max: number) => (typeof body[k] === "string" ? (body[k] as string).trim().slice(0, max) : "");
@@ -99,6 +106,19 @@ async function spendCredit(env: Env, userId: string, kind: "eval" | "resume", jo
   )
     .bind(userId, `spend_${kind}`, kind === "eval" ? -1 : 0, kind === "resume" ? -1 : 0, jobId)
     .run();
+  switch (kind) {
+    case "eval":
+      await noteUsage(env.DB, userId, "checks");
+      await noteOnboarding(env.DB, userId, "first_check");
+      break;
+    case "resume":
+      await noteUsage(env.DB, userId, "resumes");
+      break;
+    default: {
+      const unexpected: never = kind;
+      throw new Error(String(unexpected));
+    }
+  }
   return true;
 }
 
@@ -136,20 +156,42 @@ function readContacts(raw: unknown): Contact[] {
 export const jobs = new Hono<AppEnv>()
   .use(requireUser)
   .post("/fetch", async (c) => {
+    const user = c.get("user");
+    await enforceRateLimit(c.env.DB, "job_fetch", user.id);
     const body = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
     const url = isFetchableUrl(typeof body.url === "string" ? body.url.trim() : "");
     if (!url) throw new HttpError(400, "Enter a full job link starting with https://");
+    const blocked = aggregatorBlock(url);
+    if (blocked) throw new HttpError(422, blocked);
     const job = await fetchJob(url).catch(() => null);
     if (!job) {
       throw new HttpError(422, "That page could not be read (some career sites load jobs with scripts). Paste the description instead.");
     }
+    await noteUsage(c.env.DB, user.id, "fetches");
+    await noteProductEvent(c.env.DB, user.id, "job_fetch");
     return c.json({ ...job, url: url.toString() });
   })
   .get("/", async (c) => {
-    const { results } = await c.env.DB.prepare(`${JOB_SELECT} WHERE j.user_id = ? ORDER BY j.created_at DESC`)
-      .bind(c.get("user").id)
+    const page = parseJobListQuery(c.req.query("limit"), c.req.query("cursor"));
+    const cursor = page.cursor;
+    const { results } = await c.env.DB.prepare(
+      `${JOB_LIST_SELECT}
+       WHERE j.user_id = ?
+         AND (? = '' OR j.created_at < ? OR (j.created_at = ? AND j.id < ?))
+       ORDER BY j.created_at DESC, j.id DESC
+       LIMIT ?`,
+    )
+      .bind(
+        c.get("user").id,
+        cursor?.createdAt ?? "",
+        cursor?.createdAt ?? "",
+        cursor?.createdAt ?? "",
+        cursor?.id ?? "",
+        page.limit,
+      )
       .all<JobRow>();
-    return c.json(results.map(toJob));
+    const jobs = results.map(toJob);
+    return c.json({ jobs, nextCursor: nextJobCursor(jobs, page.limit) });
   })
   .get("/activity", async (c) => {
     const user = c.get("user");
@@ -195,9 +237,10 @@ export const jobs = new Hono<AppEnv>()
       throw new HttpError(402, "You have used all your fit checks. Pick a plan to continue.");
     }
     const pay = payFor(fit, profile);
+    const provenance = payProvenanceFor({ salaryText: input.salaryText, payEstimated: false, parsed: fit.parsedSalary !== null });
     await c.env.DB.prepare(
-      `INSERT INTO jobs (id, user_id, title, company, location, url, salary_text, description, fit_json, lane, route, pay_low, pay_high)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO jobs (id, user_id, title, company, location, url, salary_text, description, fit_json, lane, route, pay_low, pay_high, pay_provenance)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     )
       .bind(
         id,
@@ -213,6 +256,7 @@ export const jobs = new Hono<AppEnv>()
         routeFromUrl(input.url),
         pay.low,
         pay.high,
+        provenance,
       )
       .run();
     return c.json(toJob(await getJob(c.env, user.id, id)), 201);
@@ -234,12 +278,19 @@ export const jobs = new Hono<AppEnv>()
     const appliedAt = isoDate(body.appliedAt) ?? (status === "applied" && !job.applied_at ? on : job.applied_at);
     const rejectedAt = changed && status === "rejected" ? on : job.rejected_at;
     const closedAt = changed && (status === "closed" || status === "withdrawn") ? on : job.closed_at;
+    if (typeof body.interviewStage === "string" && body.interviewStage && !parseInterviewStage(body.interviewStage)) {
+      throw new HttpError(400, "Choose a recruiter screen, hiring manager, panel, or final round.");
+    }
+    const interviewStage = status === "interview" || status === "offer"
+      ? parseInterviewStage(typeof body.interviewStage === "string" ? body.interviewStage : job.interview_stage)
+      : "";
 
     await c.env.DB.batch([
       c.env.DB.prepare(
-        `UPDATE jobs SET status = ?, notes = ?, next_action_at = ?, applied_at = ?, rejected_at = ?, closed_at = ?, updated_at = datetime('now')
+        `UPDATE jobs SET status = ?, notes = ?, next_action_at = ?, applied_at = ?, rejected_at = ?, closed_at = ?,
+         interview_stage = ?, updated_at = datetime('now')
          WHERE id = ? AND user_id = ?`,
-      ).bind(status, notes, nextActionAt, appliedAt, rejectedAt, closedAt, job.id, user.id),
+      ).bind(status, notes, nextActionAt, appliedAt, rejectedAt, closedAt, interviewStage, job.id, user.id),
       ...(changed
         ? [
             c.env.DB.prepare("INSERT INTO job_events (id, job_id, user_id, kind, status, at) VALUES (?, ?, ?, 'status', ?, ?)").bind(
@@ -271,21 +322,47 @@ export const jobs = new Hono<AppEnv>()
     const body = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
     const kind = body.kind;
     if (kind !== "message" && kind !== "reply" && kind !== "note") throw new HttpError(400, "Log a message, a reply or a note.");
-    const channel = typeof body.channel === "string" && CHANNELS.includes(body.channel as Channel) ? body.channel : "";
+    const channel: Channel | "" = typeof body.channel === "string" && CHANNELS.includes(body.channel as Channel) ? body.channel as Channel : "";
     const on = isoDate(body.on);
     const at = on && on !== new Date().toISOString().slice(0, 10) ? `${on}T12:00:00.000Z` : new Date().toISOString();
-    const payload = await encryptJson(c.env.DATA_KEY, { person: s(body.person, 120), note: s(body.note, 2000) });
+    const person = s(body.person, 120);
+    const note = s(body.note, 2000);
+    const payload = await encryptJson(c.env.DATA_KEY, { person, note });
+    const eventId = crypto.randomUUID();
     await c.env.DB.prepare("INSERT INTO job_events (id, job_id, user_id, kind, channel, at, ciphertext) VALUES (?, ?, ?, ?, ?, ?, ?)")
-      .bind(crypto.randomUUID(), job.id, user.id, kind, channel, at, payload)
+      .bind(eventId, job.id, user.id, kind, channel, at, payload)
       .run();
+    if (kind === "message" || kind === "reply") {
+      await logCompanyMessage(c.env, {
+        userId: user.id,
+        company: job.company,
+        jobId: job.id,
+        eventId,
+        direction: kind === "reply" ? "in" : "out",
+        channel,
+        at,
+        person,
+        note,
+      }).catch((err: unknown) => console.error("company thread log failed", err));
+    }
     return c.json(await full(c.env, user.id, job.id), 201);
   })
   .delete("/:id/events/:eventId", async (c) => {
     const user = c.get("user");
     const job = await getJob(c.env, user.id, c.req.param("id"));
-    await c.env.DB.prepare("DELETE FROM job_events WHERE id = ? AND job_id = ? AND user_id = ? AND kind != 'status'")
-      .bind(c.req.param("eventId"), job.id, user.id)
-      .run();
+    const eventId = c.req.param("eventId");
+    await c.env.DB.batch([
+      c.env.DB.prepare(
+        `DELETE FROM thread_messages
+         WHERE event_id = ? AND user_id = ?
+           AND EXISTS (
+             SELECT 1 FROM job_events
+             WHERE id = ? AND job_id = ? AND user_id = ? AND kind != 'status'
+           )`,
+      ).bind(eventId, user.id, eventId, job.id, user.id),
+      c.env.DB.prepare("DELETE FROM job_events WHERE id = ? AND job_id = ? AND user_id = ? AND kind != 'status'")
+        .bind(eventId, job.id, user.id),
+    ]);
     return c.json(await full(c.env, user.id, job.id));
   })
   .get("/:id/messages", async (c) => {
@@ -311,14 +388,42 @@ export const jobs = new Hono<AppEnv>()
       .run();
     return c.json(await full(c.env, user.id, job.id));
   })
+  .post("/:id/report-match", async (c) => {
+    const user = c.get("user");
+    await enforceRateLimit(c.env.DB, "support", user.id);
+    const job = await getJob(c.env, user.id, c.req.param("id"));
+    const body = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
+    const reason = parseBadMatchReason(body.reason);
+    if (!reason) throw new HttpError(400, "Choose why this match looks wrong.");
+    const note = s(body.note, 500);
+    const existing = await c.env.DB.prepare("SELECT support_id FROM bad_match_reports WHERE user_id = ? AND job_id = ?")
+      .bind(user.id, job.id)
+      .first<{ support_id: string }>();
+    if (existing) return c.json({ id: existing.support_id });
+    const supportId = crypto.randomUUID();
+    const message = badMatchSupportMessage(reason, job.id, note);
+    await c.env.DB.batch([
+      c.env.DB.prepare("INSERT INTO support_requests (id, user_id, email, topic, message) VALUES (?, ?, ?, 'match', ?)")
+        .bind(supportId, user.id, user.email, message),
+      c.env.DB.prepare("INSERT INTO bad_match_reports (id, user_id, job_id, support_id, reason) VALUES (?, ?, ?, ?, ?)")
+        .bind(crypto.randomUUID(), user.id, job.id, supportId, reason),
+    ]);
+    await noteProductEvent(c.env.DB, user.id, "support_request");
+    await notifyOwner(c.env, {
+      kind: "support_request",
+      dedupeKey: `support:${supportId}`,
+      summary: `Bad-match report filed. Reference ${supportId}.`,
+    }).catch((err: unknown) => console.error("bad match alert failed", err));
+    return c.json({ id: supportId }, 201);
+  })
   .delete("/:id", async (c) => {
     const user = c.get("user");
     const job = await getJob(c.env, user.id, c.req.param("id"));
-    await c.env.DB.batch(
-      ["resumes", "packs", "job_events"]
-        .map((t) => c.env.DB.prepare(`DELETE FROM ${t} WHERE job_id = ? AND user_id = ?`).bind(job.id, user.id))
-        .concat(c.env.DB.prepare("DELETE FROM jobs WHERE id = ? AND user_id = ?").bind(job.id, user.id)),
-    );
+    await c.env.DB.batch([
+      ...["resumes", "packs", "job_events", "thread_messages", "bad_match_reports"]
+        .map((t) => c.env.DB.prepare(`DELETE FROM ${t} WHERE job_id = ? AND user_id = ?`).bind(job.id, user.id)),
+      c.env.DB.prepare("DELETE FROM jobs WHERE id = ? AND user_id = ?").bind(job.id, user.id),
+    ]);
     return c.json({ ok: true });
   })
   .get("/:id/resume", async (c) => {
@@ -361,8 +466,8 @@ export const jobs = new Hono<AppEnv>()
       { title: job.title, company: job.company, location: job.location, url: job.url, salaryText: job.salary_text, description: job.description },
       fit,
     );
+    const resumeCipher = await encryptJson(c.env.DATA_KEY, resume);
     const packed = [
-      ["resume", resume],
       ["application", application],
       ["jd", jobFile],
     ] as const;
@@ -371,7 +476,8 @@ export const jobs = new Hono<AppEnv>()
       c.env.DB.prepare(
         `INSERT INTO resumes (job_id, user_id, ciphertext) VALUES (?, ?, ?)
          ON CONFLICT(job_id) DO UPDATE SET ciphertext = excluded.ciphertext, created_at = datetime('now')`,
-      ).bind(job.id, user.id, stored[0]![1]),
+      ).bind(job.id, user.id, resumeCipher),
+      c.env.DB.prepare("DELETE FROM packs WHERE job_id = ? AND user_id = ? AND kind = 'resume'").bind(job.id, user.id),
       ...stored.map(([kind, ciphertext]) =>
         c.env.DB.prepare(
           `INSERT INTO packs (job_id, user_id, kind, ciphertext, created_at) VALUES (?, ?, ?, ?, datetime('now'))
@@ -391,11 +497,20 @@ export const jobs = new Hono<AppEnv>()
     const { results } = await c.env.DB.prepare("SELECT kind, ciphertext FROM packs WHERE job_id = ? AND user_id = ? AND kind != 'resume_html'")
       .bind(job.id, user.id)
       .all<{ kind: string; ciphertext: string }>();
-    const hasHtml = await c.env.DB.prepare("SELECT 1 AS ok FROM packs WHERE job_id = ? AND user_id = ? AND kind = 'resume_html'")
-      .bind(job.id, user.id)
-      .first<{ ok: number }>();
+    const [hasHtml, resumeRow] = await Promise.all([
+      c.env.DB.prepare("SELECT 1 AS ok FROM packs WHERE job_id = ? AND user_id = ? AND kind = 'resume_html'")
+        .bind(job.id, user.id)
+        .first<{ ok: number }>(),
+      c.env.DB.prepare("SELECT ciphertext FROM resumes WHERE job_id = ? AND user_id = ?")
+        .bind(job.id, user.id)
+        .first<{ ciphertext: string }>(),
+    ]);
     const out: Record<string, unknown> = {};
-    for (const row of results) out[row.kind] = await decryptJson(c.env.DATA_KEY, row.ciphertext);
+    for (const row of results) {
+      if (!row.ciphertext) continue;
+      out[row.kind] = await decryptJson(c.env.DATA_KEY, row.ciphertext);
+    }
+    if (!out.resume && resumeRow?.ciphertext) out.resume = await decryptJson(c.env.DATA_KEY, resumeRow.ciphertext);
     return c.json({
       resume: out.resume ?? null,
       application: out.application ?? null,

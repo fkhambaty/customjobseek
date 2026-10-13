@@ -1,5 +1,6 @@
 import { COUNTRIES, cityNames, countryByCode, countryNames } from "../geo";
 import type { Blocker, Decision, FitResult, ParsedSalary, Profile, SalaryPeriod } from "../types";
+import { familyLabel, resolveRole, seniorityLabel } from "./occupations";
 import { SKILL_CATALOGUE, mentions, normalise, termForName, termPattern, uniqueBy, type Term } from "./text";
 
 export interface JobInput {
@@ -203,7 +204,7 @@ export function titleTokens(s: string): string[] {
     .filter((w) => w && !TITLE_STOPWORDS.has(w));
 }
 
-export function titleAlignment(jobTitle: string, targetRoles: string[]): number {
+function tokenOverlap(jobTitle: string, targetRoles: string[]): number {
   const job = new Set(titleTokens(jobTitle));
   if (!job.size || !targetRoles.length) return 0;
   let best = 0;
@@ -214,6 +215,24 @@ export function titleAlignment(jobTitle: string, targetRoles: string[]): number 
     best = Math.max(best, hit / tokens.length);
   }
   return best;
+}
+
+export function titleAlignment(jobTitle: string, targetRoles: string[]): number {
+  const tokens = tokenOverlap(jobTitle, targetRoles);
+  const jobRole = resolveRole(jobTitle);
+  if (!jobRole.occupationId) return tokens;
+  const sameOccupation = targetRoles.some((role) => resolveRole(role).occupationId === jobRole.occupationId);
+  return sameOccupation ? Math.max(tokens, 0.92) : tokens;
+}
+
+export type WorkMode = "remote" | "hybrid" | "onsite" | "unspecified";
+
+export function describedWorkMode(text: string): WorkMode {
+  const value = normalise(text);
+  if (/\bhybrid\b/.test(value)) return "hybrid";
+  if (/\b(remote|work from home|wfh|anywhere)\b/.test(value)) return "remote";
+  if (/\b(on-?site|in-?office|in the office)\b/.test(value)) return "onsite";
+  return "unspecified";
 }
 
 function mentionsPlace(haystack: string, name: string): boolean {
@@ -234,12 +253,58 @@ function countriesIn(location: string): string[] {
   return found;
 }
 
+const CITY_INDEX = new Map<string, { phrase: string; country: string }[]>();
+for (const country of COUNTRIES) {
+  for (const city of country.cities) {
+    for (const name of cityNames(city)) {
+      const phrase = normalise(name);
+      const first = phrase.split(" ")[0];
+      if (!first || phrase.length < 3) continue;
+      const bucket = CITY_INDEX.get(first) ?? [];
+      bucket.push({ phrase, country: country.code });
+      CITY_INDEX.set(first, bucket);
+    }
+  }
+}
+
+function countriesFromCities(location: string): string[] {
+  const haystack = normalise(location);
+  const found = new Set<string>();
+  for (const token of haystack.split(" ")) {
+    for (const city of CITY_INDEX.get(token) ?? []) {
+      if (hasPlacePhrase(haystack, city.phrase)) found.add(city.country);
+    }
+  }
+  return [...found];
+}
+
+function hasPlacePhrase(haystack: string, phrase: string): boolean {
+  const escaped = phrase.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return new RegExp(`(?:^|\\s)${escaped}(?:$|\\s)`).test(haystack);
+}
+
+/** A chosen country keeps openings in that country, its cities, or remote work that names no other country. */
+export function marketLocationOk(location: string, countryCode: string): boolean {
+  if (!countryCode) return true;
+  const value = location.trim();
+  if (!value) return true;
+  const found = countriesIn(value);
+  if (found.includes(countryCode)) return true;
+  if (found.length) return false;
+  const cities = countriesFromCities(value);
+  if (cities.includes(countryCode)) return true;
+  if (cities.length) return false;
+  const mode = describedWorkMode(value);
+  return mode === "remote" || mode === "hybrid";
+}
+
 export function locationCheck(job: JobInput, profile: Profile): { blocker?: Blocker; note?: string } {
   const prefs = profile.preferences;
   if (!prefs.country && !prefs.cities.length) return {};
   const where = `${job.location}`.trim();
   const head = job.description.slice(0, 400);
-  const isRemote = /\b(remote|work from home|wfh)\b/i.test(`${where} ${head}`);
+  const mode = describedWorkMode(`${where} ${head}`);
+  const isRemote = mode === "remote";
   const cityHaystack = where || head;
   const wanted = prefs.cities.flatMap((c) => cityNames(c));
   const cityHit = wanted.some((c) => mentionsPlace(cityHaystack, c));
@@ -251,6 +316,9 @@ export function locationCheck(job: JobInput, profile: Profile): { blocker?: Bloc
   if (isRemote && prefs.remoteOk && foreign.length === 0) return { note: "Remote role, which you accept." };
   if (isRemote && !prefs.remoteOk) {
     return { blocker: { kind: "location", message: "This role is remote, and your profile says you do not want remote work." } };
+  }
+  if (mode === "hybrid" && !prefs.remoteOk) {
+    return { blocker: { kind: "location", message: "This role is hybrid, and your profile says you do not want remote work." } };
   }
   if (isRemote && foreign.length && home) {
     const names = foreign.map((c) => countryByCode(c)?.name ?? c).join(", ");
@@ -313,7 +381,9 @@ export function heldTerms(profile: Profile): Term[] {
   const fromSkills = profile.skills.map((s) => termForName(s.name));
   const evidence = normalise(profile.experience.flatMap((e) => e.bullets.map((b) => b.text)).join(" \n "));
   const fromBullets = SKILL_CATALOGUE.filter((t) => mentions(evidence, t));
-  return uniqueBy([...fromSkills, ...fromBullets], (t) => t.name.toLowerCase()).filter((t) => !blocked(t));
+  const certificates = normalise(profile.certifications.map((c) => `${c.name} ${c.issuer}`).join(" \n "));
+  const fromCertificates = SKILL_CATALOGUE.filter((t) => mentions(certificates, t));
+  return uniqueBy([...fromSkills, ...fromBullets, ...fromCertificates], (t) => t.name.toLowerCase()).filter((t) => !blocked(t));
 }
 
 export function evaluateFit(job: JobInput, profile: Profile): FitResult {
@@ -374,7 +444,15 @@ export function evaluateFit(job: JobInput, profile: Profile): FitResult {
   const skillPoints = 60 * (reqCov ?? otherCov ?? 0.5) + 15 * (otherCov ?? reqCov ?? 0.5);
 
   const titleScore = profile.preferences.targetRoles.length ? titleAlignment(job.title, profile.preferences.targetRoles) : 0.66;
-  if (profile.preferences.targetRoles.length && titleScore < 0.34) {
+  const jobRole = resolveRole(job.title);
+  const matchedTarget = jobRole.occupationId
+    ? profile.preferences.targetRoles.some((role) => resolveRole(role).occupationId === jobRole.occupationId)
+    : false;
+  if (matchedTarget && jobRole.family && tokenOverlap(job.title, profile.preferences.targetRoles) < 0.9) {
+    notes.push(
+      `The title matches ${jobRole.canonical} (${familyLabel(jobRole.family)}, ${seniorityLabel(jobRole.seniority).toLowerCase()}). Only skills and licenses written on your profile are counted.`,
+    );
+  } else if (profile.preferences.targetRoles.length && titleScore < 0.34) {
     notes.push("The title is far from the roles you target. Read the responsibilities before deciding.");
   }
 

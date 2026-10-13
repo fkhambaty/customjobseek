@@ -1,0 +1,48 @@
+[
+  {"name": "Stripe", "careerUrl": "https://boards.greenhouse.io/stripe", "country": "US", "sectors": ["payments", "software"]},
+  {"name": "Cloudflare", "careerUrl": "https://boards.greenhouse.io/cloudflare", "country": "US", "sectors": ["infrastructure", "software"]},
+  {"name": "Anthropic", "careerUrl": "https://boards.greenhouse.io/anthropic", "country": "US", "sectors": ["AI"]},
+  {"name": "Databricks", "careerUrl": "https://boards.greenhouse.io/databricks", "country": "US", "sectors": ["data", "software"]},
+  {"name": "Palantir", "careerUrl": "https://jobs.lever.co/palantir", "country": "US", "sectors": ["software"]},
+  {"name": "OpenAI", "careerUrl": "https://jobs.ashbyhq.com/openai", "country": "US", "sectors": ["AI"]},
+  {"name": "Ramp", "careerUrl": "https://jobs.ashbyhq.com/ramp", "country": "US", "sectors": ["fintech", "software"]},
+  {"name": "NVIDIA", "careerUrl": "https://nvidia.wd5.myworkdayjobs.com/NVIDIAExternalCareerSite", "country": "US", "sectors": ["semiconductors", "software"]},
+  {"name": "Adobe", "careerUrl": "https://adobe.wd5.myworkdayjobs.com/external_experienced", "country": "US", "sectors": ["software"]},
+  {"name": "Visa", "careerUrl": "https://jobs.smartrecruiters.com/Visa", "country": "US", "sectors": ["payments"]},
+
+  {"name": "Groww", "careerUrl": "https://boards.greenhouse.io/groww", "country": "IN", "sectors": ["fintech"]},
+  {"name": "InMobi", "careerUrl": "https://boards.greenhouse.io/inmobi", "country": "IN", "sectors": ["advertising"]},
+  {"name": "Zenoti", "careerUrl": "https://boards.greenhouse.io/zenoti", "country": "IN", "sectors": ["software"]},
+  {"name": "CRED", "careerUrl": "https://jobs.lever.co/cred", "country": "IN", "sectors": ["fintech"]},
+  {"name": "Meesho", "careerUrl": "https://jobs.lever.co/meesho", "country": "IN", "sectors": ["ecommerce"]},
+
+  {"name": "Monzo", "careerUrl": "https://boards.greenhouse.io/monzo", "country": "GB", "sectors": ["fintech"]},
+  {"name": "Wise", "careerUrl": "https://boards.greenhouse.io/wise", "country": "GB", "sectors": ["fintech"]},
+  {"name": "Deliveroo", "careerUrl": "https://boards.greenhouse.io/deliveroo", "country": "GB", "sectors": ["logistics"]},
+  {"name": "GoCardless", "careerUrl": "https://boards.greenhouse.io/gocardless", "country": "GB", "sectors": ["payments"]},
+
+  {"name": "Wealthsimple", "careerUrl": "https://jobs.ashbyhq.com/wealthsimple", "country": "CA", "sectors": ["fintech"]},
+  {"name": "Hootsuite", "careerUrl": "https://boards.greenhouse.io/hootsuite", "country": "CA", "sectors": ["software"]},
+  {"name": "KOHO", "careerUrl": "https://jobs.ashbyhq.com/koho", "country": "CA", "sectors": ["fintech"]},
+  {"name": "1Password", "careerUrl": "https://jobs.ashbyhq.com/1password", "country": "CA", "sectors": ["security", "software"]},
+
+  {"name": "Culture Amp", "careerUrl": "https://boards.greenhouse.io/cultureamp", "country": "AU", "sectors": ["software"]},
+  {"name": "Canva", "careerUrl": "https://jobs.smartrecruiters.com/Canva", "country": "AU", "sectors": ["software"]},
+
+  {"name": "GovTech Singapore", "careerUrl": "https://boards.greenhouse.io/govtech", "country": "SG", "sectors": ["public sector", "technology"]},
+  {"name": "Grab", "careerUrl": "https://jobs.smartrecruiters.com/Grab", "country": "SG", "sectors": ["technology"]},
+  {"name": "Ninja Van", "careerUrl": "https://jobs.lever.co/ninjavan", "country": "SG", "sectors": ["logistics"]},
+  {"name": "Nium", "careerUrl": "https://jobs.lever.co/nium", "country": "SG", "sectors": ["fintech"]},
+  {"name": "Airwallex", "careerUrl": "https://jobs.ashbyhq.com/airwallex", "country": "SG", "sectors": ["fintech"]},
+
+  {"name": "Xero", "careerUrl": "https://jobs.ashbyhq.com/xero", "country": "NZ", "sectors": ["software"]},
+  {"name": "Rocket Lab", "careerUrl": "https://boards.greenhouse.io/rocketlab", "country": "NZ", "sectors": ["aerospace"]},
+
+  {"name": "Intercom", "careerUrl": "https://boards.greenhouse.io/intercom", "country": "IE", "sectors": ["software"]},
+  {"name": "Workhuman", "careerUrl": "https://jobs.ashbyhq.com/workhuman", "country": "IE", "sectors": ["software"]},
+  {"name": "Wayflyer", "careerUrl": "https://jobs.ashbyhq.com/wayflyer", "country": "IE", "sectors": ["fintech"]},
+
+  {"name": "Luno", "careerUrl": "https://boards.greenhouse.io/luno", "country": "ZA", "sectors": ["fintech"]},
+  {"name": "Ozow", "careerUrl": "https://boards.greenhouse.io/ozow", "country": "ZA", "sectors": ["payments"]},
+  {"name": "OfferZen", "careerUrl": "https://boards.greenhouse.io/offerzen", "country": "ZA", "sectors": ["software"]}
+]

@@ -1,9 +1,9 @@
 import { useState } from "react";
+import { rowEvidence } from "../../shared/agency";
 import type { JobRecord, JobStatus } from "../../shared/types";
 import { api } from "../api";
 import { useJobs } from "../data";
-import { ago, formatPay, shortDate } from "../format";
-import { statusLabel } from "./FitCard";
+import { ago, formatPay, shortDate, today } from "../format";
 
 export type LineMode = "apply" | "message" | "nudge" | "live" | "due";
 
@@ -17,6 +17,7 @@ export function JobLine({ job, mode }: { job: JobRecord; mode: LineMode }) {
   const { put, open, currency } = useJobs();
   const [busy, setBusy] = useState(false);
   const pay = formatPay(job, currency);
+  const evidence = rowEvidence(job, today());
 
   async function mark(status: JobStatus) {
     setBusy(true);
@@ -28,12 +29,16 @@ export function JobLine({ job, mode }: { job: JobRecord; mode: LineMode }) {
   }
 
   const facts = [
+    evidence.stage,
     job.lane,
     pay,
-    job.postedAt ? `posted ${ago(job.postedAt)}` : mode === "apply" ? `added ${ago(job.createdAt)}` : "",
+    evidence.freshness.label,
+    evidence.payProvenance === "unknown" ? "" : evidence.payLabel,
+    mode === "apply" && evidence.coverage !== null ? `${evidence.coverage}% covered` : "",
     mode !== "apply" && job.appliedAt ? `applied ${shortDate(job.appliedAt)}` : "",
     mode === "nudge" && job.lastTouchAt ? `last message ${ago(job.lastTouchAt)}` : "",
     mode === "due" && job.nextActionAt ? `follow up ${shortDate(job.nextActionAt)}` : "",
+    mode === "message" || mode === "nudge" ? evidence.outreach.note : "",
   ].filter(Boolean);
 
   return (
@@ -46,20 +51,24 @@ export function JobLine({ job, mode }: { job: JobRecord; mode: LineMode }) {
           {job.requisition && <span className="ref">{job.requisition}</span>}
         </span>
         <span className="line-facts">
-          {facts.map((f) => <span key={f}>{f}</span>)}
-          {job.fit.blockers.length > 0 && <span className="flag">{job.fit.blockers[0]!.message}</span>}
+          {facts.map((f) => <span key={f} className={f === evidence.freshness.label ? evidence.freshness.status : ""}>{f}</span>)}
+          {evidence.blocker && <span className="flag">{evidence.blocker}</span>}
           {mode === "message" && <span className="hint">{job.contactCount === 1 ? "1 person saved" : `${job.contactCount} people saved`}</span>}
-          {mode === "apply" && !job.hasResume && <span className="hint">no resume yet</span>}
-          {mode === "live" && <span className="hint">{statusLabel(job.status)}</span>}
         </span>
       </button>
       <span className="line-actions">
         {mode === "apply" && (
           <>
             {job.url && <a className="btn btn-primary btn-sm" href={job.url} target="_blank" rel="noreferrer">Apply ↗</a>}
-            <button className="btn btn-ghost btn-sm" onClick={() => open(job.id, "resume")}>Resume</button>
-            <button className="btn btn-ghost btn-sm" disabled={busy} onClick={() => mark("applied")}>Applied</button>
-            <button className="btn btn-quiet btn-sm" disabled={busy} onClick={() => mark("withdrawn")} title="Take it off the list">Skip</button>
+            {evidence.packageReady ? (
+              <button type="button" className="btn btn-ghost btn-sm" onClick={() => open(job.id, "resume")}>Resume</button>
+            ) : (
+              <button type="button" className={job.url ? "btn btn-ghost btn-sm" : "btn btn-primary btn-sm"} onClick={() => open(job.id, job.hasResume ? "application" : "resume")}>Finish pack</button>
+            )}
+            {evidence.packageReady && (
+              <button type="button" className="btn btn-ghost btn-sm" disabled={busy} onClick={() => mark("applied")}>Applied</button>
+            )}
+            <button type="button" className="btn btn-quiet btn-sm" disabled={busy} onClick={() => mark("withdrawn")} title="Take it off the list">Skip</button>
           </>
         )}
         {(mode === "message" || mode === "nudge") && (
@@ -75,6 +84,12 @@ export function JobLine({ job, mode }: { job: JobRecord; mode: LineMode }) {
           </>
         )}
       </span>
+      {mode === "apply" && !evidence.packageReady && evidence.packageGaps.length > 0 && (
+        <details className="quiet-fold line-gap">
+          <summary>Pack still missing a piece</summary>
+          <p className="muted small">{evidence.packageGaps.join(". ")}.</p>
+        </details>
+      )}
     </li>
   );
 }

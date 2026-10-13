@@ -21,6 +21,11 @@ export async function startSession(c: AppContext, userId: string): Promise<void>
   });
 }
 
+/** Drops every sign-in for this account. Call this before writing the replacement session. */
+export async function revokeUserSessions(db: D1Database, userId: string): Promise<void> {
+  await db.prepare("DELETE FROM sessions WHERE user_id = ?").bind(userId).run();
+}
+
 export async function endSession(c: AppContext): Promise<void> {
   const token = getCookie(c, COOKIE);
   if (token) await c.env.DB.prepare("DELETE FROM sessions WHERE token_hash = ?").bind(await sha256(token)).run();
@@ -38,16 +43,28 @@ async function expireCredits(db: D1Database, user: UserRow): Promise<UserRow> {
   return { ...user, plan: "free", eval_credits: 0, resume_credits: 0, credits_expire_at: null };
 }
 
-export const requireUser = createMiddleware<AppEnv>(async (c, next) => {
-  const token = getCookie(c, COOKIE);
-  if (!token) throw new HttpError(401, "Please sign in.");
+async function userFromSession(c: AppContext): Promise<{ token: string | null; user: UserRow | null }> {
+  const token = getCookie(c, COOKIE) ?? null;
+  if (!token) return { token: null, user: null };
   const row = await c.env.DB.prepare(
     `SELECT u.* FROM sessions s JOIN users u ON u.id = s.user_id
      WHERE s.token_hash = ? AND s.expires_at > ?`,
   )
     .bind(await sha256(token), new Date().toISOString())
     .first<UserRow>();
-  if (!row) throw new HttpError(401, "Your session has ended. Please sign in again.");
-  c.set("user", await expireCredits(c.env.DB, row));
+  if (!row) return { token, user: null };
+  return { token, user: await expireCredits(c.env.DB, row) };
+}
+
+export async function currentUser(c: AppContext): Promise<UserRow | null> {
+  const found = await userFromSession(c);
+  return found.user;
+}
+
+export const requireUser = createMiddleware<AppEnv>(async (c, next) => {
+  const found = await userFromSession(c);
+  if (!found.token) throw new HttpError(401, "Please sign in.");
+  if (!found.user) throw new HttpError(401, "Your session has ended. Please sign in again.");
+  c.set("user", found.user);
   await next();
 });

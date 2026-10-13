@@ -1,5 +1,6 @@
 import { useMemo, useState, type ReactNode } from "react";
 import { Link } from "react-router-dom";
+import { packageAudit } from "../../shared/agency";
 import { computeAnalytics, todayQueues } from "../../shared/engine/insights";
 import type { JobRecord, Profile } from "../../shared/types";
 import { profileReadiness } from "../../shared/validate";
@@ -101,10 +102,11 @@ function Welcome({ greeting, name, profile }: { greeting: string; name: string |
 }
 
 export function TodayPage() {
-  const { jobs, error, profile } = useJobs();
+  const { jobs, error, notice, profile } = useJobs();
   const date = today();
   const q = useMemo(() => (jobs ? todayQueues(jobs, date) : null), [jobs, date]);
   const a = useMemo(() => (jobs ? computeAnalytics(jobs, date) : null), [jobs, date]);
+  const gaps = useMemo(() => (jobs ? packageAudit(jobs, date) : []), [jobs, date]);
 
   if (error) return <div className="page"><div className="alert alert-error">{error}</div></div>;
   if (!jobs || !q || !a) return <div className="page"><p className="muted">Loading your search…</p></div>;
@@ -124,6 +126,8 @@ export function TodayPage() {
         </div>
         <Link to="/jobs/new" className="btn btn-ghost">Check a job</Link>
       </div>
+
+      {notice && <div className="alert alert-warn" role="status">{notice}</div>}
 
       <MarketScanConsole compact />
 
@@ -155,6 +159,19 @@ export function TodayPage() {
         note="Best fit first, then the higher pay. Open one, read the resume, apply, and mark it applied."
         empty="Nothing waiting. Check a job or look at Discover for new openings."
       />
+      {gaps.length > 0 && (
+        <details className="quiet-fold">
+          <summary>{gaps.length === 1 ? "1 application pack is still missing a piece" : `${gaps.length} application packs are still missing a piece`}</summary>
+          <ul>
+            {gaps.slice(0, 8).map((gap) => (
+              <li key={gap.id}>
+                <Link to={`/pipeline?job=${encodeURIComponent(gap.id)}`}>{gap.title}</Link>
+                <span className="muted"> · {gap.company} · {gap.gaps.join(", ")}</span>
+              </li>
+            ))}
+          </ul>
+        </details>
+      )}
       <Queue
         title="Message now"
         mode="message"

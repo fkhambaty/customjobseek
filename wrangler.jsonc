@@ -17,7 +17,9 @@
     }
   ],
   "vars": {
-    "MAIL_FROM": "CustomJobSeek <no-reply@funberrykids.in>"
+    "MAIL_FROM": "CustomJobSeek <no-reply@funberrykids.in>",
+    "OWNER_EMAIL": "fktiindia@gmail.com",
+    "PAYMENTS_ENABLED": "false"
   },
   "triggers": {
     "crons": ["17 * * * *", "30 * * * *", "* * * * *"]

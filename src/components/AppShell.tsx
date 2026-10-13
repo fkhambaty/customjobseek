@@ -5,6 +5,7 @@ import { useJobs } from "../data";
 import { plural, today } from "../format";
 import { useSession } from "../session";
 import { JOB_TABS, JobView, type JobTab } from "./JobView";
+import { SiteLinks } from "./SiteLinks";
 
 function Item({ to, label, count, hot }: { to: string; label: string; count?: number; hot?: boolean }) {
   return (
@@ -45,7 +46,7 @@ function Drawer() {
   if (!id) return null;
   return (
     <>
-      <div className="scrim" onClick={close} />
+      <button type="button" className="scrim" aria-label="Close job" onClick={close} />
       <aside className="drawer" aria-label="Job">
         <JobView
           id={id}
@@ -108,6 +109,11 @@ export function AppShell({ children }: { children: ReactNode }) {
               Sign out
             </button>
           </div>
+          <SiteLinks className="side-legal" />
+          <details className="side-legal-fold">
+            <summary>Policies</summary>
+            <SiteLinks className="side-legal" />
+          </details>
         </div>
       </aside>
       <main className="app-main">{children}</main>

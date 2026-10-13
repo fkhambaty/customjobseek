@@ -47,9 +47,9 @@ const FAQS: { q: string; a: ReactNode }[] = [
     q: "Which websites does it read?",
     a: (
       <>
-        Company boards on Greenhouse, Lever, Ashby, Workable and SmartRecruiters. Workday and other company sites are kept
-        on the <Link to="/companies">list</Link> and will be read once support is added. Any job link or pasted
-        description can be checked straight away.
+        Public company boards on Greenhouse, Lever, Ashby, Workable, SmartRecruiters, Workday, Teamtailor, and Recruitee.
+        iCIMS, Oracle Recruiting, and SAP SuccessFactors are recognized on the <Link to="/companies">list</Link> and not
+        scanned. LinkedIn, Indeed, Naukri, SEEK and similar job boards are not read. Paste the employer's posting, or the description.
       </>
     ),
   },
@@ -57,8 +57,8 @@ const FAQS: { q: string; a: ReactNode }[] = [
     q: "What if it missed a company?",
     a: (
       <>
-        Paste the link on the <Link to="/companies">Companies</Link> page. The whole career page joins the scan list for
-        everyone, and its open roles are read immediately.
+        Paste the employer's career page on the <Link to="/companies">Companies</Link> page. A public board we can read
+        is scanned then. A job-board link is saved and not scanned.
       </>
     ),
   },
@@ -68,7 +68,7 @@ const FAQS: { q: string; a: ReactNode }[] = [
   },
   {
     q: "Does it work outside India?",
-    a: "Yes. Pick any country and city, and set pay in any currency, per year, month or hour. Pay is only compared when the job uses your currency. Nothing is converted by guesswork.",
+    a: "Yes. India, the United States, the United Kingdom, Canada, Australia, Singapore, New Zealand, Ireland, and South Africa are listed first. Any other country still works, and you can type any job title. Pay is only compared when the job uses your currency. Nothing is converted by guesswork.",
   },
   {
     q: "Who can see my data?",

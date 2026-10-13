@@ -2,12 +2,15 @@ import { useState, type FormEvent } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { api, ApiError, type NewJob } from "../api";
 import { Field } from "../components/fields";
+import { UpgradePrompt } from "../components/UpgradePrompt";
+import { useJobs } from "../data";
 import { useSession } from "../session";
 
 const EMPTY: NewJob = { title: "", company: "", location: "", salaryText: "", description: "", url: "" };
 
 export function NewJobPage() {
   const { account, refresh } = useSession();
+  const { jobs } = useJobs();
   const navigate = useNavigate();
   const [job, setJob] = useState<NewJob>(EMPTY);
   const [link, setLink] = useState("");
@@ -54,13 +57,15 @@ export function NewJobPage() {
   }
 
   const outOfChecks = account !== null && account.evalCredits <= 0;
+  const evidence = (jobs ?? []).some((job) => job.fit.score > 0);
 
   return (
     <div className="page narrow-wide">
       <h1>Check a job</h1>
       <p className="muted">Uses 1 fit check. You have {account?.evalCredits ?? 0} left.</p>
 
-      {outOfChecks && (
+      {outOfChecks && <UpgradePrompt evidence={evidence} blocked="checks" />}
+      {outOfChecks && !evidence && (
         <div className="alert alert-info">
           You have used your fit checks. <Link to="/pricing">See plans</Link>
         </div>

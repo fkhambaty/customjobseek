@@ -76,3 +76,33 @@ export const PLANS: Record<PlanId, Plan> = {
 };
 
 export const PLAN_ORDER: PlanId[] = ["free", "starter", "growth", "pro"];
+
+export function parsePlanId(value: string): PlanId | null {
+  switch (value) {
+    case "free":
+    case "starter":
+    case "growth":
+    case "pro":
+      return value;
+    default:
+      return null;
+  }
+}
+
+/** Higher means a larger paid plan. Unknown names count as free. */
+export function planRank(plan: PlanId): number {
+  switch (plan) {
+    case "free":
+      return 0;
+    case "starter":
+      return 1;
+    case "growth":
+      return 2;
+    case "pro":
+      return 3;
+    default: {
+      const unexpected: never = plan;
+      return unexpected;
+    }
+  }
+}

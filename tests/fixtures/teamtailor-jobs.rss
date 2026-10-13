@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0" xmlns:tt="https://teamtailor.com/rss">
+  <channel>
+    <title>Example jobs</title>
+    <item>
+      <title><![CDATA[Product Engineer]]></title>
+      <link>https://example.teamtailor.com/jobs/17-product-engineer</link>
+      <guid>tt-17</guid>
+      <pubDate>Mon, 01 Jun 2026 00:00:00 +0000</pubDate>
+      <description><![CDATA[<p>Ship the public careers page.</p>]]></description>
+      <remoteStatus>hybrid</remoteStatus>
+      <tt:department>Engineering</tt:department>
+      <tt:locations>
+        <tt:location>
+          <tt:name>Stockholm HQ</tt:name>
+          <tt:city>Stockholm</tt:city>
+          <tt:country>Sweden</tt:country>
+        </tt:location>
+        <tt:location>
+          <tt:city>London</tt:city>
+          <tt:country>United Kingdom</tt:country>
+        </tt:location>
+      </tt:locations>
+    </item>
+    <item>
+      <title>Support lead</title>
+      <link>https://example.teamtailor.com/jobs/18-support-lead</link>
+      <guid>tt-18</guid>
+      <description>Answer customers.</description>
+      <remoteStatus>fully</remoteStatus>
+    </item>
+  </channel>
+</rss>

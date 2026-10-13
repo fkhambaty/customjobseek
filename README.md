@@ -20,11 +20,11 @@ The resume prints to an A4 PDF with real, extractable text, in the same single-c
 | Plan | Price | Fit checks | Resumes | Validity |
 |------|-------|-----------|---------|----------|
 | Free | ₹0 | 3 | 1 | — |
-| Starter | ₹599 | 10 | 10 | 6 months |
-| Growth | ₹999 | 25 | 25 | 6 months |
-| Pro | ₹1,999 | 60 | 60 | 6 months |
+| Starter | ₹599 | 10 | 10 | 180 days |
+| Growth | ₹999 | 25 | 25 | 180 days |
+| Pro | ₹1,999 | 60 | 60 | 180 days |
 
-A fit check spends one check. The first resume for a job spends one resume credit; rebuilding it after profile edits is free. Plans are defined in `shared/plans.ts`. Checkout returns "Payments open soon" until a payment provider is connected.
+A fit check spends one check. The first resume for a job spends one resume credit; rebuilding it after profile edits is free. Plans are defined in `shared/plans.ts`. Checkout charges that INR price through Razorpay only when `PAYMENTS_ENABLED` is `true` and the key id, key secret, and webhook secret all validate. Otherwise it stays closed. Setup for test and live mode is in `docs/operations.md`.
 
 ## Stack
 
@@ -51,6 +51,8 @@ npm run dev
 ```
 
 Then open the URL Vite prints. `npm test` runs the engine tests and `npm run typecheck` runs TypeScript.
+
+Quota alerts, board refresh, and cleanup are described in `docs/operations.md`.
 
 ## Deploy to Cloudflare
 
@@ -86,7 +88,6 @@ Sign-up, confirmation and password reset go through Resend, same as the other pr
 
 ## Not built yet
 
-- Payments (Razorpay) and crediting purchases to accounts.
 - Email verification and password reset.
 - Rate limiting on sign-in and link reading.
 - Automatic job discovery, outreach, and references. These are later stages once people pay for the core pack.

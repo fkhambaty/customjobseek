@@ -6,6 +6,7 @@ import { api } from "./api";
 interface JobsValue {
   jobs: JobRecord[] | null;
   error: string;
+  notice: string;
   profile: Profile | null;
   currency: string;
   reload: () => Promise<void>;
@@ -21,12 +22,14 @@ export function JobsProvider({ children }: { children: ReactNode }) {
   const [jobs, setJobs] = useState<JobRecord[] | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
   const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
   const [, setParams] = useSearchParams();
 
   const reload = useCallback(async () => {
     try {
       const [list, p] = await Promise.all([api.listJobs(), api.getProfile()]);
-      setJobs(list);
+      setJobs(list.jobs);
+      setNotice(list.notice);
       setProfile(p.profile);
       setError("");
     } catch (e) {
@@ -64,10 +67,14 @@ export function JobsProvider({ children }: { children: ReactNode }) {
   );
 
   const value = useMemo(
-    () => ({ jobs, error, profile, currency: profile?.preferences.currency || "USD", reload, put, drop, open }),
-    [jobs, error, profile, reload, put, drop, open],
+    () => ({ jobs, error, notice, profile, currency: profile?.preferences.currency || "USD", reload, put, drop, open }),
+    [jobs, error, notice, profile, reload, put, drop, open],
   );
   return <JobsContext.Provider value={value}>{children}</JobsContext.Provider>;
+}
+
+export function useJobsOptional(): JobsValue | null {
+  return useContext(JobsContext);
 }
 
 export function useJobs(): JobsValue {

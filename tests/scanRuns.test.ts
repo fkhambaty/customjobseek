@@ -1,8 +1,25 @@
 import { describe, expect, it } from "vitest";
+import { chargeGatedInsert } from "../worker/discoverMatch";
 import { dedupeEmployers, employerKey } from "../shared/engine/catalog";
-import { canRunManual, estimatedScanSeconds, formatIstClock, nextRunAt, scanProgress, shouldCharge } from "../shared/engine/scanRules";
+import { canRunManual, estimatedScanSeconds, formatIstClock, formatZonedClock, formatZonedHour, nextRunAt, scanProgress, scanStageLabel, SCHEDULE_VERSION_LOCAL, scheduleTimeZone, shouldCharge } from "../shared/engine/scanRules";
 
 describe("scan run rules", () => {
+  it("gates scan pack inserts on the charge token", () => {
+    const sql = chargeGatedInsert("INSERT INTO packs (job_id, user_id, kind, ciphertext) VALUES (?, ?, 'application', ?)");
+    expect(sql).toContain("SELECT ?, ?, 'application', ?");
+    expect(sql).not.toContain("VALUES");
+  });
+
+  it("keeps old schedule rows on India time and new rows on the saved zone", () => {
+    expect(scheduleTimeZone(0, "America/New_York")).toBe("Asia/Kolkata");
+    expect(scheduleTimeZone(0, "")).toBe("Asia/Kolkata");
+    expect(scheduleTimeZone(SCHEDULE_VERSION_LOCAL, "America/New_York")).toBe("America/New_York");
+    expect(scheduleTimeZone(SCHEDULE_VERSION_LOCAL, "Not/AZone")).toBe("Asia/Kolkata");
+    const morning = new Date("2026-10-13T04:00:00.000Z");
+    expect(nextRunAt(9, morning, scheduleTimeZone(0, "America/Los_Angeles"))).toBe(nextRunAt(9, morning, "Asia/Kolkata"));
+    expect(nextRunAt(9, morning, scheduleTimeZone(SCHEDULE_VERSION_LOCAL, "America/New_York"))).not.toBe(nextRunAt(9, morning, "Asia/Kolkata"));
+  });
+
   it("schedules the next whole hour in India time", () => {
     const morning = new Date("2026-10-13T04:00:00.000Z");
     expect(nextRunAt(13, morning)).toBe("2026-10-13T07:30:00.000Z");
@@ -26,6 +43,24 @@ describe("scan run rules", () => {
 
   it("prints an India-time clock", () => {
     expect(formatIstClock("2026-10-13T11:00:00.000Z")).toBe("4:30 PM");
+  });
+
+  it("schedules the same local hour in other English-language markets", () => {
+    expect(nextRunAt(9, new Date("2026-01-15T13:00:00.000Z"), "America/New_York")).toBe("2026-01-15T14:00:00.000Z");
+    expect(nextRunAt(9, new Date("2026-07-15T12:00:00.000Z"), "America/New_York")).toBe("2026-07-15T13:00:00.000Z");
+    expect(nextRunAt(9, new Date("2026-01-15T08:00:00.000Z"), "Europe/London")).toBe("2026-01-15T09:00:00.000Z");
+    expect(nextRunAt(9, new Date("2026-07-15T07:00:00.000Z"), "Europe/London")).toBe("2026-07-15T08:00:00.000Z");
+    expect(nextRunAt(9, new Date("2026-10-13T00:00:00.000Z"), "Asia/Singapore")).toBe("2026-10-13T01:00:00.000Z");
+    expect(nextRunAt(9, new Date("2026-10-13T06:00:00.000Z"), "Africa/Johannesburg")).toBe("2026-10-13T07:00:00.000Z");
+    expect(nextRunAt(9, new Date("2026-01-15T21:00:00.000Z"), "Australia/Sydney")).toBe("2026-01-15T22:00:00.000Z");
+    expect(nextRunAt(9, new Date("2026-07-15T20:00:00.000Z"), "Pacific/Auckland")).toBe("2026-07-15T21:00:00.000Z");
+    expect(nextRunAt(9, new Date("2026-06-15T07:00:00.000Z"), "Europe/Dublin")).toBe("2026-06-15T08:00:00.000Z");
+    expect(nextRunAt(9, new Date("2026-01-15T13:00:00.000Z"), "America/Toronto")).toBe("2026-01-15T14:00:00.000Z");
+    expect(formatZonedHour(13, "Asia/Kolkata")).toBe("1:00 PM IST");
+    expect(formatZonedHour(9, "America/Los_Angeles")).toBe("9:00 AM PT");
+    expect(formatZonedClock("2026-07-15T12:00:00.000Z", "America/New_York")).toBe("8 AM");
+    expect(scanStageLabel("searching", "South Africa")).toBe("Searching openings for South Africa");
+    expect(scanStageLabel("searching")).toBe("Searching openings for your titles");
   });
 
   it("estimates from observed runs and queue position without an unbounded promise", () => {

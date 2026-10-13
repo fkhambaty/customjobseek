@@ -1,0 +1,24 @@
+{
+  "offers": [
+    {
+      "id": 9001,
+      "title": "Customer Success Manager",
+      "slug": "customer-success-manager",
+      "locations": [{ "city": "Amsterdam", "country": "Netherlands", "name": "Amsterdam HQ" }],
+      "remote": false,
+      "careers_url": "https://example-co.recruitee.com/o/customer-success-manager",
+      "description": "<p>Help customers adopt the product.</p>",
+      "requirements": "<p>Two years with customers.</p>",
+      "closed_at": null
+    },
+    {
+      "id": 9002,
+      "title": "Closed role",
+      "slug": "closed-role",
+      "location": "Berlin",
+      "careers_url": "https://example-co.recruitee.com/o/closed-role",
+      "description": "<p>Already closed.</p>",
+      "closed_at": "2020-01-01T00:00:00.000Z"
+    }
+  ]
+}

@@ -1,7 +1,12 @@
-import type { Plan, PlanId, RunPack } from "../shared/plans";
+import type { BadMatchReason, InterviewStage } from "../shared/agency";
+import type { Plan } from "../shared/plans";
+import type { PaidSku, CookieChoice, SupportTopic } from "../shared/commercial";
+import type { CheckoutSession, OrderView, PublicBillingStatus } from "../shared/payments";
+import type { OnboardingProgress, StoredWizardStep, WizardStep } from "../shared/onboardingWizard";
 import type { ApplicationFile, JobDescriptionFile } from "../shared/engine/documents";
 import type { MessageSet } from "../shared/engine/outreach";
 import type { Account, Channel, Contact, JobEvent, JobFull, JobRecord, JobStatus, Profile, TailoredResume } from "../shared/types";
+import { JOB_LIST_CAP, JOB_LIST_PAGE_LIMIT, jobListCapNotice, parseJobListResponse } from "./jobList";
 
 export class ApiError extends Error {
   constructor(
@@ -120,10 +125,26 @@ export interface MarketStats {
   readable: number;
   openings: number;
   freshestAt: string | null;
+  unsupported?: number;
+  catalogBoards?: number;
+  countries?: { code: string; name: string; catalog: number; employers: number; readable: number }[];
+  health?: { ats: string; lastOkAt: string | null; failures: number }[];
 }
 
 export interface ScanSchedule {
-  schedule: { hourIst: number; enabled: boolean; nextRunAt: string | null; pausedReason: string } | null;
+  schedule: {
+    hourIst: number;
+    hourLocal: number;
+    timeZone: string;
+    scheduleVersion?: number;
+    enabled: boolean;
+    nextRunAt: string | null;
+    pausedReason: string;
+  } | null;
+  timeZone: string;
+  timeZoneLabel: string;
+  country: string;
+  countryName: string;
   scanRuns: number;
   manualAllowedAt: string | null;
   manualNote: string;
@@ -141,6 +162,30 @@ export interface JobPatch {
   nextActionAt?: string | null;
   on?: string;
   appliedAt?: string;
+  interviewStage?: InterviewStage | "";
+}
+
+export interface CompanyThread {
+  id: string;
+  company: string;
+  companyKey: string;
+  followUpOn: string | null;
+  lastOutAt: string | null;
+  lastInAt: string | null;
+  silenceDays: number | null;
+  messages: number;
+  openRoles: number;
+}
+
+export interface ThreadMessage {
+  id: string;
+  jobId: string | null;
+  direction: "out" | "in";
+  channel: string;
+  at: string;
+  person: string;
+  note: string;
+  title: string;
 }
 
 export interface NewEvent {
@@ -149,6 +194,11 @@ export interface NewEvent {
   person?: string;
   note?: string;
   on?: string;
+}
+
+export interface CompanyPage {
+  companies: CompanyRow[];
+  nextCursor: string | null;
 }
 
 export interface CompanyRow {
@@ -165,15 +215,32 @@ export interface CompanyRow {
   active: number;
 }
 
+export interface AccountHome {
+  preferences: {
+    cookies: CookieChoice;
+    productEmail: boolean;
+    transactionalEmail: boolean;
+    marketingEmail: boolean;
+    termsAcceptedAt: string | null;
+    privacyAcceptedAt: string | null;
+  };
+  onboarding: OnboardingProgress;
+  referral: { code: string; uses: number; rewarded: number };
+}
+
 export const api = {
-  signup: (email: string, password: string) => call<{ ok: true; needsVerification: true }>("POST", "/auth/signup", { email, password }),
-  verify: (email: string, code: string) => call<{ ok: true }>("POST", "/auth/verify", { email, code }),
+  signup: (email: string, password: string, referralCode?: string) =>
+    call<{ ok: true; needsVerification: true }>("POST", "/auth/signup", { email, password, referralCode: referralCode || undefined }),
+  verify: (email: string, code: string, referralCode?: string) =>
+    call<{ ok: true }>("POST", "/auth/verify", { email, code, referralCode }),
   resendCode: (email: string, purpose: "signup" | "reset") => call<{ ok: true }>("POST", "/auth/resend-code", { email, purpose }),
   forgot: (email: string) => call<{ ok: true }>("POST", "/auth/forgot", { email }),
   reset: (email: string, code: string, password: string) => call<{ ok: true }>("POST", "/auth/reset", { email, code, password }),
   login: (email: string, password: string) => call<{ ok: true }>("POST", "/auth/login", { email, password }),
   logout: () => call<{ ok: true }>("POST", "/auth/logout"),
-  me: () => call<Account>("GET", "/auth/me"),
+  me: () => call<Account & { onboardingStep: StoredWizardStep }>("GET", "/auth/me"),
+  onboarding: () => call<{ profile: Profile; missing: string[]; onboarding: OnboardingProgress }>("GET", "/onboarding"),
+  saveOnboardingStep: (step: WizardStep | "done") => call<{ onboarding: OnboardingProgress }>("PUT", "/onboarding", { step }),
   deleteAccount: (password: string) => call<{ ok: true }>("DELETE", "/auth/me", { password }),
 
   getProfile: () => call<{ profile: Profile; missing: string[] }>("GET", "/profile"),
@@ -191,7 +258,21 @@ export const api = {
   },
 
   fetchJob: (url: string) => call<FetchedJob>("POST", "/jobs/fetch", { url }),
-  listJobs: () => call<JobRecord[]>("GET", "/jobs"),
+  listJobs: async () => {
+    const jobs: JobRecord[] = [];
+    let cursor = "";
+    const pages = JOB_LIST_CAP / JOB_LIST_PAGE_LIMIT;
+    for (let page = 0; page < pages; page++) {
+      const query = new URLSearchParams({ limit: String(JOB_LIST_PAGE_LIMIT) });
+      if (cursor) query.set("cursor", cursor);
+      const data = parseJobListResponse(await call<unknown>("GET", `/jobs?${query}`));
+      jobs.push(...data.jobs);
+      if (!data.nextCursor || data.nextCursor === cursor) return { jobs, notice: "" };
+      cursor = data.nextCursor;
+      if (page === pages - 1) return { jobs, notice: jobListCapNotice(jobs.length, true) };
+    }
+    return { jobs, notice: "" };
+  },
   createJob: (j: NewJob) => call<JobRecord>("POST", "/jobs", j),
   getJob: (id: string) => call<JobFull>("GET", `/jobs/${enc(id)}`),
   updateJob: (id: string, patch: JobPatch) => call<JobFull>("PATCH", `/jobs/${enc(id)}`, patch),
@@ -202,6 +283,14 @@ export const api = {
   messages: (id: string) => call<MessageSet[]>("GET", `/jobs/${enc(id)}/messages`),
   activity: () => call<Activity[]>("GET", "/jobs/activity"),
   people: () => call<Person[]>("GET", "/jobs/people"),
+  reportMatch: (id: string, body: { reason: BadMatchReason; note?: string }) =>
+    call<{ id: string }>("POST", `/jobs/${enc(id)}/report-match`, body),
+  threads: () => call<{ threads: CompanyThread[] }>("GET", "/workspace/threads"),
+  thread: (id: string) => call<{ messages: ThreadMessage[] }>("GET", `/workspace/threads/${enc(id)}`),
+  saveThreadFollowUp: (id: string, followUpOn: string | null) =>
+    call<{ threads: CompanyThread[] }>("PATCH", `/workspace/threads/${enc(id)}`, { followUpOn }),
+  logThreadMessage: (id: string, body: { direction: "out" | "in"; channel?: Channel | ""; person?: string; note?: string; on?: string; jobId?: string }) =>
+    call<{ messages: ThreadMessage[] }>("POST", `/workspace/threads/${enc(id)}/messages`, body),
   discover: () => call<{ needsTargets: boolean; rows: DiscoverRow[] }>("GET", "/discover"),
   scanDiscover: () => call<{ scan: MarketScan }>("POST", "/discover/scan"),
   currentMarketScan: () => call<{ scan: MarketScan | null }>("GET", "/discover/scan/current"),
@@ -215,13 +304,35 @@ export const api = {
   getResume: (id: string) => call<TailoredResume>("GET", `/jobs/${enc(id)}/resume`),
   getPack: (id: string) => call<Pack>("GET", `/jobs/${enc(id)}/pack`),
   makeResume: (id: string) => call<Pack>("POST", `/jobs/${enc(id)}/resume`),
-  companies: () => call<CompanyRow[]>("GET", "/companies"),
+  companies: (cursor?: string, q?: string) => {
+    const params = new URLSearchParams();
+    if (cursor) params.set("cursor", cursor);
+    if (q) params.set("q", q);
+    const suffix = params.size ? `?${params}` : "";
+    return call<CompanyPage | CompanyRow[]>("GET", `/companies${suffix}`).then((data) => {
+      if (Array.isArray(data)) return { companies: data, nextCursor: null };
+      return { companies: data.companies ?? [], nextCursor: data.nextCursor ?? null };
+    });
+  },
   companyStats: () => call<MarketStats>("GET", "/companies/stats"),
   openings: (id: string) => call<{ title: string; location: string; url: string }[]>("GET", `/companies/${id}/openings`),
   reportMissed: (url: string, note: string) =>
-    call<{ companyId: string; name: string; ats: string; count: number; error: string }>("POST", "/companies/missed", { url, note }),
+    call<{ companyId: string; name: string; ats: string; count: number; error: string; coverage?: "live" | "unsupported" | "partnership"; message?: string }>("POST", "/companies/missed", { url, note }),
 
   plans: () => call<Plan[]>("GET", "/plans"),
-  checkout: (plan: PlanId) => call<{ url: string }>("POST", "/checkout", { plan }),
-  checkoutRuns: (runPack: RunPack["id"]) => call<{ url: string }>("POST", "/checkout", { runPack }),
+  billingStatus: () => call<PublicBillingStatus>("GET", "/billing/status"),
+  checkout: (body: { sku: PaidSku; idempotencyKey: string; displayCurrency?: string }) =>
+    call<CheckoutSession>("POST", "/checkout", body),
+  checkoutOrders: () => call<{ orders: OrderView[] }>("GET", "/checkout/orders"),
+  checkoutOrder: (id: string, displayCurrency?: string) => {
+    const query = displayCurrency ? `?displayCurrency=${enc(displayCurrency)}` : "";
+    return call<OrderView>("GET", `/checkout/orders/${enc(id)}${query}`);
+  },
+  recoverCheckout: (id: string, displayCurrency?: string) =>
+    call<OrderView>("POST", `/checkout/orders/${enc(id)}/recover`, { displayCurrency }),
+  accountHome: () => call<AccountHome>("GET", "/account"),
+  saveAccountPreferences: (body: { cookies: CookieChoice; productEmail: boolean; transactionalEmail: boolean; marketingEmail: boolean }) =>
+    call<AccountHome["preferences"]>("PUT", "/account/preferences", body),
+  accountExport: () => call<Record<string, unknown>>("GET", "/account/export"),
+  support: (body: { email?: string; topic: SupportTopic; message: string }) => call<{ id: string }>("POST", "/support", body),
 };

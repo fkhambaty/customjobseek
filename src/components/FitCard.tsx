@@ -71,7 +71,7 @@ export function FitCard({ fit }: { fit: FitResult }) {
           <p className="muted small">
             {fit.imported
               ? "Re-check fit to score it against your profile here. Your earlier notes stay as they are."
-              : "The score weighs required skills you hold, other skills mentioned, how close the title is to your targets, and years of experience. It is evidence, not a promise of an interview."}
+              : "The score uses skills, licenses, and years that are already on your profile, plus how close the title is to the roles you named. It does not add a qualification you did not write down."}
           </p>
         </div>
       </div>

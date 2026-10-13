@@ -1,16 +1,27 @@
 import { Hono } from "hono";
 import { secureHeaders } from "hono/secure-headers";
-import { PLANS, PLAN_ORDER, RUN_PACKS, type PlanId } from "../shared/plans";
+import { PLANS, PLAN_ORDER } from "../shared/plans";
+import { shouldCollectQuotas } from "../shared/capacity";
+import { processQueuedScans, runDueSchedules } from "./autoScan";
 import { HttpError, type AppEnv, type Env } from "./env";
+import { indexUnhashedOpenings } from "./openingsSync";
+import { collectDailyQuotas } from "./quota";
+import { runLifecycleSweep } from "./lifecycle";
+import { reconcileReferralRewards } from "./referrals";
+import { purgeExpired } from "./rateLimit";
+import { account } from "./routes/account";
 import { auth } from "./routes/auth";
+import { billing, checkout } from "./routes/billing";
 import { companies } from "./routes/companies";
 import { discover } from "./routes/discover";
 import { jobs } from "./routes/jobs";
+import { onboardingRoutes } from "./routes/onboarding";
 import { profile } from "./routes/profile";
 import { resumes } from "./routes/resumes";
-import { processQueuedScans, runDueSchedules } from "./autoScan";
+import { mailPrefs } from "./routes/mail";
+import { support } from "./routes/support";
+import { workspace } from "./routes/workspace";
 import { scanDue } from "./scan";
-import { requireUser } from "./session";
 
 const app = new Hono<AppEnv>();
 
@@ -20,28 +31,29 @@ app.use("/api/*", secureHeaders());
 // which, together with SameSite=Lax cookies, closes the CSRF hole without tokens.
 app.use("/api/*", async (c, next) => {
   const pdfUpload = c.req.path === "/api/profile/resume-file" && (c.req.header("content-type") ?? "").includes("pdf");
-  if (c.req.method !== "GET" && c.req.method !== "HEAD" && !pdfUpload && !c.req.header("content-type")?.includes("application/json")) {
+  const webhook = c.req.path === "/api/billing/razorpay/webhook";
+  const unsubscribe = c.req.path === "/api/mail/unsubscribe";
+  if (!webhook && !unsubscribe && c.req.method !== "GET" && c.req.method !== "HEAD" && !pdfUpload && !c.req.header("content-type")?.includes("application/json")) {
     throw new HttpError(400, "Requests must be JSON.");
   }
   await next();
 });
 
 app.route("/api/auth", auth);
+app.route("/api/onboarding", onboardingRoutes);
 app.route("/api/profile", profile);
 app.route("/api/jobs", jobs);
 app.route("/api/companies", companies);
 app.route("/api/discover", discover);
 app.route("/api/resumes", resumes);
+app.route("/api/account", account);
+app.route("/api/support", support);
+app.route("/api/workspace", workspace);
+app.route("/api/mail", mailPrefs);
+app.route("/api/billing", billing);
+app.route("/api/checkout", checkout);
 
 app.get("/api/plans", (c) => c.json(PLAN_ORDER.map((id) => PLANS[id])));
-
-app.post("/api/checkout", requireUser, async (c) => {
-  const body = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
-  const runPack = typeof body.runPack === "string" ? RUN_PACKS.find((pack) => pack.id === body.runPack) : undefined;
-  const planId = body.plan as PlanId;
-  if (!runPack && (!PLANS[planId] || planId === "free")) throw new HttpError(400, "Pick a paid plan.");
-  throw new HttpError(501, "Payments open soon. Your free credits are ready to use now.");
-});
 
 app.all("/api/*", () => {
   throw new HttpError(404, "Not found.");
@@ -71,6 +83,13 @@ export default {
     switch (job) {
       case "17 * * * *":
         ctx.waitUntil(scanDue(env));
+        ctx.waitUntil(runLifecycleSweep(env).catch((err: unknown) => console.error("lifecycle mail failed", err)));
+        ctx.waitUntil(reconcileReferralRewards(env).catch((err: unknown) => console.error("referral reconcile failed", err)));
+        ctx.waitUntil(purgeExpired(env.DB).catch((err: unknown) => console.error("cleanup failed", err)));
+        ctx.waitUntil(indexUnhashedOpenings(env).catch((err: unknown) => console.error("search index failed", err)));
+        if (shouldCollectQuotas(event.cron, new Date(event.scheduledTime))) {
+          ctx.waitUntil(collectDailyQuotas(env).catch((err: unknown) => console.error("quota collect failed", err)));
+        }
         return;
       case "30 * * * *":
         ctx.waitUntil(runDueSchedules(env));

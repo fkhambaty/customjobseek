@@ -1,3 +1,4 @@
+import { parseInterviewStage, parseLiveStatus, parsePayProvenance } from "../../shared/agency";
 import { roleFamily, routeFromUrl } from "../../shared/engine/classify";
 import type { Account, FitResult, JobRecord, JobStatus } from "../../shared/types";
 import type { UserRow } from "../env";
@@ -30,16 +31,30 @@ export interface JobRow {
   contact_count: number;
   details_ciphertext: string;
   has_resume?: number;
+  has_pack?: number;
   messages_sent?: number;
   replies?: number;
   last_touch_at?: string | null;
+  live_status?: string;
+  source_checked_at?: string | null;
+  pay_provenance?: string;
+  interview_stage?: string;
 }
 
-export const JOB_SELECT = `SELECT j.*,
-  (EXISTS(SELECT 1 FROM resumes r WHERE r.job_id = j.id) OR EXISTS(SELECT 1 FROM packs p WHERE p.job_id = j.id AND p.kind IN ('resume', 'resume_html'))) AS has_resume,
+const JOB_EXTRAS = `
+  (EXISTS(SELECT 1 FROM resumes r WHERE r.job_id = j.id) OR EXISTS(SELECT 1 FROM packs p WHERE p.job_id = j.id AND p.kind = 'resume' AND p.ciphertext != '') OR EXISTS(SELECT 1 FROM packs p WHERE p.job_id = j.id AND p.kind = 'resume_html')) AS has_resume,
+  (EXISTS(SELECT 1 FROM packs p WHERE p.job_id = j.id AND p.kind = 'application' AND p.ciphertext != '')) AS has_pack,
   (SELECT COUNT(*) FROM job_events e WHERE e.job_id = j.id AND e.kind = 'message') AS messages_sent,
   (SELECT COUNT(*) FROM job_events e WHERE e.job_id = j.id AND e.kind = 'reply') AS replies,
-  (SELECT MAX(e.at) FROM job_events e WHERE e.job_id = j.id AND e.kind IN ('message', 'reply')) AS last_touch_at
+  (SELECT MAX(e.at) FROM job_events e WHERE e.job_id = j.id AND e.kind IN ('message', 'reply')) AS last_touch_at`;
+
+export const JOB_SELECT = `SELECT j.*, ${JOB_EXTRAS} FROM jobs j`;
+
+/** List rows skip the description and notes. The job page loads those on demand. */
+export const JOB_LIST_SELECT = `SELECT j.id, j.user_id, j.title, j.company, j.location, j.url, j.salary_text,
+  '' AS description, j.status, j.fit_json, '' AS notes, j.next_action_at, j.applied_at, j.created_at, j.updated_at,
+  j.lane, j.route, j.requisition, j.pay_low, j.pay_high, j.pay_estimated, j.posted_at, j.rejected_at, j.closed_at,
+  j.contact_count, '' AS details_ciphertext, j.live_status, j.source_checked_at, j.pay_provenance, j.interview_stage, ${JOB_EXTRAS}
   FROM jobs j`;
 
 export function toAccount(u: UserRow): Account {
@@ -84,5 +99,10 @@ export function toJob(r: JobRow): JobRecord {
     messagesSent: r.messages_sent ?? 0,
     replies: r.replies ?? 0,
     lastTouchAt: r.last_touch_at ?? null,
+    liveStatus: parseLiveStatus(r.live_status),
+    sourceCheckedAt: r.source_checked_at ?? null,
+    payProvenance: parsePayProvenance(r.pay_provenance),
+    interviewStage: parseInterviewStage(r.interview_stage),
+    hasPack: Boolean(r.has_pack),
   };
 }

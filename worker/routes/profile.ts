@@ -1,12 +1,17 @@
 import { Hono } from "hono";
+import { extractText, getDocumentProxy } from "unpdf";
+import { onboardingMarks } from "../../shared/commercial";
 import { profileFromResumeText } from "../../shared/engine/importResume";
+import { nextRunAt } from "../../shared/engine/scanRules";
 import { resumeTextInReadingOrder, type ResumeTextPage } from "../../shared/engine/resumeLayout";
 import { emptyProfile, type Profile } from "../../shared/types";
 import { profileReadiness, sanitiseProfile } from "../../shared/validate";
 import { decryptJson, encryptJson } from "../crypto";
 import { HttpError, type AppEnv, type Env } from "../env";
+import { noteOnboarding } from "../onboarding";
+import { enforceRateLimit } from "../rateLimit";
 import { requireUser } from "../session";
-import { extractText, getDocumentProxy } from "unpdf";
+import { noteProductEvent, noteUsage } from "../usage";
 
 export async function loadProfile(env: Env, userId: string, email: string): Promise<Profile> {
   const row = await env.DB.prepare("SELECT ciphertext FROM profiles WHERE user_id = ?").bind(userId).first<{ ciphertext: string }>();
@@ -29,10 +34,20 @@ export const profile = new Hono<AppEnv>()
     )
       .bind(user.id, await encryptJson(c.env.DATA_KEY, p))
       .run();
+    for (const step of onboardingMarks(p)) await noteOnboarding(c.env.DB, user.id, step);
+    const schedule = await c.env.DB.prepare("SELECT hour_ist, enabled FROM scan_schedules WHERE user_id = ?")
+      .bind(user.id)
+      .first<{ hour_ist: number; enabled: number }>();
+    if (schedule?.enabled) {
+      await c.env.DB.prepare("UPDATE scan_schedules SET next_run_at = ? WHERE user_id = ?")
+        .bind(nextRunAt(schedule.hour_ist, new Date(), p.preferences.timezone), user.id)
+        .run();
+    }
     return c.json({ profile: p, missing: profileReadiness(p) });
   })
   .post("/resume-file", async (c) => {
     const user = c.get("user");
+    await enforceRateLimit(c.env.DB, "resume_import", user.id);
     const bytes = new Uint8Array(await c.req.arrayBuffer());
     if (bytes.byteLength < 100 || bytes.byteLength > 2_000_000) throw new HttpError(400, "Upload a PDF under 2 MB.");
     const doc = await getDocumentProxy(bytes).catch(() => null);
@@ -61,5 +76,8 @@ export const profile = new Hono<AppEnv>()
     await c.env.DB.prepare("INSERT INTO resume_uploads (id, user_id, filename, label, format, text_ciphertext) VALUES (?, ?, ?, ?, 'text', ?)")
       .bind(crypto.randomUUID(), user.id, filename, filename.replace(/\.pdf$/i, ""), await encryptJson(c.env.DATA_KEY, { text: text.slice(0, 100_000) }))
       .run();
+    await noteUsage(c.env.DB, user.id, "imports");
+    await noteOnboarding(c.env.DB, user.id, "resume");
+    await noteProductEvent(c.env.DB, user.id, "resume_import");
     return c.json({ profile: draft, missing: profileReadiness(draft) });
   });

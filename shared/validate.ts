@@ -1,3 +1,4 @@
+import { resolveTimeZone } from "./geo";
 import type { Profile, SalaryPeriod, SkillLevel } from "./types";
 
 type Raw = Record<string, unknown>;
@@ -94,8 +95,9 @@ function readPreferences(prefs: Raw): Profile["preferences"] {
   const legacyMax = num(prefs.maxSalaryLpa, 0, 1000);
   const period = PERIODS.includes(prefs.salaryPeriod as SalaryPeriod) ? (prefs.salaryPeriod as SalaryPeriod) : legacyMin !== null ? "lpa" : "year";
   const currency = /^[A-Za-z]{3}$/.test(text(prefs.currency, 3)) ? text(prefs.currency, 3).toUpperCase() : period === "lpa" ? "INR" : "USD";
+  const country = /^[A-Za-z]{2}$/.test(text(prefs.country, 2)) ? text(prefs.country, 2).toUpperCase() : "";
   return {
-    country: /^[A-Za-z]{2}$/.test(text(prefs.country, 2)) ? text(prefs.country, 2).toUpperCase() : "",
+    country,
     cities: words(prefs.cities, 20),
     remoteOk: prefs.remoteOk !== false,
     currency: period === "lpa" ? "INR" : currency,
@@ -104,14 +106,22 @@ function readPreferences(prefs: Raw): Profile["preferences"] {
     salaryPeriod: period,
     targetRoles: words(prefs.targetRoles, 15),
     excludedTitleWords: words(prefs.excludedTitleWords, 20),
+    timezone: resolveTimeZone(country, text(prefs.timezone, 64)),
   };
 }
 
-export function profileReadiness(p: Profile): string[] {
+/** Facts the scan can trust. Job titles are separate so setup can ask for them on their own step. */
+export function factGaps(p: Profile): string[] {
   const missing: string[] = [];
   if (!p.fullName) missing.push("your name");
   if (!p.email) missing.push("a contact email");
   if (!p.skills.length) missing.push("at least one skill");
   if (!p.experience.some((e) => e.bullets.length)) missing.push("at least one role with achievements");
+  return missing;
+}
+
+export function profileReadiness(p: Profile): string[] {
+  const missing = factGaps(p);
+  if (!p.preferences.targetRoles.length) missing.push("the job titles you want");
   return missing;
 }

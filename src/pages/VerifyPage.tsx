@@ -18,9 +18,11 @@ export function VerifyPage() {
     setBusy(true);
     setError("");
     try {
-      await api.verify(email, code);
+      const stored = sessionStorage.getItem("cjs_referral");
+      await api.verify(email, code, stored ?? undefined);
+      sessionStorage.removeItem("cjs_referral");
       await refresh();
-      navigate("/profile");
+      navigate("/onboarding");
     } catch (err) {
       setError((err as Error).message);
     } finally {

@@ -32,6 +32,8 @@ const ROUTE_LABEL: Record<string, string> = {
   workable: "Workable",
   smartrecruiters: "SmartRecruiters",
   workday: "Workday",
+  teamtailor: "Teamtailor",
+  recruitee: "Recruitee",
 };
 
 /** Where the application is submitted, from the link alone. */

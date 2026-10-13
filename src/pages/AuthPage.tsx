@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from "react";
-import { Link, Navigate, useLocation, useNavigate } from "react-router-dom";
+import { Link, Navigate, useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { api } from "../api";
 import { useSession } from "../session";
 
@@ -7,13 +7,15 @@ export function AuthPage({ mode }: { mode: "login" | "signup" }) {
   const { account, refresh } = useSession();
   const navigate = useNavigate();
   const location = useLocation();
+  const [params] = useSearchParams();
+  const referralCode = params.get("ref") ?? "";
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
 
   const from = (location.state as { from?: string } | null)?.from;
-  if (account) return <Navigate to={mode === "signup" ? "/profile" : (from ?? "/today")} replace />;
+  if (account) return <Navigate to={from ?? "/today"} replace />;
 
   async function submit(e: FormEvent) {
     e.preventDefault();
@@ -21,7 +23,8 @@ export function AuthPage({ mode }: { mode: "login" | "signup" }) {
     setBusy(true);
     try {
       if (mode === "signup") {
-        await api.signup(email, password);
+        sessionStorage.setItem("cjs_referral", referralCode);
+        await api.signup(email, password, referralCode);
         navigate(`/verify?email=${encodeURIComponent(email)}`);
         return;
       }
@@ -39,7 +42,7 @@ export function AuthPage({ mode }: { mode: "login" | "signup" }) {
       <div className="card auth-card">
         <h1>{mode === "signup" ? "Create your free account" : "Welcome back"}</h1>
         <p className="muted">
-          {mode === "signup" ? "3 fit checks and 1 tailored resume, free." : "Sign in to your job search."}
+          {mode === "signup" ? "3 application packs to start. We email you a code to confirm it's you." : "Sign in to your job search."}
         </p>
         <form onSubmit={submit} className="stack">
           <label className="field">
@@ -56,12 +59,17 @@ export function AuthPage({ mode }: { mode: "login" | "signup" }) {
               value={password}
               onChange={(e) => setPassword(e.target.value)}
             />
-            {mode === "signup" ? <small className="muted">At least 10 characters. We email you a 6-digit code.</small> : <small className="muted"><Link to="/reset">Forgot password?</Link></small>}
+            {mode === "signup" ? <small className="muted">At least 10 characters.</small> : <small className="muted"><Link to="/reset">Forgot password?</Link></small>}
           </label>
           {error && <div className="alert alert-error">{error}</div>}
           <button className="btn btn-primary btn-block" disabled={busy}>
             {busy ? "Please wait…" : mode === "signup" ? "Create account" : "Sign in"}
           </button>
+          {mode === "signup" && (
+            <p className="muted small">
+              By creating an account you agree to the <Link to="/terms">Terms</Link> and <Link to="/privacy">Privacy</Link> pages.
+            </p>
+          )}
         </form>
         <p className="muted small center">
           {mode === "signup" ? (

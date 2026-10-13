@@ -7,6 +7,23 @@ export interface Env {
   RESEND_API_KEY?: string;
   MAIL_FROM?: string;
   PAYMENTS_ENABLED?: string;
+  /** Inbox for operational alerts. Those notes never include a resume, password, or support message. */
+  OWNER_EMAIL?: string;
+  /** Public checkout key. Safe to show in the browser. Never the key secret. */
+  RAZORPAY_KEY_ID?: string;
+  /** Server-only. Used to create orders and read them back. Never sent to the browser. */
+  RAZORPAY_KEY_SECRET?: string;
+  /** Server-only. Used to verify webhook bodies. Never sent to the browser. */
+  RAZORPAY_WEBHOOK_SECRET?: string;
+  /** Reserved. Product counts stay in D1 until a later release reads the stored cookie choice. */
+  CF_ACCOUNT_ID?: string;
+  CF_ANALYTICS_API_TOKEN?: string;
+  /** Public site origin for links in lifecycle email. Defaults to https://customjobseek.com. */
+  PUBLIC_ORIGIN?: string;
+  /** Real operator name for the legal pages. Leave unset rather than inventing one. */
+  LEGAL_NAME?: string;
+  /** Real postal address for the legal pages. Leave unset rather than inventing one. */
+  LEGAL_ADDRESS?: string;
 }
 
 export interface UserRow {

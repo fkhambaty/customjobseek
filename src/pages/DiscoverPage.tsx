@@ -1,14 +1,16 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { formatIstHour } from "../../shared/engine/scanRules";
+import { DISCOVER_COVERAGE } from "../../shared/engine/sources";
+import { formatZonedHour } from "../../shared/engine/scanRules";
 import { api, ApiError, type DiscoverRow, type ScanSchedule } from "../api";
 import { MarketScanConsole } from "../components/MarketScanConsole";
+import { UpgradePrompt } from "../components/UpgradePrompt";
 import { useJobs } from "../data";
 import { ago } from "../format";
 import { useSession } from "../session";
 
 export function DiscoverPage() {
-  const { put, open } = useJobs();
+  const { put, open, jobs } = useJobs();
   const { account, refresh } = useSession();
   const [data, setData] = useState<{ needsTargets: boolean; rows: DiscoverRow[] } | null>(null);
   const [busy, setBusy] = useState("");
@@ -54,6 +56,7 @@ export function DiscoverPage() {
 
   const rows = (data?.rows ?? []).filter((r) => !hidden.has(r.url));
   const paid = account !== null && account.plan !== "free";
+  const evidence = (jobs ?? []).some((job) => job.fit.score > 0) || (quota?.runs.some((run) => run.preparedCount > 0) ?? false);
   return (
     <div className="page">
       <div className="page-top">
@@ -63,6 +66,7 @@ export function DiscoverPage() {
             Openings on the <Link to="/companies">career pages we scan</Link> whose titles match what you are looking for, in places you accept.
             One scan prepares the strongest three matches as complete application packs.
           </p>
+          <p className="muted small">{DISCOVER_COVERAGE}</p>
         </div>
       </div>
       {error && <div className="alert alert-error">{error}</div>}
@@ -70,6 +74,9 @@ export function DiscoverPage() {
         <p className="first-run">Add the job titles you want on your <Link to="/profile">profile</Link> and matching openings show up here.</p>
       )}
       {data && !data.needsTargets && <MarketScanConsole compact />}
+      {data && !data.needsTargets && (account?.evalCredits ?? 1) < 1 && (
+        <UpgradePrompt evidence={evidence} blocked="checks" />
+      )}
       {data && !data.needsTargets && (
         <section className="daily-scan">
           <div>
@@ -77,8 +84,8 @@ export function DiscoverPage() {
             {paid ? (
               <p>
                 {quota?.schedule?.enabled
-                  ? `On, every day at ${formatIstHour(quota.schedule.hourIst)}.${quota.schedule.pausedReason ? ` Paused: ${quota.schedule.pausedReason}` : ""}`
-                  : "Off. Pick an hour in India time and it prepares up to three jobs once a day."}
+                  ? `On, every day at ${formatZonedHour(quota.schedule.hourLocal, quota.timeZone)}.${quota.schedule.pausedReason ? ` Paused: ${quota.schedule.pausedReason}` : ""}`
+                  : `Off. Pick an hour in ${quota?.timeZoneLabel || "your time zone"} and it prepares up to three jobs once a day.`}
               </p>
             ) : (
               <p>Daily scans come with any paid plan. The free scan is the one you start yourself.</p>
@@ -95,7 +102,7 @@ export function DiscoverPage() {
                 }}
               >
                 {Array.from({ length: 24 }, (_, hour) => (
-                  <option key={hour} value={hour}>{formatIstHour(hour)}</option>
+                  <option key={hour} value={hour}>{formatZonedHour(hour, quota?.timeZone || "Asia/Kolkata")}</option>
                 ))}
               </select>
               <button className="btn btn-ghost btn-sm" onClick={() => saveSchedule(!(quota?.schedule?.enabled ?? false))}>

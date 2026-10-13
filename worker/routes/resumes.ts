@@ -36,12 +36,19 @@ export const resumes = new Hono<AppEnv>()
     const user = c.get("user");
     const [tailored, base] = await Promise.all([
       c.env.DB.prepare(
-        `SELECT j.id, j.title, j.company, j.status, MAX(p.created_at) AS made_at,
-           MAX(CASE WHEN p.kind = 'resume' THEN 1 ELSE 0 END) AS built,
+        `SELECT j.id, j.title, j.company, j.status,
+           COALESCE(MAX(r.created_at), MAX(p.created_at)) AS made_at,
+           CASE
+             WHEN MAX(r.job_id) IS NOT NULL OR SUM(CASE WHEN p.kind = 'resume' AND p.ciphertext != '' THEN 1 ELSE 0 END) > 0 THEN 1
+             ELSE 0
+           END AS built,
            MAX(CASE WHEN p.kind = 'resume_html' THEN 1 ELSE 0 END) AS saved
-         FROM packs p JOIN jobs j ON j.id = p.job_id
-         WHERE p.user_id = ? AND p.kind IN ('resume', 'resume_html')
-         GROUP BY j.id ORDER BY made_at DESC`,
+         FROM jobs j
+         LEFT JOIN resumes r ON r.job_id = j.id AND r.user_id = j.user_id
+         LEFT JOIN packs p ON p.job_id = j.id AND p.user_id = j.user_id AND p.kind IN ('resume', 'resume_html')
+         WHERE j.user_id = ? AND (r.job_id IS NOT NULL OR p.job_id IS NOT NULL)
+         GROUP BY j.id
+         ORDER BY made_at DESC`,
       )
         .bind(user.id)
         .all<{ id: string; title: string; company: string; status: string; made_at: string; built: number; saved: number }>(),

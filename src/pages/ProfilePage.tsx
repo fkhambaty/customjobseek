@@ -1,9 +1,11 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { COUNTRIES, currencies } from "../../shared/geo";
+import { COUNTRIES, currencies, preferencesForCountry } from "../../shared/geo";
 import type { Bullet, Experience, Profile, SalaryPeriod } from "../../shared/types";
 import { api } from "../api";
+import { CountrySelect, TimeZoneField } from "../components/CountrySelect";
 import { Field, ListInput, NumberInput, newId } from "../components/fields";
+import { RoleTargets } from "../components/RoleTargets";
 
 function BulletsEditor({ bullets, onChange }: { bullets: Bullet[]; onChange: (b: Bullet[]) => void }) {
   const [raw, setRaw] = useState(bullets.map((b) => b.text).join("\n"));
@@ -113,7 +115,9 @@ export function ProfilePage() {
       </div>
 
       {missing.length > 0 ? (
-        <div className="alert alert-info">To check jobs, add {missing.join(", ")}, then save.</div>
+        <div className="alert alert-info">
+          To check jobs, add {missing.join(", ")}, then save. <Link to="/onboarding">Guided setup</Link> walks through the same profile one step at a time.
+        </div>
       ) : (
         <div className="alert alert-ok">Your profile is ready. <Link to="/jobs/new">Check a job →</Link></div>
       )}
@@ -170,29 +174,14 @@ export function ProfilePage() {
 
       <section className="card">
         <h2>Where you will work, and for what pay</h2>
-        <p className="muted small">Pick a country, then the cities in it. Pay is compared only when the job uses the same currency.</p>
+        <p className="muted small">Pick a country, then the cities in it. Pay is compared only when the job uses the same currency. The time zone is only for the daily scan.</p>
         <div className="grid-2">
           <Field label="Country">
-            <select
+            <CountrySelect
               value={profile.preferences.country}
-              onChange={(e) => {
-                const country = COUNTRIES.find((c) => c.code === e.target.value);
-                setProfile({
-                  ...profile,
-                  preferences: {
-                    ...profile.preferences,
-                    country: e.target.value,
-                    currency: country?.currency || profile.preferences.currency,
-                    cities: [],
-                  },
-                });
-              }}
-            >
-              <option value="">Any country</option>
-              {COUNTRIES.map((c) => (
-                <option key={c.code} value={c.code}>{c.name}</option>
-              ))}
-            </select>
+              emptyLabel="Any country"
+              onChange={(code) => setProfile({ ...profile, preferences: preferencesForCountry(profile.preferences, code) })}
+            />
           </Field>
           <Field label="Cities" hint="Leave empty to accept the whole country. Add any city the list does not have.">
             <select
@@ -247,9 +236,21 @@ export function ProfilePage() {
           </Field>
           <Field label="Minimum pay"><NumberInput value={profile.preferences.minSalary} onChange={(v) => setPref("minSalary", v)} placeholder="80000" /></Field>
           <Field label="Maximum pay"><NumberInput value={profile.preferences.maxSalary} onChange={(v) => setPref("maxSalary", v)} placeholder="120000" /></Field>
-          <Field label="Roles you target" hint="Comma-separated job titles.">
-            <ListInput value={profile.preferences.targetRoles} onChange={(v) => setPref("targetRoles", v)} placeholder="Analytics Engineer, BI Manager" />
+          <Field label="Roles you target" hint="Comma-separated. Any job title is accepted, including ones that are not in the examples.">
+            <ListInput value={profile.preferences.targetRoles} onChange={(v) => setPref("targetRoles", v)} placeholder="Registered Nurse, Electrician, Teacher" />
           </Field>
+          <RoleTargets
+            roles={profile.preferences.targetRoles}
+            onAdd={(title) => {
+              if (profile.preferences.targetRoles.some((role) => role.toLowerCase() === title.toLowerCase())) return;
+              setPref("targetRoles", [...profile.preferences.targetRoles, title]);
+            }}
+          />
+          <TimeZoneField
+            country={profile.preferences.country}
+            value={profile.preferences.timezone}
+            onChange={(zone) => setPref("timezone", zone)}
+          />
           <Field label="Title words to exclude" hint="Any job title containing these is a deal-breaker.">
             <ListInput value={profile.preferences.excludedTitleWords} onChange={(v) => setPref("excludedTitleWords", v)} placeholder="Intern, Sales" />
           </Field>

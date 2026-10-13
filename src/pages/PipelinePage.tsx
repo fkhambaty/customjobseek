@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { rowEvidence } from "../../shared/agency";
 import { payMid } from "../../shared/engine/insights";
 import { JOB_STATUSES, type JobRecord, type JobStatus } from "../../shared/types";
 import { api } from "../api";
 import { statusLabel } from "../components/FitCard";
 import { useJobs } from "../data";
-import { formatPay, shortDate } from "../format";
+import { formatPay, shortDate, today } from "../format";
 
 type SortKey = "added" | "applied" | "score" | "pay" | "company";
 
@@ -16,6 +17,18 @@ const GROUPS: { id: string; label: string; statuses: JobStatus[] }[] = [
   { id: "rejected", label: "Rejected", statuses: ["rejected"] },
   { id: "closed", label: "Closed", statuses: ["closed", "withdrawn"] },
 ];
+
+function PipelineSignal({ job }: { job: JobRecord }) {
+  const evidence = rowEvidence(job, today());
+  const bits = [
+    evidence.freshness.label,
+    evidence.payProvenance === "unknown" ? "" : evidence.payLabel,
+    evidence.coverage === null ? "" : `${evidence.coverage}% covered`,
+    evidence.stage,
+    evidence.outreach.note,
+  ].filter(Boolean);
+  return <span className={`l-signal ${evidence.freshness.status}`}>{bits.join(" · ")}{evidence.blocker ? ` · ${evidence.blocker}` : ""}</span>;
+}
 
 function uniq(values: string[]): string[] {
   return [...new Set(values.filter(Boolean))].sort();
@@ -41,7 +54,7 @@ function sorter(key: SortKey): (a: JobRecord, b: JobRecord) => number {
 }
 
 export function PipelinePage() {
-  const { jobs, put, open, currency } = useJobs();
+  const { jobs, error, notice, put, open, currency } = useJobs();
   const [group, setGroup] = useState("all");
   const [query, setQuery] = useState("");
   const [lane, setLane] = useState("");
@@ -90,6 +103,15 @@ export function PipelinePage() {
 
   const counts = (statuses: JobStatus[]) => all.filter((j) => statuses.includes(j.status)).length;
 
+  if (error && !jobs) {
+    return (
+      <div className="page page-wide">
+        <h1 className="page-title">Pipeline</h1>
+        <div className="alert alert-error" role="alert">{error}</div>
+      </div>
+    );
+  }
+
   return (
     <div className="page page-wide">
       <div className="page-top">
@@ -98,17 +120,18 @@ export function PipelinePage() {
           <p className="lede">Every job you have looked at, where it stands, and when you last touched it.</p>
         </div>
       </div>
+      {notice && <div className="alert alert-warn" role="status">{notice}</div>}
 
       <div className="filters">
-        <div className="seg">
+        <div className="seg" role="group" aria-label="Pipeline stages">
           {GROUPS.map((g) => (
-            <button key={g.id} className={group === g.id ? "on" : ""} onClick={() => setGroup(g.id)}>
+            <button key={g.id} type="button" className={group === g.id ? "on" : ""} aria-pressed={group === g.id} aria-current={group === g.id ? "true" : undefined} onClick={() => setGroup(g.id)}>
               {g.label} <span>{counts(g.statuses)}</span>
             </button>
           ))}
         </div>
         <div className="filter-row">
-          <input ref={search} className="search" placeholder="Search title, company, reference   /" value={query} onChange={(e) => setQuery(e.target.value)} />
+          <input ref={search} className="search" aria-label="Search title, company, or reference" placeholder="Search title, company, reference   /" value={query} onChange={(e) => setQuery(e.target.value)} />
           <select value={lane} onChange={(e) => setLane(e.target.value)} aria-label="Lane">
             <option value="">Every lane</option>
             {uniq(all.map((j) => j.lane)).map((l) => <option key={l}>{l}</option>)}
@@ -131,24 +154,36 @@ export function PipelinePage() {
         </div>
       </div>
 
+      {shown.length > 0 && (
+      <div className="table-scroll" tabIndex={0} role="region" aria-label="Pipeline jobs">
       <table className="ledger">
         <thead>
           <tr>
-            <th>Role</th>
-            <th>Lane</th>
-            <th className="num">Pay</th>
-            <th className="num">Fit</th>
-            <th>Applied</th>
-            <th>People</th>
-            <th>Status</th>
+            <th scope="col">Role</th>
+            <th scope="col">Lane</th>
+            <th scope="col" className="num">Pay</th>
+            <th scope="col" className="num">Fit</th>
+            <th scope="col">Applied</th>
+            <th scope="col">People</th>
+            <th scope="col">Status</th>
           </tr>
         </thead>
         <tbody>
           {shown.map((j, i) => (
-            <tr key={j.id} className={i === cursor ? "cursor" : ""} onClick={() => open(j.id)}>
+            <tr
+              key={j.id}
+              className={i === cursor ? "cursor" : ""}
+              tabIndex={0}
+              aria-current={i === cursor ? "true" : undefined}
+              onClick={() => open(j.id)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") open(j.id);
+              }}
+            >
               <td>
                 <span className="l-title">{j.title}</span>
                 <span className="l-sub">{j.company}{j.route && ` · ${j.route}`}</span>
+                <PipelineSignal job={j} />
               </td>
               <td className="l-lane">{j.lane}</td>
               <td className="num">{formatPay(j, currency)}</td>
@@ -159,8 +194,8 @@ export function PipelinePage() {
                 {j.messagesSent > 0 && <span className="sent">{j.messagesSent} sent</span>}
                 {j.replies > 0 && <span className="replied">replied</span>}
               </td>
-              <td onClick={(e) => e.stopPropagation()}>
-                <select className={`status-pick s-${j.status}`} value={j.status} onChange={(e) => setStatus(j, e.target.value as JobStatus)}>
+              <td onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
+                <select className={`status-pick s-${j.status}`} aria-label={`Status for ${j.title}`} value={j.status} onChange={(e) => setStatus(j, e.target.value as JobStatus)}>
                   {JOB_STATUSES.map((s) => <option key={s} value={s}>{statusLabel(s)}</option>)}
                 </select>
               </td>
@@ -168,7 +203,11 @@ export function PipelinePage() {
           ))}
         </tbody>
       </table>
-      {!shown.length && <p className="muted pad">Nothing matches those filters.</p>}
+      </div>
+      )}
+      {!shown.length && (
+        <p className="muted pad">{all.length ? "Nothing matches those filters." : "No jobs yet. Check a posting, or run a scan, and it shows up here."}</p>
+      )}
       <p className="keys">j / k to move · Enter to open · / to search · Esc to close</p>
     </div>
   );

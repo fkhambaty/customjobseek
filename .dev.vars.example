@@ -1,0 +1,19 @@
+# Copy to .dev.vars. Do not commit .dev.vars.
+# Wrangler also reads OWNER_EMAIL and MAIL_FROM from wrangler.jsonc.
+
+DATA_KEY=
+RESEND_API_KEY=
+CF_ACCOUNT_ID=
+CF_ANALYTICS_API_TOKEN=
+
+# Optional until PAYMENTS_ENABLED=true. All three must be set, and the webhook secret
+# must not be the same as the key secret. Test keys start with rzp_test_. Live keys start
+# with rzp_live_. See docs/operations.md before using live keys. Do not commit real values.
+PAYMENTS_ENABLED=false
+# Optional. Set these only to the real legal name and postal address.
+# Leave them unset. Do not invent a company or a street. Payments stay closed until you open checkout.
+# LEGAL_NAME=
+# LEGAL_ADDRESS=
+RAZORPAY_KEY_ID=
+RAZORPAY_KEY_SECRET=
+RAZORPAY_WEBHOOK_SECRET=
