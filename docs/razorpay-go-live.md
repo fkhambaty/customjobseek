@@ -1,13 +1,20 @@
 # Razorpay go-live runbook
 
-> Status on 14 October 2026: the CustomJobSeek Razorpay account has been
-> created. Razorpay verification is expected to take 24–48 hours. Checkout must
-> remain closed until the dashboard explicitly shows that live payments are
-> activated.
+> Status on 14 October 2026: Razorpay test mode is active. The test key id and
+> key secret are in the gitignored local `.dev.vars`, together with a separate
+> generated webhook secret and `PAYMENTS_ENABLED=true`. The Razorpay orders API
+> accepted those test credentials and created an INR order. Local
+> `/api/billing/status` returns `paymentsEnabled: true`.
 >
-> The implementation is already present. The final code switch is
-> `PAYMENTS_ENABLED: "false"` → `"true"` in `wrangler.jsonc`, but only after
-> every prerequisite and test below is complete.
+> Production checkout stays closed. `wrangler.jsonc` still has
+> `PAYMENTS_ENABLED: "false"`. Do not put the key secret or webhook secret in
+> git. Before opening the live site, register the webhook in the Razorpay
+> dashboard with the same webhook secret, set the three Worker secrets, add the
+> real legal name and address, then follow section 6.
+>
+> The checkout code is already present. Local test mode is on through
+> `.dev.vars`. The production switch is still `PAYMENTS_ENABLED: "false"` in
+> `wrangler.jsonc`, and it stays there until every prerequisite below is complete.
 
 This is the canonical activation guide for a future engineer or AI working from
 another computer. Do not improvise a different payment flow.
