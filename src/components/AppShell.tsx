@@ -1,10 +1,11 @@
-import { useEffect, useMemo, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { Link, NavLink, useNavigate, useSearchParams } from "react-router-dom";
 import { todayQueues } from "../../shared/engine/insights";
 import { useJobs } from "../data";
 import { plural, today } from "../format";
 import { useSession } from "../session";
 import { JOB_TABS, JobView, type JobTab } from "./JobView";
+import { ScanReviewDialog } from "./ScanReviewDialog";
 import { SiteLinks } from "./SiteLinks";
 
 function Item({ to, label, count, hot }: { to: string; label: string; count?: number; hot?: boolean }) {
@@ -71,18 +72,20 @@ export function AppShell({ children }: { children: ReactNode }) {
   const navigate = useNavigate();
   const q = useMemo(() => (jobs ? todayQueues(jobs, today()) : null), [jobs]);
   const firstName = profile?.fullName.split(/\s+/)[0] ?? "";
+  const [reviewing, setReviewing] = useState(false);
 
   return (
     <div className="app">
       <aside className="side">
         <Link to="/today" className="wordmark">CustomJobSeek</Link>
-        <Link to="/jobs/new" className="btn btn-primary btn-block side-cta">Check a job</Link>
+        <button type="button" className="btn btn-primary btn-block side-cta" onClick={() => setReviewing(true)}>Scan for jobs</button>
         <nav className="side-nav">
           <Item to="/today" label="Today" count={q ? q.applyNext.length + q.messageNow.length + q.due.length : undefined} hot />
+          <Item to="/discover" label="Discover" />
           <Item to="/pipeline" label="Pipeline" count={jobs?.length} />
+          <Item to="/jobs/new" label="Check a job" />
           <Item to="/outreach" label="Outreach" count={q?.messageNow.length} />
           <Item to="/analytics" label="Analytics" />
-          <Item to="/discover" label="Discover" />
           <Item to="/resumes" label="Resumes" />
           <Item to="/companies" label="Companies" />
         </nav>
@@ -119,6 +122,7 @@ export function AppShell({ children }: { children: ReactNode }) {
       </aside>
       <main className="app-main">{children}</main>
       <Drawer />
+      {reviewing && <ScanReviewDialog onClose={() => setReviewing(false)} onStarted={() => navigate("/discover")} />}
     </div>
   );
 }

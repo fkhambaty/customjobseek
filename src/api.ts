@@ -155,6 +155,24 @@ export interface ScanSchedule {
   manualAllowedAt: string | null;
   manualNote: string;
   runs: { id: string; trigger: string; startedAt: string; preparedCount: number; charged: boolean; note: string; pipelineChecked: number; pipelineClosed: number }[];
+  lastScan: LastScan | null;
+}
+
+export interface LastScan {
+  id: string;
+  trigger: string;
+  status: string;
+  queuedAt: string;
+  startedAt: string | null;
+  completedAt: string | null;
+  durationSeconds: number | null;
+  candidateCount: number;
+  checkedCount: number;
+  handpickedCount: number;
+  charged: boolean;
+  pipelineChecked: number;
+  pipelineClosed: number;
+  error: string;
 }
 
 export interface ResumeLibrary {
@@ -281,14 +299,17 @@ export const api = {
   fetchJob: (url: string) => call<FetchedJob>("POST", "/jobs/fetch", { url }),
   listJobs: async () => {
     const jobs: JobRecord[] = [];
+    const seen = new Set<string>();
     let cursor = "";
     const pages = JOB_LIST_CAP / JOB_LIST_PAGE_LIMIT;
     for (let page = 0; page < pages; page++) {
       const query = new URLSearchParams({ limit: String(JOB_LIST_PAGE_LIMIT) });
       if (cursor) query.set("cursor", cursor);
       const data = parseJobListResponse(await call<unknown>("GET", `/jobs?${query}`));
-      jobs.push(...data.jobs);
-      if (!data.nextCursor || data.nextCursor === cursor) return { jobs, notice: "" };
+      const fresh = data.jobs.filter((job) => !seen.has(job.id));
+      for (const job of fresh) seen.add(job.id);
+      jobs.push(...fresh);
+      if (!data.nextCursor || data.nextCursor === cursor || fresh.length === 0) return { jobs, notice: "" };
       cursor = data.nextCursor;
       if (page === pages - 1) return { jobs, notice: jobListCapNotice(jobs.length, true) };
     }

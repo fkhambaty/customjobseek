@@ -5,6 +5,7 @@ import { scanStageLabel, type ScanStage } from "../../shared/engine/scanRules";
 import { api, type MarketScan, type MarketStats, type ScanSchedule } from "../api";
 import { useJobs } from "../data";
 import { useSession } from "../session";
+import { SCAN_FINISHED_EVENT, SCAN_STARTED_EVENT, ScanReviewDialog } from "./ScanReviewDialog";
 import { UpgradePrompt } from "./UpgradePrompt";
 
 const STAGES: ScanStage[] = ["searching", "reading", "checking_fit", "building_resumes", "building_packs", "complete"];
@@ -41,7 +42,7 @@ export function MarketScanConsole({ compact = false }: { compact?: boolean }) {
   const [quota, setQuota] = useState<ScanSchedule | null>(null);
   const [stats, setStats] = useState<MarketStats | null>(null);
   const [loading, setLoading] = useState(true);
-  const [starting, setStarting] = useState(false);
+  const [reviewing, setReviewing] = useState(false);
   const [error, setError] = useState("");
   const finalised = useRef("");
 
@@ -67,20 +68,19 @@ export function MarketScanConsole({ compact = false }: { compact?: boolean }) {
   useEffect(() => {
     if (!scan || scan.status !== "complete" || finalised.current === scan.id) return;
     finalised.current = scan.id;
+    window.dispatchEvent(new Event(SCAN_FINISHED_EVENT));
     void Promise.all([reload(), refresh(), api.scanSchedule().then(setQuota)]);
   }, [refresh, reload, scan]);
 
-  async function start() {
-    setStarting(true);
+  useEffect(() => {
+    const onStarted = (event: Event) => setScan((event as CustomEvent<MarketScan>).detail);
+    window.addEventListener(SCAN_STARTED_EVENT, onStarted);
+    return () => window.removeEventListener(SCAN_STARTED_EVENT, onStarted);
+  }, []);
+
+  function start() {
     setError("");
-    try {
-      const result = await api.scanDiscover();
-      setScan(result.scan);
-    } catch (e) {
-      setError((e as Error).message);
-    } finally {
-      setStarting(false);
-    }
+    setReviewing(true);
   }
 
   if (loading) return <section className={`market-scan ${compact ? "market-scan-compact" : ""}`}><p className="muted">Checking the market…</p></section>;
@@ -109,9 +109,7 @@ export function MarketScanConsole({ compact = false }: { compact?: boolean }) {
           <p>{coverage}</p>
         </div>
         {!active && !complete && (
-          <button className="btn btn-primary btn-lg" disabled={!canStart || starting} onClick={start}>
-            {starting ? "Starting…" : "Scan for jobs"}
-          </button>
+          <button className="btn btn-primary btn-lg" disabled={!canStart} onClick={start}>Scan for jobs</button>
         )}
         {active && <div className="scan-time"><strong>{remaining(scan)}</strong><span>You can leave this page.</span></div>}
       </div>
@@ -203,6 +201,7 @@ export function MarketScanConsole({ compact = false }: { compact?: boolean }) {
       )}
 
       {quota?.manualNote && !active && <p className="scan-wait">{quota.manualNote}</p>}
+      {reviewing && <ScanReviewDialog onClose={() => setReviewing(false)} />}
     </section>
   );
 }

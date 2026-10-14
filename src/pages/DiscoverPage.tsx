@@ -3,12 +3,51 @@ import { Link } from "react-router-dom";
 import { DISCOVER_COVERAGE } from "../../shared/engine/sources";
 import { pipelineCountLabel } from "../../shared/engine/liveness";
 import { formatZonedHour } from "../../shared/engine/scanRules";
-import { api, ApiError, type DiscoverRow, type ScanSchedule } from "../api";
+import { api, ApiError, type DiscoverRow, type LastScan, type ScanSchedule } from "../api";
 import { MarketScanConsole } from "../components/MarketScanConsole";
+import { SCAN_FINISHED_EVENT } from "../components/ScanReviewDialog";
 import { UpgradePrompt } from "../components/UpgradePrompt";
 import { useJobs } from "../data";
-import { ago } from "../format";
+import { ago, dateTime, duration, timeAgo } from "../format";
 import { useSession } from "../session";
+
+function LastScanPanel({ scan, matches }: { scan: LastScan; matches: number | null }) {
+  const when = scan.completedAt ?? scan.startedAt ?? scan.queuedAt;
+  const readRate = scan.candidateCount ? Math.round((scan.checkedCount / scan.candidateCount) * 100) : null;
+  const kpis: { value: string; label: string; tone?: "good" | "warn" }[] = [
+    { value: String(scan.candidateCount), label: "openings matched your titles and places" },
+    { value: String(scan.checkedCount), label: readRate === null ? "postings read in full" : `postings read in full (${readRate}%)` },
+    { value: String(scan.handpickedCount), label: "handpicked with resume and pack", tone: scan.handpickedCount > 0 ? "good" : undefined },
+    { value: String(scan.pipelineChecked), label: "pipeline jobs rechecked" },
+    { value: String(scan.pipelineClosed), label: "found closed", tone: scan.pipelineClosed > 0 ? "warn" : undefined },
+    { value: duration(scan.durationSeconds), label: "time taken" },
+  ];
+  return (
+    <section className="last-scan" aria-labelledby="last-scan-title">
+      <header>
+        <div>
+          <p className="kicker">Last scan</p>
+          <h2 id="last-scan-title">{dateTime(when)} <span className="muted">· {timeAgo(when)}</span></h2>
+        </div>
+        <div className="last-scan-tags">
+          <span className={`tag ${scan.status === "failed" ? "tag-warn" : "tag-ok"}`}>{scan.status === "failed" ? "Stopped safely" : "Finished"}</span>
+          <span className="tag">{scan.trigger === "scheduled" ? "Daily scan" : "Started by you"}</span>
+          <span className="tag">{scan.charged ? "1 scan used" : "Not charged"}</span>
+        </div>
+      </header>
+      <dl className="last-scan-kpis">
+        {kpis.map((kpi) => (
+          <div key={kpi.label} className={kpi.tone ? `kpi-${kpi.tone}` : ""}>
+            <dt>{kpi.label}</dt>
+            <dd>{kpi.value}</dd>
+          </div>
+        ))}
+      </dl>
+      {matches !== null && matches > 0 && <p className="muted small">{matches} opening{matches === 1 ? "" : "s"} on the boards match you right now, listed below.</p>}
+      {scan.status === "failed" && scan.error && <p className="muted small">{scan.error}</p>}
+    </section>
+  );
+}
 
 export function DiscoverPage() {
   const { put, open, jobs, searchPaths } = useJobs();
@@ -22,10 +61,13 @@ export function DiscoverPage() {
 
   useEffect(() => {
     api.discover().then(setData, (e: Error) => setError(e.message));
-    api.scanSchedule().then((row) => {
+    const loadQuota = () => api.scanSchedule().then((row) => {
       setQuota(row);
       if (row.schedule) setHourIst(row.schedule.hourIst);
     }, () => undefined);
+    void loadQuota();
+    window.addEventListener(SCAN_FINISHED_EVENT, loadQuota);
+    return () => window.removeEventListener(SCAN_FINISHED_EVENT, loadQuota);
   }, []);
 
   async function check(row: DiscoverRow) {
@@ -75,6 +117,7 @@ export function DiscoverPage() {
         <p className="first-run">Add the job titles you want on your <Link to="/profile">profile</Link> and matching openings show up here.</p>
       )}
       {data && !data.needsTargets && <MarketScanConsole compact />}
+      {quota?.lastScan && <LastScanPanel scan={quota.lastScan} matches={data?.rows.length ?? null} />}
       {data && !data.needsTargets && (account?.evalCredits ?? 1) < 1 && (
         <UpgradePrompt evidence={evidence} blocked="checks" />
       )}
@@ -121,6 +164,7 @@ export function DiscoverPage() {
           <ul>
             {quota.runs.map((run) => (
               <li key={run.id}>
+                <span className="run-when">{dateTime(run.startedAt)}</span>
                 <span>{run.trigger === "scheduled" ? "Daily" : "By hand"}</span>
                 <span>{run.preparedCount ? `${run.preparedCount} prepared` : "Nothing prepared"}</span>
                 <span>{run.charged ? "1 scan used" : "Not charged"}</span>

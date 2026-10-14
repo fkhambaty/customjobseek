@@ -161,6 +161,11 @@ describe("search tokens and job pages", () => {
     expect(parseJobListQuery(undefined, "nope").cursor).toBeNull();
     const cursor = jobListCursor("2026-10-14 00:00:00", "job-1");
     expect(parseJobListQuery("40", cursor).cursor).toEqual({ createdAt: "2026-10-14 00:00:00", id: "job-1" });
+    const imported = "cc:KPI Partners|referral-abhishek-2026-10-08|KPI_Partners_Snowflake_Solution_Architect";
+    expect(parseJobListQuery("40", jobListCursor("2026-10-08T00:00:00.000Z", imported)).cursor).toEqual({
+      createdAt: "2026-10-08T00:00:00.000Z",
+      id: imported,
+    });
     expect(nextJobCursor([{ createdAt: "a", id: "1" }], 2)).toBeNull();
     expect(nextJobCursor([{ createdAt: "a", id: "1" }, { createdAt: "b", id: "2" }], 2)).toBe("b|2");
   });

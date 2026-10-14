@@ -47,6 +47,38 @@ export function shortDate(iso: string | null): string {
   return d.toLocaleDateString("en-GB", { day: "numeric", month: "short", ...(sameYear ? {} : { year: "numeric" }), timeZone: "UTC" });
 }
 
+function parseStamp(iso: string | null): Date | null {
+  if (!iso) return null;
+  const d = new Date(iso.replace(" ", "T") + (/[zZ]|[+-]\d\d:?\d\d$/.test(iso) ? "" : "Z"));
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
+/** "14 Oct, 3:42 pm" in the viewer's own clock. */
+export function dateTime(iso: string | null): string {
+  const d = parseStamp(iso);
+  if (!d) return "";
+  return d.toLocaleString("en-GB", { day: "numeric", month: "short", hour: "numeric", minute: "2-digit", hour12: true });
+}
+
+/** "just now", "12 min ago", "3 h ago", then the day count. */
+export function timeAgo(iso: string | null): string {
+  const d = parseStamp(iso);
+  if (!d) return "";
+  const minutes = Math.round((Date.now() - d.getTime()) / 60_000);
+  if (minutes < 1) return "just now";
+  if (minutes < 60) return `${minutes} min ago`;
+  if (minutes < 24 * 60) return `${Math.round(minutes / 60)} h ago`;
+  return ago(iso);
+}
+
+export function duration(seconds: number | null): string {
+  if (seconds === null) return "–";
+  if (seconds < 60) return `${seconds}s`;
+  const m = Math.floor(seconds / 60);
+  const s = seconds % 60;
+  return s ? `${m}m ${s}s` : `${m}m`;
+}
+
 export function ago(iso: string | null): string {
   const d = daysBetween(iso, today());
   if (d === null) return "";

@@ -32,6 +32,22 @@ interface RunRow {
   pipeline_closed: number;
 }
 
+interface LastScanRow {
+  id: string;
+  trigger: string;
+  status: string;
+  queued_at: string;
+  started_at: string | null;
+  completed_at: string | null;
+  candidate_count: number;
+  checked_count: number;
+  handpicked_count: number;
+  charged: number;
+  pipeline_checked: number | null;
+  pipeline_closed: number | null;
+  error: string;
+}
+
 async function scheduleView(env: AppEnv["Bindings"], userId: string, email: string, scanRuns: number, lastManual: string | null) {
   const profile = await loadProfile(env, userId, email);
   const timeZone = profile.preferences.timezone;
@@ -45,6 +61,12 @@ async function scheduleView(env: AppEnv["Bindings"], userId: string, email: stri
     `SELECT id, trigger, started_at, prepared_count, charged, note, pipeline_checked, pipeline_closed
      FROM scan_runs_log WHERE user_id = ? ORDER BY started_at DESC LIMIT 10`,
   ).bind(userId).all<RunRow>();
+  const last = await env.DB.prepare(
+    `SELECT id, trigger, status, queued_at, started_at, completed_at, candidate_count, checked_count, handpicked_count,
+       charged, pipeline_checked, pipeline_closed, error
+     FROM market_scans WHERE user_id = ? AND status IN ('complete', 'failed')
+     ORDER BY COALESCE(completed_at, queued_at) DESC LIMIT 1`,
+  ).bind(userId).first<LastScanRow>();
   const wait = canRunManual(lastManual, new Date());
   return {
     schedule: schedule
@@ -75,7 +97,32 @@ async function scheduleView(env: AppEnv["Bindings"], userId: string, email: stri
       pipelineChecked: row.pipeline_checked ?? 0,
       pipelineClosed: row.pipeline_closed ?? 0,
     })),
+    lastScan: last
+      ? {
+          id: last.id,
+          trigger: last.trigger,
+          status: last.status,
+          queuedAt: last.queued_at,
+          startedAt: last.started_at,
+          completedAt: last.completed_at,
+          durationSeconds: secondsBetween(last.started_at ?? last.queued_at, last.completed_at),
+          candidateCount: last.candidate_count,
+          checkedCount: last.checked_count,
+          handpickedCount: last.handpicked_count,
+          charged: Boolean(last.charged),
+          pipelineChecked: last.pipeline_checked ?? 0,
+          pipelineClosed: last.pipeline_closed ?? 0,
+          error: last.error,
+        }
+      : null,
   };
+}
+
+function secondsBetween(from: string | null, to: string | null): number | null {
+  if (!from || !to) return null;
+  const parse = (value: string) => Date.parse(value.includes("T") ? value : `${value.replace(" ", "T")}Z`);
+  const seconds = Math.round((parse(to) - parse(from)) / 1000);
+  return Number.isFinite(seconds) && seconds >= 0 ? seconds : null;
 }
 
 /** Openings whose title and place match, before any credit is spent. */

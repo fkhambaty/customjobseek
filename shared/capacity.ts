@@ -339,12 +339,13 @@ export function parseJobListQuery(
   const parsed = Number(limitRaw);
   const limit = Number.isInteger(parsed) && parsed > 0 ? Math.min(parsed, JOB_PAGE_MAX) : JOB_PAGE_DEFAULT;
   if (!cursorRaw) return { limit, cursor: null };
+  // Imported job ids contain "|", ":" and spaces, so only the first "|" separates the timestamp.
   const splitAt = cursorRaw.indexOf("|");
-  if (splitAt <= 0 || splitAt !== cursorRaw.lastIndexOf("|")) return { limit, cursor: null };
+  if (splitAt <= 0) return { limit, cursor: null };
   const createdAt = cursorRaw.slice(0, splitAt);
   const id = cursorRaw.slice(splitAt + 1);
-  if (!createdAt || !id || createdAt.length > 40 || id.length > 80) return { limit, cursor: null };
-  if (!/^[\w.: +-]+$/.test(createdAt) || !/^[\w-]+$/.test(id)) return { limit, cursor: null };
+  if (!createdAt || !id || createdAt.length > 40 || id.length > 300) return { limit, cursor: null };
+  if (!/^[\w.: +-]+$/.test(createdAt) || /[\u0000-\u001f]/.test(id)) return { limit, cursor: null };
   return { limit, cursor: { createdAt, id } };
 }
 
