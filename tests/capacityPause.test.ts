@@ -63,6 +63,18 @@ describe("capacity pause responses", () => {
     expect(paid.status).toBe(404);
   });
 
+  it("applies the same capacity protection to mobile bearer sessions", async () => {
+    nearlyFullAnalytics();
+    const headers = { authorization: `Bearer cjsma_${"a".repeat(43)}` };
+    const free = await worker.fetch(new Request("https://x.test/api/nothing-here", { headers }),
+      env(fakeDb((sql) => (sql.includes("AS paid") ? { paid: 0 } : null)), true), ctx);
+    expect(free.status).toBe(503);
+
+    const paid = await worker.fetch(new Request("https://x.test/api/nothing-here", { headers }),
+      env(fakeDb((sql) => (sql.includes("AS paid") ? { paid: 1 } : null)), true), ctx);
+    expect(paid.status).toBe(404);
+  });
+
   it("keeps payment webhooks open even when free accounts are paused", async () => {
     nearlyFullAnalytics();
     const res = await worker.fetch(new Request("https://x.test/api/plans"), env(fakeDb(() => ({ paid: 0 })), true), ctx);

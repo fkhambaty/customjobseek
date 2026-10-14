@@ -1,8 +1,15 @@
 import { Hono } from "hono";
 import { isEmail, utcDay } from "../../shared/commercial";
+import type { MobileSessionTokens } from "../../shared/mobileApi";
 import { hashPassword, verifyPassword } from "../crypto";
 import { HttpError, type AppContext, type AppEnv, type UserRow } from "../env";
 import { issueCode, takeCode } from "../mail";
+import {
+  isMobileClient,
+  mobileMetadata,
+  rotateMobileSession,
+  startMobileSession,
+} from "../mobileSession";
 import { readOnboarding, seedNewAccount } from "../onboarding";
 import { enforceRateLimit, purgeExpired, rateLimitDeletes, requestIp } from "../rateLimit";
 import { commitReferralIntent, ensureReferralCode, saveReferralIntent } from "../referrals";
@@ -31,6 +38,16 @@ function ipOf(c: AppContext): string {
 async function limitIp(c: AppContext): Promise<void> {
   c.executionCtx?.waitUntil(purgeExpired(c.env.DB).catch((err: unknown) => console.error("cleanup failed", err)));
   await enforceRateLimit(c.env.DB, "auth_ip", ipOf(c));
+}
+
+async function completeSignIn(c: AppContext, userId: string): Promise<MobileSessionTokens | null> {
+  if (isMobileClient(c)) return startMobileSession(c.env.DB, userId, mobileMetadata(c));
+  await startSession(c, userId);
+  return null;
+}
+
+function authResponse(session: MobileSessionTokens | null): { ok: true; session?: MobileSessionTokens } {
+  return session ? { ok: true, session } : { ok: true };
 }
 
 export const auth = new Hono<AppEnv>()
@@ -83,14 +100,14 @@ export const auth = new Hono<AppEnv>()
     await commitReferralIntent(c.env.DB, user.id, { purpose: "signup", codeId: proof.id }).catch((err: unknown) => {
       console.error("referral attach failed", err);
     });
-    await startSession(c, user.id);
+    const session = await completeSignIn(c, user.id);
     await noteProductEvent(c.env.DB, user.id, "signup");
     c.executionCtx?.waitUntil(notifyOwner(c.env, {
       kind: "verified_signup",
       dedupeKey: `verified-signup:${utcDay()}`,
       summary: "A person confirmed a new account.",
     }).catch((err: unknown) => console.error("signup alert failed", err)));
-    return c.json({ ok: true });
+    return c.json(authResponse(session));
   })
   .post("/resend-code", async (c) => {
     await limitIp(c);
@@ -135,8 +152,8 @@ export const auth = new Hono<AppEnv>()
     await commitReferralIntent(c.env.DB, user.id, { purpose: "reset", issuedAt: proof.createdAt }).catch((err: unknown) => {
       console.error("referral attach failed", err);
     });
-    await startSession(c, user.id);
-    return c.json({ ok: true });
+    const session = await completeSignIn(c, user.id);
+    return c.json(authResponse(session));
   })
   .post("/login", async (c) => {
     await limitIp(c);
@@ -147,9 +164,17 @@ export const auth = new Hono<AppEnv>()
       throw new HttpError(401, "That email and password do not match.");
     }
     if (!user.email_verified) throw new HttpError(403, "Confirm your email first. We can send a new code from the sign-up page.");
-    await startSession(c, user.id);
+    const session = await completeSignIn(c, user.id);
     await noteProductEvent(c.env.DB, user.id, "login");
-    return c.json({ ok: true });
+    return c.json(authResponse(session));
+  })
+  .post("/refresh", async (c) => {
+    await limitIp(c);
+    if (!isMobileClient(c)) throw new HttpError(400, "This endpoint is for the mobile app.");
+    const body = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
+    const refreshToken = typeof body.refreshToken === "string" ? body.refreshToken : "";
+    const session = await rotateMobileSession(c.env, refreshToken, mobileMetadata(c));
+    return c.json({ ok: true, session });
   })
   .post("/logout", async (c) => {
     await endSession(c);
@@ -189,6 +214,7 @@ export const auth = new Hono<AppEnv>()
       "scan_runs_log",
       "market_scans",
       "scan_schedules",
+      "mobile_sessions",
       "sessions",
     ];
     await c.env.DB.batch([
@@ -198,6 +224,9 @@ export const auth = new Hono<AppEnv>()
       c.env.DB.prepare("DELETE FROM lifecycle_sends WHERE user_id = ?").bind(user.id),
       c.env.DB.prepare("DELETE FROM market_scan_candidates WHERE scan_id IN (SELECT id FROM market_scans WHERE user_id = ?)").bind(user.id),
       c.env.DB.prepare("DELETE FROM payment_events WHERE order_id IN (SELECT id FROM orders WHERE user_id = ?)").bind(user.id),
+      c.env.DB.prepare(
+        "DELETE FROM mobile_refresh_tokens WHERE session_id IN (SELECT id FROM mobile_sessions WHERE user_id = ?)",
+      ).bind(user.id),
       c.env.DB.prepare("DELETE FROM referral_uses WHERE referred_user_id = ? OR referrer_user_id = ?").bind(user.id, user.id),
       c.env.DB.prepare("DELETE FROM referral_intents WHERE user_id = ?").bind(user.id),
       ...owned.map((table) => c.env.DB.prepare(`DELETE FROM ${table} WHERE user_id = ?`).bind(user.id)),

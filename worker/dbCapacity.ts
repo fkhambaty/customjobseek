@@ -5,6 +5,11 @@ import { utcDay } from "../shared/commercial";
 import { capacityPause, shouldPauseBackground, shouldPauseFreeAccounts, type CapacityPause, type DbUsage } from "../shared/dbCapacity";
 import { sha256 } from "./crypto";
 import type { AppEnv, Env } from "./env";
+import {
+  bearerAccessToken,
+  mobileAccessIsPaid,
+  mobileRefreshIsPaid,
+} from "./mobileSession";
 import { D1_ROWS_QUERY, postGraphql } from "./quota";
 import { SESSION_COOKIE } from "./session";
 
@@ -53,16 +58,26 @@ async function loginIsPaid(db: D1Database, request: Request): Promise<boolean> {
   return Boolean(row?.paid);
 }
 
+async function refreshIsPaid(db: D1Database, request: Request): Promise<boolean> {
+  const body = (await request.clone().json().catch(() => ({}))) as Record<string, unknown>;
+  return mobileRefreshIsPaid(db, typeof body.refreshToken === "string" ? body.refreshToken : "");
+}
+
 /** Near the daily database limit, free accounts wait so paying customers keep working until midnight UTC. */
 export const capacityGuard = createMiddleware<AppEnv>(async (c, next) => {
   if (ALWAYS_OPEN.has(c.req.path)) return next();
   const usage = await todaysDbUsage(c.env).catch(() => null);
   if (!shouldPauseFreeAccounts(usage)) return next();
   const token = getCookie(c, SESSION_COOKIE);
-  if (!token && c.req.path === "/api/auth/me") return next();
-  const paid = token
+  const mobileToken = bearerAccessToken(c.req.raw);
+  if (!token && !mobileToken && c.req.path === "/api/auth/me") return next();
+  const paid = mobileToken
+    ? await mobileAccessIsPaid(c.env.DB, mobileToken)
+    : token
     ? await sessionIsPaid(c.env.DB, token)
-    : c.req.path === "/api/auth/login" && (await loginIsPaid(c.env.DB, c.req.raw));
+    : c.req.path === "/api/auth/login"
+      ? await loginIsPaid(c.env.DB, c.req.raw)
+      : c.req.path === "/api/auth/refresh" && await refreshIsPaid(c.env.DB, c.req.raw);
   if (paid) return next();
   throw new CapacityPausedError(capacityPause("saving_for_paid"));
 });

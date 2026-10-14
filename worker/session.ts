@@ -2,6 +2,11 @@ import { deleteCookie, getCookie, setCookie } from "hono/cookie";
 import { createMiddleware } from "hono/factory";
 import { randomToken, sha256 } from "./crypto";
 import { HttpError, type AppContext, type AppEnv, type UserRow } from "./env";
+import {
+  bearerAccessToken,
+  mobileUserFromAccess,
+  revokeMobileSessionByAccess,
+} from "./mobileSession";
 
 export const SESSION_COOKIE = "cjs_session";
 const SESSION_DAYS = 30;
@@ -23,10 +28,18 @@ export async function startSession(c: AppContext, userId: string): Promise<void>
 
 /** Drops every sign-in for this account. Call this before writing the replacement session. */
 export async function revokeUserSessions(db: D1Database, userId: string): Promise<void> {
-  await db.prepare("DELETE FROM sessions WHERE user_id = ?").bind(userId).run();
+  await db.batch([
+    db.prepare("DELETE FROM sessions WHERE user_id = ?").bind(userId),
+    db.prepare(
+      "DELETE FROM mobile_refresh_tokens WHERE session_id IN (SELECT id FROM mobile_sessions WHERE user_id = ?)",
+    ).bind(userId),
+    db.prepare("DELETE FROM mobile_sessions WHERE user_id = ?").bind(userId),
+  ]);
 }
 
 export async function endSession(c: AppContext): Promise<void> {
+  const mobileToken = bearerAccessToken(c.req.raw);
+  if (mobileToken) await revokeMobileSessionByAccess(c.env.DB, mobileToken);
   const token = getCookie(c, SESSION_COOKIE);
   if (token) await c.env.DB.prepare("DELETE FROM sessions WHERE token_hash = ?").bind(await sha256(token)).run();
   deleteCookie(c, SESSION_COOKIE, { path: "/" });
@@ -44,6 +57,11 @@ async function expireCredits(db: D1Database, user: UserRow): Promise<UserRow> {
 }
 
 async function userFromSession(c: AppContext): Promise<{ token: string | null; user: UserRow | null }> {
+  const mobileToken = bearerAccessToken(c.req.raw);
+  if (mobileToken) {
+    const mobileUser = await mobileUserFromAccess(c.env.DB, mobileToken);
+    return { token: mobileToken, user: mobileUser ? await expireCredits(c.env.DB, mobileUser) : null };
+  }
   const token = getCookie(c, SESSION_COOKIE) ?? null;
   if (!token) return { token: null, user: null };
   const row = await c.env.DB.prepare(

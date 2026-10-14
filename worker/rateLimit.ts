@@ -54,6 +54,12 @@ export async function purgeExpired(db: D1Database, now = new Date()): Promise<vo
   const sessionBackstop = sqliteCutoff(now, RETENTION_DAYS.sessionBackstop);
   await db.batch([
     db.prepare("DELETE FROM sessions WHERE expires_at <= ? OR created_at <= ?").bind(iso, sessionBackstop),
+    db.prepare(
+      "DELETE FROM mobile_refresh_tokens WHERE expires_at <= ? OR session_id IN (SELECT id FROM mobile_sessions WHERE revoked_at IS NOT NULL)",
+    ).bind(iso),
+    db.prepare(
+      "DELETE FROM mobile_sessions WHERE access_expires_at <= ? AND NOT EXISTS (SELECT 1 FROM mobile_refresh_tokens r WHERE r.session_id = mobile_sessions.id AND r.expires_at > ? AND r.used_at IS NULL)",
+    ).bind(iso, iso),
     db.prepare("DELETE FROM email_codes WHERE expires_at <= ?").bind(iso),
     db.prepare("DELETE FROM rate_limits WHERE window_start <= ?").bind(rateCutoff),
     db.prepare("DELETE FROM product_events WHERE day < ?").bind(eventCutoff),
