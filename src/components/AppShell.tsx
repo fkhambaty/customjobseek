@@ -87,6 +87,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           <Item to="/companies" label="Companies" />
         </nav>
         <nav className="side-nav side-nav-quiet">
+          <Item to="/search-paths" label="Search paths" />
           <Item to="/profile" label="Profile" />
           <Item to="/pricing" label="Plans" />
           <Item to="/account" label="Account" />

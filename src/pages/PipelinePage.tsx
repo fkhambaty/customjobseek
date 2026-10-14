@@ -2,6 +2,13 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { rowEvidence } from "../../shared/agency";
 import { postingClosedCopy } from "../../shared/engine/liveness";
 import { payMid } from "../../shared/engine/insights";
+import {
+  PAY_NOT_PUBLISHED,
+  UNASSIGNED_PATH_FILTER,
+  jobInPipelineGroup,
+  matchesPathFilter,
+  showPayNotPublished,
+} from "../../shared/engine/searchPaths";
 import { JOB_STATUSES, type JobRecord, type JobStatus } from "../../shared/types";
 import { api } from "../api";
 import { statusLabel } from "../components/FitCard";
@@ -33,6 +40,7 @@ const GROUPS: { id: string; label: string; statuses: JobStatus[] }[] = [
   { id: "live", label: "Interviewing", statuses: ["interview", "offer"] },
   { id: "rejected", label: "Rejected", statuses: ["rejected"] },
   { id: "closed", label: "Closed", statuses: ["closed", "withdrawn"] },
+  { id: "archived", label: "Archived", statuses: [] },
 ];
 
 function PipelineSignal({ job }: { job: JobRecord }) {
@@ -90,10 +98,10 @@ function presetKey(value: string): PipelinePreset | null {
 }
 
 export function PipelinePage() {
-  const { jobs, error, notice, put, open, currency } = useJobs();
+  const { jobs, error, notice, put, open, currency, searchPaths } = useJobs();
   const [group, setGroup] = useState("all");
   const [query, setQuery] = useState("");
-  const [lane, setLane] = useState("");
+  const [pathId, setPathId] = useState("");
   const [family, setFamily] = useState("");
   const [route, setRoute] = useState("");
   const { sort, setSort, toggle } = useTableSort<PipelineSortKey>({ key: "added", direction: PIPELINE_COLUMNS.added.defaultDirection });
@@ -105,15 +113,15 @@ export function PipelinePage() {
     const g = GROUPS.find((x) => x.id === group)!;
     const q = query.trim().toLowerCase();
     const filtered = all
-      .filter((j) => g.statuses.includes(j.status))
-      .filter((j) => !lane || j.lane === lane)
+      .filter((j) => jobInPipelineGroup(j, group, g.statuses))
+      .filter((j) => matchesPathFilter(j, pathId, searchPaths.length > 0))
       .filter((j) => !family || j.family === family)
       .filter((j) => !route || j.route === route)
       .filter((j) => !q || `${j.title} ${j.company} ${j.location} ${j.requisition}`.toLowerCase().includes(q));
     return rowsInTableOrder("application", filtered, PIPELINE_COLUMNS, sort);
-  }, [all, group, query, lane, family, route, sort]);
+  }, [all, group, query, pathId, family, route, sort, searchPaths.length]);
 
-  useEffect(() => setCursor(0), [group, query, lane, family, route, sort]);
+  useEffect(() => setCursor(0), [group, query, pathId, family, route, sort]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -137,7 +145,11 @@ export function PipelinePage() {
     put(await api.updateJob(j.id, { status }));
   }
 
-  const counts = (statuses: JobStatus[]) => all.filter((j) => statuses.includes(j.status)).length;
+  const counts = (g: (typeof GROUPS)[number]) => all.filter((j) => jobInPipelineGroup(j, g.id, g.statuses)).length;
+
+  async function pathAction(job: JobRecord, action: "restore" | "reclassify") {
+    put(action === "restore" ? await api.restoreJobPath(job.id) : await api.reclassifyJobPath(job.id));
+  }
 
   if (error && !jobs) {
     return (
@@ -162,15 +174,22 @@ export function PipelinePage() {
         <div className="seg" role="group" aria-label="Pipeline stages">
           {GROUPS.map((g) => (
             <button key={g.id} type="button" className={group === g.id ? "on" : ""} aria-pressed={group === g.id} aria-current={group === g.id ? "true" : undefined} onClick={() => setGroup(g.id)}>
-              {g.label} <span>{counts(g.statuses)}</span>
+              {g.label} <span>{counts(g)}</span>
             </button>
           ))}
         </div>
         <div className="filter-row">
           <input ref={search} className="search" aria-label="Search title, company, or reference" placeholder="Search title, company, reference   /" value={query} onChange={(e) => setQuery(e.target.value)} />
-          <select value={lane} onChange={(e) => setLane(e.target.value)} aria-label="Lane">
-            <option value="">Every lane</option>
-            {uniq(all.map((j) => j.lane)).map((l) => <option key={l}>{l}</option>)}
+          <select value={pathId} onChange={(e) => setPathId(e.target.value)} aria-label="Search path">
+            <option value="">Every search path</option>
+            {searchPaths.length
+              ? (
+                <>
+                  {searchPaths.map((path) => <option key={path.id} value={path.id}>{path.name}</option>)}
+                  <option value={UNASSIGNED_PATH_FILTER}>Needs path / pay review</option>
+                </>
+              )
+              : uniq(all.map((j) => j.lane)).map((label) => <option key={label} value={label}>{label}</option>)}
           </select>
           <select value={family} onChange={(e) => setFamily(e.target.value)} aria-label="Role family">
             <option value="">Every role type</option>
@@ -204,7 +223,7 @@ export function PipelinePage() {
         <thead>
           <tr>
             <SortableHeader label="Role" column="role" sort={sort} defaultDirection={PIPELINE_COLUMNS.role.defaultDirection} onSort={toggle} />
-            <SortableHeader label="Lane" column="lane" sort={sort} defaultDirection={PIPELINE_COLUMNS.lane.defaultDirection} onSort={toggle} />
+            <SortableHeader label="Search path" column="lane" sort={sort} defaultDirection={PIPELINE_COLUMNS.lane.defaultDirection} onSort={toggle} />
             <SortableHeader label="Pay" column="pay" sort={sort} defaultDirection={PIPELINE_COLUMNS.pay.defaultDirection} onSort={toggle} className="num" />
             <SortableHeader label="Fit" column="fit" sort={sort} defaultDirection={PIPELINE_COLUMNS.fit.defaultDirection} onSort={toggle} className="num" />
             <SortableHeader label="Applied" column="applied" sort={sort} defaultDirection={PIPELINE_COLUMNS.applied.defaultDirection} onSort={toggle} />
@@ -230,7 +249,17 @@ export function PipelinePage() {
                 <PipelineSignal job={j} />
                 {j.liveStatus === "closed" && <span className="posting-closed-note">{postingClosedCopy(j.status)}</span>}
               </td>
-              <td className="l-lane">{j.lane}</td>
+              <td className="l-lane">
+                <span>{j.lane || (showPayNotPublished(j, searchPaths.length > 0) ? PAY_NOT_PUBLISHED : "")}</span>
+                {j.archivedAt && <span className="path-flag">Archived</span>}
+                {j.lane && showPayNotPublished(j, searchPaths.length > 0) && <span className="path-flag">{PAY_NOT_PUBLISHED}</span>}
+                {(j.archivedAt || (searchPaths.length > 0 && !j.searchPathId)) && (
+                  <span className="path-card-actions">
+                    {j.archivedAt && <button type="button" className="btn btn-ghost btn-xs" onClick={(event) => { event.stopPropagation(); void pathAction(j, "restore"); }}>Restore</button>}
+                    <button type="button" className="btn btn-ghost btn-xs" onClick={(event) => { event.stopPropagation(); void pathAction(j, "reclassify"); }}>Reclassify</button>
+                  </span>
+                )}
+              </td>
               <td className="num">{formatPay(j, currency)}</td>
               <td className="num">{j.fit.imported && !j.fit.score ? "" : j.fit.score}</td>
               <td className="l-date">{shortDate(j.appliedAt)}</td>
@@ -251,7 +280,7 @@ export function PipelinePage() {
       </div>
       )}
       {!shown.length && (
-        <p className="muted pad">{all.length ? "Nothing matches those filters." : "No jobs yet. Check a posting, or run a scan, and it shows up here."}</p>
+        <p className="muted pad">{group === "archived" && all.some((job) => job.archivedAt) === false ? "No archived jobs." : all.length ? "Nothing matches those filters." : "No jobs yet. Check a posting, or run a scan, and it shows up here."}</p>
       )}
       <p className="keys">j / k to move · Enter to open · / to search · Esc to close</p>
     </div>

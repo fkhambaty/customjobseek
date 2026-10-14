@@ -1,5 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 import { useSearchParams } from "react-router-dom";
+import type { SearchPath } from "../shared/engine/searchPaths";
 import type { JobRecord, Profile } from "../shared/types";
 import { api } from "./api";
 
@@ -8,6 +9,7 @@ interface JobsValue {
   error: string;
   notice: string;
   profile: Profile | null;
+  searchPaths: SearchPath[];
   currency: string;
   reload: () => Promise<void>;
   /** Replaces one job in the list after an edit, so every view updates without a refetch. */
@@ -21,16 +23,18 @@ const JobsContext = createContext<JobsValue | null>(null);
 export function JobsProvider({ children }: { children: ReactNode }) {
   const [jobs, setJobs] = useState<JobRecord[] | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
+  const [searchPaths, setSearchPaths] = useState<SearchPath[]>([]);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [, setParams] = useSearchParams();
 
   const reload = useCallback(async () => {
     try {
-      const [list, p] = await Promise.all([api.listJobs(), api.getProfile()]);
+      const [list, p, paths] = await Promise.all([api.listJobs(), api.getProfile(), api.listSearchPaths()]);
       setJobs(list.jobs);
       setNotice(list.notice);
       setProfile(p.profile);
+      setSearchPaths(paths.paths);
       setError("");
     } catch (e) {
       setError((e as Error).message);
@@ -67,8 +71,8 @@ export function JobsProvider({ children }: { children: ReactNode }) {
   );
 
   const value = useMemo(
-    () => ({ jobs, error, notice, profile, currency: profile?.preferences.currency || "USD", reload, put, drop, open }),
-    [jobs, error, notice, profile, reload, put, drop, open],
+    () => ({ jobs, error, notice, profile, searchPaths, currency: profile?.preferences.currency || "USD", reload, put, drop, open }),
+    [jobs, error, notice, profile, searchPaths, reload, put, drop, open],
   );
   return <JobsContext.Provider value={value}>{children}</JobsContext.Provider>;
 }

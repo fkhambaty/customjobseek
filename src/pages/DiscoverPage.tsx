@@ -11,7 +11,7 @@ import { ago } from "../format";
 import { useSession } from "../session";
 
 export function DiscoverPage() {
-  const { put, open, jobs } = useJobs();
+  const { put, open, jobs, searchPaths } = useJobs();
   const { account, refresh } = useSession();
   const [data, setData] = useState<{ needsTargets: boolean; rows: DiscoverRow[] } | null>(null);
   const [busy, setBusy] = useState("");
@@ -131,6 +131,9 @@ export function DiscoverPage() {
           </ul>
         </section>
       )}
+      {searchPaths.length > 0 && (
+        <p className="muted small">Openings are limited to your search paths. A job matches on the midpoint of the published pay. If the posting has no pay, it can be saved for review as “Pay not published”.</p>
+      )}
       {data === null && !error && <p className="muted">Looking through the boards…</p>}
       <ul className="lines">
         {rows.map((r) => (
@@ -141,6 +144,7 @@ export function DiscoverPage() {
               <span className="line-company">{r.company}</span>
               <span className="line-facts">
                 <span>{r.location || "Location not given"}</span>
+                {r.pathLabel && <span>{r.pathLabel}</span>}
                 {r.locationNote && <span>{r.locationNote}</span>}
                 <span>seen {ago(r.seenAt)}</span>
               </span>

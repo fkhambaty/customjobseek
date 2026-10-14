@@ -77,6 +77,7 @@ describe("guided onboarding", () => {
       ["facts", true, true],
       ["roles", true, true],
       ["market", true, true],
+      ["paths", true, true],
       ["confirm", true, true],
       ["scan", true, true],
     ]);

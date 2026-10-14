@@ -787,3 +787,20 @@ code { font-size: 0.95em; }
   .onboard-step { animation: none; }
   .onboard-meter span { transition: none; }
 }
+
+.path-count { margin: 0; color: var(--muted); font-size: 13px; }
+.path-list { list-style: none; margin: 12px 0 0; padding: 0; display: flex; flex-direction: column; gap: 12px; }
+.path-card { display: flex; justify-content: space-between; gap: 12px; align-items: flex-start; flex-wrap: wrap; margin: 0; }
+.path-card h2 { font-family: var(--serif); font-weight: 500; font-size: 20px; }
+.path-card-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+.path-editor { display: grid; grid-template-columns: 1fr; gap: 0 14px; }
+.path-preview { margin: 4px 0 8px; }
+.path-empty h2 { font-family: var(--serif); font-weight: 500; }
+.path-examples { margin-bottom: 8px; }
+.path-flag { display: inline-block; margin-left: 6px; padding: 1px 6px; border-radius: 99px; background: #f8f0dd; color: var(--warn); font-size: 12px; }
+.path-choices { border: 0; margin: 0 0 12px; padding: 0; }
+.modal-layer { position: fixed; inset: 0; z-index: 40; display: flex; justify-content: center; align-items: flex-start; padding: 10vh 16px 24px; pointer-events: none; }
+.modal-card { pointer-events: auto; width: min(520px, 100%); background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 22px; box-shadow: 0 16px 50px rgba(27, 26, 23, 0.16); }
+@media (min-width: 720px) {
+  .path-editor { grid-template-columns: 1fr 1fr; }
+}

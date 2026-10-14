@@ -156,8 +156,8 @@ export function incomingFromListing(
   };
 }
 
-/** Fills fingerprints and search tokens for rows saved before this migration, a few hundred at a time. */
-export async function indexUnhashedOpenings(env: Env, limit = 400): Promise<number> {
+/** Fills old fingerprints gradually so the free D1 daily write budget is not consumed by backfill. */
+export async function indexUnhashedOpenings(env: Env, limit = 50): Promise<number> {
   const { results } = await env.DB.prepare(
     `SELECT o.company_id, o.external_id, o.title, o.location, o.url, o.employer_key, o.provenance, o.expires_at,
             c.career_url, c.ats, c.board_token

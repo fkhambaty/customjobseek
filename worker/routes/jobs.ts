@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import { badMatchSupportMessage, parseBadMatchReason, parseInterviewStage, parseLiveStatus, payProvenanceFor } from "../../shared/agency";
-import { laneFor, routeFromUrl } from "../../shared/engine/classify";
+import { routeFromUrl } from "../../shared/engine/classify";
+import { rescorePathFields } from "../../shared/engine/searchPaths";
 import { buildApplication, buildJobFile } from "../../shared/engine/documents";
 import { evaluateFit, type JobInput } from "../../shared/engine/fit";
 import { buildMessages } from "../../shared/engine/outreach";
@@ -29,6 +30,7 @@ import { notifyOwner } from "../notify";
 import { logCompanyMessage } from "../threads";
 import { aggregatorBlock, fetchJob, isFetchableUrl } from "../jobFetch";
 import { storeEvaluatedJob } from "../jobCharge";
+import { applyJobPathAction, assignmentFor } from "../searchPathStore";
 import { noteOnboarding } from "../onboarding";
 import { enforceRateLimit } from "../rateLimit";
 import { requireUser } from "../session";
@@ -100,17 +102,11 @@ async function full(env: Env, userId: string, id: string): Promise<JobFull> {
   return { ...toJob(row), details: await loadDetails(env, row), events: await loadEvents(env, userId, id) };
 }
 
-/** Stored pay is only ever the person's own currency, so lists and lanes never compare across currencies. */
+/** Stored pay is only ever the person's own currency, so lists and search paths never compare across currencies. */
 function payFor(fit: FitResult, profile: Profile): { low: number | null; high: number | null } {
   const s = fit.parsedSalary;
   if (!s || s.currency !== profile.preferences.currency) return { low: null, high: null };
   return { low: s.annualMin, high: s.annualMax };
-}
-
-function laneOf(location: string, fit: FitResult, profile: Profile): string {
-  const s = fit.parsedSalary;
-  const same = s && s.currency === profile.preferences.currency;
-  return laneFor(location, same ? s.annualMin : null, same ? s.annualMax : null, profile.preferences);
 }
 
 function isoDate(v: unknown): string | null {
@@ -214,6 +210,7 @@ export const jobs = new Hono<AppEnv>()
     const fit = evaluateFit(input, profile);
     const id = crypto.randomUUID();
     const pay = payFor(fit, profile);
+    const assigned = await assignmentFor(c.env.DB, user.id, profile, input.location, fit.parsedSalary);
     const provenance = payProvenanceFor({ salaryText: input.salaryText, payEstimated: false, parsed: fit.parsedSalary !== null });
     const saved = await storeEvaluatedJob(c.env.DB, {
       id,
@@ -225,11 +222,12 @@ export const jobs = new Hono<AppEnv>()
       salaryText: input.salaryText,
       description: input.description,
       fitJson: JSON.stringify(fit),
-      lane: laneOf(input.location, fit, profile),
+      lane: assigned.lane,
       route: routeFromUrl(input.url),
       payLow: pay.low,
       payHigh: pay.high,
       provenance,
+      searchPathId: assigned.searchPathId,
     });
     switch (saved) {
       case "unpaid":
@@ -371,9 +369,31 @@ export const jobs = new Hono<AppEnv>()
       profile,
     );
     const imported = job.id.startsWith("cc:");
-    await c.env.DB.prepare("UPDATE jobs SET fit_json = ?, lane = ?, updated_at = datetime('now') WHERE id = ?")
-      .bind(JSON.stringify(fit), imported ? job.lane : laneOf(job.location, fit, profile), job.id)
+    const assigned = imported ? null : await assignmentFor(c.env.DB, user.id, profile, job.location, fit.parsedSalary);
+    const fields = rescorePathFields(
+      { archivedAt: job.archived_at, lane: job.lane, searchPathId: job.search_path_id },
+      assigned,
+    );
+    await c.env.DB.prepare(
+      `UPDATE jobs SET fit_json = ?, lane = ?, search_path_id = ?, updated_at = datetime('now') WHERE id = ? AND user_id = ?`,
+    )
+      .bind(JSON.stringify(fit), fields.lane, fields.searchPathId, job.id, user.id)
       .run();
+    return c.json(await full(c.env, user.id, job.id));
+  })
+  .post("/:id/path", async (c) => {
+    const user = c.get("user");
+    const job = await getJob(c.env, user.id, c.req.param("id"));
+    const body = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
+    const profile = await loadProfile(c.env, user.id, user.email);
+    switch (body.action) {
+      case "restore":
+      case "reclassify":
+        await applyJobPathAction(c.env.DB, user.id, profile, job, body.action);
+        break;
+      default:
+        throw new HttpError(400, "Choose restore or reclassify.");
+    }
     return c.json(await full(c.env, user.id, job.id));
   })
   .post("/:id/report-match", async (c) => {
@@ -485,6 +505,18 @@ export const jobs = new Hono<AppEnv>()
         const unexpected: never = saved;
         throw new Error(String(unexpected));
       }
+    }
+    if (!job.id.startsWith("cc:")) {
+      const assigned = await assignmentFor(c.env.DB, user.id, profile, job.location, fit.parsedSalary);
+      const fields = rescorePathFields(
+        { archivedAt: job.archived_at, lane: job.lane, searchPathId: job.search_path_id },
+        assigned,
+      );
+      await c.env.DB.prepare(
+        "UPDATE jobs SET lane = ?, search_path_id = ?, updated_at = datetime('now') WHERE id = ? AND user_id = ?",
+      )
+        .bind(fields.lane, fields.searchPathId, job.id, user.id)
+        .run();
     }
     return c.json({ resume, application, jobFile });
   })

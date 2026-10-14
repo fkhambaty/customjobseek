@@ -1,8 +1,16 @@
 import { discoveryTokens } from "../shared/capacity";
 import { payProvenanceFor } from "../shared/agency";
-import { laneFor, routeFromUrl } from "../shared/engine/classify";
+import { routeFromUrl } from "../shared/engine/classify";
 import { buildApplication, buildJobFile } from "../shared/engine/documents";
 import { evaluateFit, locationCheck, marketLocationOk, titleTokens, type JobInput } from "../shared/engine/fit";
+import {
+  assignSearchPath,
+  jobPayPlace,
+  openingLocationAllowed,
+  placePathLabel,
+  storedAnnualPay,
+  type SearchPath,
+} from "../shared/engine/searchPaths";
 import { occupationSearchWords, resolveRole } from "../shared/engine/occupations";
 import { tailorResume } from "../shared/engine/tailor";
 import { artifactIdentity } from "../shared/resumeFile";
@@ -11,6 +19,7 @@ import { encryptJson } from "./crypto";
 import { INSERT_RESUME_ARTIFACT, tailoredArtifactValues } from "./resumeArtifacts";
 import { HttpError, type Env } from "./env";
 import { fetchJob, isFetchableUrl } from "./jobFetch";
+import { listSearchPaths } from "./searchPathStore";
 
 export interface DiscoverRow {
   title: string;
@@ -21,6 +30,7 @@ export interface DiscoverRow {
   seenAt: string;
   match: number;
   locationNote: string;
+  pathLabel: string;
 }
 
 const MAX_KEYWORDS = 10;
@@ -77,15 +87,15 @@ export async function matchingRows(env: Env, userId: string, profile: Profile): 
     .all<{ title: string; location: string; url: string; updated_at: string; company: string; ats: string }>();
 
   const excluded = profile.preferences.excludedTitleWords.map((w) => w.toLowerCase()).filter(Boolean);
+  const paths = await listSearchPaths(env.DB, userId);
   const rows: DiscoverRow[] = [];
   for (const o of results) {
-    if (profile.preferences.country && !marketLocationOk(o.location, profile.preferences.country)) continue;
+    if (!openingLocationAllowed(o.location, profile.preferences, paths)) continue;
     const lower = o.title.toLowerCase();
     if (excluded.some((w) => lower.includes(w))) continue;
     const match = meaningfulTitleMatch(o.title, targets);
     if (!match) continue;
     const place = locationCheck({ title: o.title, company: o.company, location: o.location, salaryText: "", description: "" }, profile);
-    if (place.blocker) continue;
     rows.push({
       title: o.title,
       location: o.location,
@@ -94,7 +104,8 @@ export async function matchingRows(env: Env, userId: string, profile: Profile): 
       ats: o.ats,
       seenAt: o.updated_at,
       match: Math.round(match * 100),
-      locationNote: place.note ?? "",
+      locationNote: paths.length ? "" : (place.note ?? ""),
+      pathLabel: placePathLabel(paths, o.location),
     });
   }
   rows.sort((a, b) => b.match - a.match || b.seenAt.localeCompare(a.seenAt));
@@ -146,10 +157,7 @@ export async function checkOpening(row: DiscoverRow, profile: Profile): Promise<
 }
 
 function annualPay(input: JobInput, profile: Profile): { low: number | null; high: number | null } {
-  const fit = evaluateFit(input, profile);
-  const pay = fit.parsedSalary;
-  if (!pay || pay.currency !== profile.preferences.currency) return { low: null, high: null };
-  return { low: pay.annualMin, high: pay.annualMax };
+  return storedAnnualPay(evaluateFit(input, profile).parsedSalary, profile.preferences.currency);
 }
 
 export interface ScanChargeGate {
@@ -189,6 +197,7 @@ export async function packStatements(
   userId: string,
   profile: Profile,
   checked: CheckedOpening,
+  paths: SearchPath[],
   gate: ScanChargeGate | null = null,
 ): Promise<{ id: string; statements: D1PreparedStatement[] }> {
   const { input, fit } = checked;
@@ -211,12 +220,17 @@ export async function packStatements(
   if (resumeFile.refusal) throw new HttpError(422, resumeFile.refusal);
   const artifact = artifactIdentity("job", id);
 
+  const assigned = assignSearchPath({
+    ...jobPayPlace(input.location, fit.parsedSalary),
+    paths,
+    preferences: profile.preferences,
+  });
   const jobBinds = [
     id, userId, input.title, input.company, input.location, input.url, input.salaryText, input.description,
-    JSON.stringify(fit), laneFor(input.location, pay.low, pay.high, profile.preferences), routeFromUrl(input.url),
+    JSON.stringify(fit), assigned.lane, routeFromUrl(input.url),
     pay.low, pay.high,
     payProvenanceFor({ salaryText: input.salaryText, payEstimated: false, parsed: fit.parsedSalary !== null }),
-    contacts.length, packed[3],
+    contacts.length, packed[3], assigned.searchPathId,
   ];
   return {
     id,
@@ -224,8 +238,8 @@ export async function packStatements(
       gated(
         env.DB,
         `INSERT INTO jobs
-         (id, user_id, title, company, location, url, salary_text, description, status, fit_json, lane, route, pay_low, pay_high, pay_provenance, contact_count, details_ciphertext)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'resume_ready', ?, ?, ?, ?, ?, ?, ?, ?)`,
+         (id, user_id, title, company, location, url, salary_text, description, status, fit_json, lane, route, pay_low, pay_high, pay_provenance, contact_count, details_ciphertext, search_path_id)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'resume_ready', ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         jobBinds,
         gate,
         "SELECT 1 FROM jobs WHERE id = ?",

@@ -11,10 +11,12 @@ import {
   scanProgress,
   type ScanStage,
 } from "../shared/engine/scanRules";
+import { jobPayPlace, scanCandidateDecision, scanOpeningAcceptance, withoutPlaceAndPayBlockers } from "../shared/engine/searchPaths";
 import type { JobRecord } from "../shared/types";
 import { profileReadiness } from "../shared/validate";
 import { abortBatchWhen } from "./batchGuard";
 import { MAX_DEEP_CHECKS, PACKS_PER_SCAN, checkOpening, matchingRows, packStatements, type CheckedOpening } from "./discoverMatch";
+import { listSearchPaths } from "./searchPathStore";
 import { HttpError, type Env, type UserRow } from "./env";
 import { loadProfile } from "./routes/profile";
 import { JOB_SELECT, toJob, type JobRow } from "./routes/serialise";
@@ -218,6 +220,7 @@ export async function processScan(env: Env, scan: MarketScanRow): Promise<void> 
   }
 
   await updateStage(env, scan.id, "searching");
+  const paths = await listSearchPaths(env.DB, user.id);
   const rows = await matchingRows(env, user.id, profile);
   const candidates = rows.slice(0, MAX_DEEP_CHECKS);
   if (!candidates.length) {
@@ -234,7 +237,23 @@ export async function processScan(env: Env, scan: MarketScanRow): Promise<void> 
   for (let i = 0; i < candidates.length; i += 4) {
     const batch = await Promise.all(candidates.slice(i, i + 4).map((row) => checkOpening(row, profile)));
     for (const checked of batch) {
-      if (checked && checked.fit.blockers.length === 0) readable.push(checked);
+      if (!checked) continue;
+      const acceptance = scanOpeningAcceptance(
+        paths,
+        jobPayPlace(checked.input.location, checked.fit.parsedSalary),
+        checked.fit.blockers.map((blocker) => blocker.kind),
+      );
+      switch (acceptance) {
+        case "pack":
+          readable.push(paths.length ? { ...checked, fit: withoutPlaceAndPayBlockers(checked.fit) } : checked);
+          break;
+        case "skip":
+          break;
+        default: {
+          const never: never = acceptance;
+          throw new Error(String(never));
+        }
+      }
     }
     const done = Math.min(i + 4, candidates.length);
     await updateStage(env, scan.id, "reading", { checked: done });
@@ -243,7 +262,12 @@ export async function processScan(env: Env, scan: MarketScanRow): Promise<void> 
     ));
   }
   await updateStage(env, scan.id, "checking_fit", { checked: candidates.length });
-  const chosen = readable.sort((a, b) => b.row.match - a.row.match || b.fit.score - a.fit.score).slice(0, packs);
+  const chosen = readable.sort((a, b) => {
+    const rank = (item: CheckedOpening) => {
+      return scanCandidateDecision(paths, jobPayPlace(item.input.location, item.fit.parsedSalary)) === "review" ? 1 : 0;
+    };
+    return rank(a) - rank(b) || b.row.match - a.row.match || b.fit.score - a.fit.score;
+  }).slice(0, packs);
   if (!chosen.length) {
     await completeWithNothing(env, scan, "The strongest openings had a deal-breaker or could not be read. Nothing was charged.");
     return;
@@ -255,7 +279,7 @@ export async function processScan(env: Env, scan: MarketScanRow): Promise<void> 
   for (let index = 0; index < chosen.length; index += 1) {
     const item = chosen[index];
     if (!item) continue;
-    packsSaved.push(await packStatements(env, user.id, profile, item, {
+    packsSaved.push(await packStatements(env, user.id, profile, item, paths, {
       scanId: scan.id,
       chargeToken,
       jobId: `scan-${scan.id}-${index}`,

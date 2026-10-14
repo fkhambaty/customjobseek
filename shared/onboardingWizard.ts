@@ -1,7 +1,7 @@
 import type { Profile } from "./types";
 import { factGaps, profileReadiness } from "./validate";
 
-export const WIZARD_STEPS = ["welcome", "resume", "facts", "roles", "market", "confirm", "scan"] as const;
+export const WIZARD_STEPS = ["welcome", "resume", "facts", "roles", "market", "paths", "confirm", "scan"] as const;
 
 export type WizardStep = (typeof WIZARD_STEPS)[number];
 
@@ -28,6 +28,7 @@ const STORED: Record<StoredWizardStep, true> = {
   facts: true,
   roles: true,
   market: true,
+  paths: true,
   confirm: true,
   scan: true,
   done: true,
@@ -82,6 +83,12 @@ export function wizardCopy(step: WizardStep): WizardCopy {
         short: "Market",
         why: "Country, remote work, and pay tell the scan what to skip. A role in the wrong place, or below your pay, is not a match. Leaving pay blank means you have no pay floor.",
       };
+    case "paths":
+      return {
+        title: "Name the search paths you want",
+        short: "Paths",
+        why: "A search path is one place and one pay rule, such as Pune · Below ₹35 LPA or Remote · Above ₹30 LPA. A job matches on the midpoint of the pay the posting published. If the posting has no pay, you can review it separately. Nothing is guessed.",
+      };
     case "confirm":
       return {
         title: "Does this look like you?",
@@ -129,6 +136,7 @@ function canOffer(step: WizardStep, profile: Profile): boolean {
     case "roles":
       return factGaps(profile).length === 0;
     case "market":
+    case "paths":
       return factGaps(profile).length === 0 && profile.preferences.targetRoles.length > 0;
     case "confirm":
     case "scan":
@@ -151,6 +159,7 @@ export function resumeWizardStep(profile: Profile, stored: StoredWizardStep, res
     case "facts":
     case "roles":
     case "market":
+    case "paths":
     case "confirm":
     case "scan":
       return canOffer(stored, profile) ? stored : derived;
@@ -172,6 +181,7 @@ export function needsGuidedOnboarding(step: StoredWizardStep, profileReady: bool
     case "facts":
     case "roles":
     case "market":
+    case "paths":
     case "confirm":
     case "scan":
       return true;
@@ -195,6 +205,10 @@ function stepDelta(direction: "back" | "continue"): number {
   }
 }
 
+export function shouldPersistSearchPaths(from: WizardStep, to: WizardStep): boolean {
+  return from === "paths" && wizardStepIndex(to) > wizardStepIndex(from);
+}
+
 export function shiftWizardStep(step: WizardStep, direction: "back" | "continue"): WizardStep | null {
   return WIZARD_STEPS[wizardStepIndex(step) + stepDelta(direction)] ?? null;
 }
@@ -204,6 +218,7 @@ export function wizardContinueBlock(step: WizardStep, profile: Profile): string 
     case "welcome":
     case "resume":
     case "market":
+    case "paths":
     case "scan":
       return null;
     case "facts": {

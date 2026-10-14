@@ -49,6 +49,8 @@ function job(over: Partial<JobRecord> = {}): JobRecord {
     updatedAt: "2026-10-01T00:00:00Z",
     hasResume: true,
     lane: "Pune",
+    searchPathId: null,
+    archivedAt: null,
     route: "Greenhouse",
     family: "Data engineering",
     requisition: "",

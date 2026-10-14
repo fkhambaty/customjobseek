@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { Link } from "react-router-dom";
 import { BAD_MATCH_REASONS, INTERVIEW_STAGES, interviewStageLabel, parseBadMatchReason, parseInterviewStage, rowEvidence, type BadMatchReason } from "../../shared/agency";
 import { postingClosedCopy } from "../../shared/engine/liveness";
+import { PAY_NOT_PUBLISHED, showPayNotPublished } from "../../shared/engine/searchPaths";
 import { formatSalary } from "../../shared/engine/fit";
 import type { MessageSet } from "../../shared/engine/outreach";
 import { resumeHtmlPath } from "../../shared/resumeFile";
@@ -564,7 +565,7 @@ function HistoryTab({ job, pack, onChange }: { job: JobFull; pack: Pack | null; 
 }
 
 export function JobView({ id, tab, onTab, onClose }: { id: string; tab: JobTab; onTab: (t: JobTab) => void; onClose?: () => void }) {
-  const { put, drop, currency } = useJobs();
+  const { put, drop, currency, searchPaths } = useJobs();
   const [job, setJob] = useState<JobFull | null>(null);
   const [pack, setPack] = useState<Pack | null>(null);
   const [error, setError] = useState("");
@@ -596,7 +597,7 @@ export function JobView({ id, tab, onTab, onClose }: { id: string; tab: JobTab; 
           <h2>{job.title}</h2>
           <p>
             <strong>{job.company || "Company not set"}</strong>
-            {[job.location, pay, job.lane].filter(Boolean).map((x) => <span key={x}> · {x}</span>)}
+            {[job.location, pay, job.lane, job.archivedAt ? "Archived" : "", showPayNotPublished(job, searchPaths.length > 0) ? PAY_NOT_PUBLISHED : ""].filter(Boolean).map((x) => <span key={x}> · {x}</span>)}
           </p>
         </div>
         <div className="jv-actions">

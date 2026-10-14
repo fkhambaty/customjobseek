@@ -18,6 +18,7 @@ export interface EvaluatedJobRow {
   payLow: number | null;
   payHigh: number | null;
   provenance: string;
+  searchPathId?: string | null;
 }
 
 function errorText(err: unknown): string {
@@ -40,8 +41,8 @@ export async function storeEvaluatedJob(db: D1Database, row: EvaluatedJobRow): P
   try {
     const results = await db.batch([
       db.prepare(
-        `INSERT INTO jobs (id, user_id, title, company, location, url, salary_text, description, fit_json, lane, route, pay_low, pay_high, pay_provenance)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `INSERT INTO jobs (id, user_id, title, company, location, url, salary_text, description, fit_json, lane, route, pay_low, pay_high, pay_provenance, search_path_id)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT(id) DO NOTHING`,
       ).bind(
         row.id,
@@ -58,6 +59,7 @@ export async function storeEvaluatedJob(db: D1Database, row: EvaluatedJobRow): P
         row.payLow,
         row.payHigh,
         row.provenance,
+        row.searchPathId ?? null,
       ),
       db.prepare(
         `UPDATE users SET eval_credits = eval_credits - 1

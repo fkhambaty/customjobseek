@@ -5,6 +5,7 @@ import type { CheckoutSession, OrderView, PublicBillingStatus } from "../shared/
 import type { OnboardingProgress, StoredWizardStep, WizardStep } from "../shared/onboardingWizard";
 import type { ApplicationFile, JobDescriptionFile } from "../shared/engine/documents";
 import type { MessageSet } from "../shared/engine/outreach";
+import type { PathCommit, PathPreview, SearchPath, SearchPathDraft } from "../shared/engine/searchPaths";
 import type { Account, Channel, Contact, JobEvent, JobFull, JobRecord, JobStatus, Profile, TailoredResume } from "../shared/types";
 import { MAX_ORIGINAL_PDF_BYTES, originalPdfLimitMessage } from "../shared/resumeStorage";
 import { JOB_LIST_CAP, JOB_LIST_PAGE_LIMIT, jobListCapNotice, parseJobListResponse } from "./jobList";
@@ -84,6 +85,7 @@ export interface DiscoverRow {
   seenAt: string;
   match: number;
   locationNote: string;
+  pathLabel?: string;
 }
 
 export interface DiscoverScan {
@@ -249,6 +251,20 @@ export const api = {
 
   getProfile: () => call<{ profile: Profile; missing: string[] }>("GET", "/profile"),
   saveProfile: (p: Profile) => call<{ profile: Profile; missing: string[] }>("PUT", "/profile", p),
+  listSearchPaths: () => call<{ paths: SearchPath[] }>("GET", "/search-paths"),
+  previewSearchPaths: (body: PathCommit) => call<PathPreview>("POST", "/search-paths/preview", body),
+  createSearchPath: (body: { draft: SearchPathDraft; disposition: "reclassify" | "archive" }) =>
+    call<{ paths: SearchPath[] }>("POST", "/search-paths", body),
+  updateSearchPath: (id: string, body: { draft: SearchPathDraft; disposition: "reclassify" | "archive" }) =>
+    call<{ paths: SearchPath[] }>("PATCH", `/search-paths/${enc(id)}`, body),
+  deleteSearchPath: (id: string, body: { disposition: "reclassify" | "archive" | "move"; moveToId?: string | null }) =>
+    call<{ paths: SearchPath[] }>("DELETE", `/search-paths/${enc(id)}`, body),
+  reorderSearchPaths: (body: { ids: string[]; disposition: "reclassify" | "archive" }) =>
+    call<{ paths: SearchPath[] }>("PATCH", "/search-paths/order", body),
+  replaceSearchPaths: (body: { drafts: SearchPathDraft[]; disposition: "reclassify" | "archive" }) =>
+    call<{ paths: SearchPath[] }>("PUT", "/search-paths", body),
+  restoreJobPath: (id: string) => call<JobFull>("POST", `/jobs/${enc(id)}/path`, { action: "restore" }),
+  reclassifyJobPath: (id: string) => call<JobFull>("POST", `/jobs/${enc(id)}/path`, { action: "reclassify" }),
   importResume: async (file: File) => {
     if (file.size > MAX_ORIGINAL_PDF_BYTES) throw new ApiError(400, originalPdfLimitMessage());
     const res = await fetch("/api/profile/resume-file", {

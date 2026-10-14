@@ -35,6 +35,8 @@ function job(over: Partial<JobRecord>): JobRecord {
     updatedAt: "2026-09-01T00:00:00Z",
     hasResume: true,
     lane: "Pune · above floor",
+    searchPathId: null,
+    archivedAt: null,
     route: "Greenhouse",
     family: "Data engineering",
     requisition: "",
@@ -133,5 +135,23 @@ describe("queues and analytics", () => {
     expect(a.byRoute.find((r) => r.key === "Lever")?.answered).toBe(2);
     expect(a.skillGaps[0]).toEqual({ label: "databricks", count: 8 });
     expect(a.weeks.reduce((n, w) => n + w.interview + w.rejected + w.closed + w.silent, 0)).toBe(6);
+  });
+
+  it("leaves archived jobs in submitted history and out of the open queue and skill gaps", () => {
+    const live = job({ id: "live", status: "evaluated", appliedAt: null, fit: { ...fit, missingRequired: ["SQL"] } });
+    const archived = job({
+      id: "old",
+      status: "evaluated",
+      archivedAt: "2026-10-01",
+      appliedAt: "2026-09-01",
+      lane: "Pune · Above ₹30 LPA",
+      fit: { ...fit, missingRequired: ["Snowflake"] },
+    });
+    const a = computeAnalytics([live, archived], today);
+    expect(a.openTotal).toBe(1);
+    expect(a.submitted).toBe(1);
+    expect(a.byLane.map((row) => row.key)).toEqual(["Pune · Above ₹30 LPA"]);
+    expect(a.skillGaps.map((gap) => gap.label)).toEqual(["sql"]);
+    expect(a.targeting.find((row) => row.key === "Data engineering")?.queued).toBe(1);
   });
 });

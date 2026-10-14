@@ -196,6 +196,8 @@ export interface JobRecord {
   updatedAt: string;
   hasResume: boolean;
   lane: string;
+  searchPathId: string | null;
+  archivedAt: string | null;
   route: string;
   family: string;
   requisition: string;

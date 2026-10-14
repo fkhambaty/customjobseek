@@ -23,6 +23,7 @@ import { PrintResume } from "./pages/PrintResume";
 import { ProfilePage } from "./pages/ProfilePage";
 import { ResumeViewerPage } from "./pages/ResumeViewerPage";
 import { ResumesPage } from "./pages/ResumesPage";
+import { SearchPathsPage } from "./pages/SearchPathsPage";
 import { SupportPage } from "./pages/SupportPage";
 import { TodayPage } from "./pages/TodayPage";
 import { ResetPage, VerifyPage } from "./pages/VerifyPage";
@@ -146,6 +147,7 @@ export function App() {
           <Route path="/resumes" element={<ResumesPage />} />
           <Route path="/resumes/view/:kind/:id" element={<ResumeViewerPage />} />
           <Route path="/profile" element={<ProfilePage />} />
+          <Route path="/search-paths" element={<SearchPathsPage />} />
           <Route path="/jobs/new" element={<NewJobPage />} />
           <Route path="/jobs/:id" element={<JobPage />} />
           <Route path="/account" element={<AccountPage />} />

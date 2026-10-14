@@ -6,6 +6,7 @@ import {
   needsGuidedOnboarding,
   resumeWizardStep,
   shiftWizardStep,
+  shouldPersistSearchPaths,
   wizardContinueBlock,
   wizardCopy,
   wizardStepIndex,
@@ -16,6 +17,7 @@ import { originalPdfLimitMessage } from "../../shared/resumeStorage";
 import { profileReadiness } from "../../shared/validate";
 import { api } from "../api";
 import { CountrySelect, TimeZoneField } from "../components/CountrySelect";
+import { OnboardingPaths, SaveCancelled } from "../components/SearchPaths";
 import { Field, ListInput, NumberInput, newId } from "../components/fields";
 import { RoleTargets } from "../components/RoleTargets";
 import { plural } from "../format";
@@ -86,6 +88,10 @@ export function OnboardingPage() {
   const pendingMove = useRef<WizardStep | "done" | null>(null);
   const scanStarted = useRef(false);
   const generation = useRef(0);
+  const pathSave = useRef<(() => Promise<void>) | null>(null);
+  const rememberPaths = useCallback((save: (() => Promise<void>) | null) => {
+    pathSave.current = save;
+  }, []);
   const opened = useRef(false);
   const [profile, setProfile] = useState<Profile | null>(null);
   const [step, setStep] = useState<WizardStep>("welcome");
@@ -193,6 +199,23 @@ export function OnboardingPage() {
     edit({ ...profile, preferences: { ...profile.preferences, [key]: value } });
   }
 
+  async function persistPaths(): Promise<boolean> {
+    if (step !== "paths") return true;
+    if (!pathSave.current) {
+      setActionError("Search paths are still loading.");
+      return false;
+    }
+    try {
+      await pathSave.current();
+      return true;
+    } catch (err) {
+      if (err instanceof SaveCancelled) return false;
+      setActionError((err as Error).message);
+      setRetryKind("save");
+      return false;
+    }
+  }
+
   async function go(next: WizardStep) {
     pendingMove.current = next;
     setBusy("step");
@@ -229,7 +252,7 @@ export function OnboardingPage() {
       return;
     }
     const next = shiftWizardStep(step, "continue");
-    if (next) await go(next);
+    if (next && await persistPaths()) await go(next);
   }
 
   async function importPdf(file: File) {
@@ -397,7 +420,15 @@ export function OnboardingPage() {
             const previous = shiftWizardStep(step, "back");
             if (previous) void go(previous);
           }}
-          onJump={(next) => void go(next)}
+          onJump={(next) => {
+            if (!shouldPersistSearchPaths(step, next)) {
+              void go(next);
+              return;
+            }
+            void persistPaths().then((ok) => {
+              if (ok) void go(next);
+            });
+          }}
           onImport={(file) => void importPdf(file)}
           onAddRole={(title) => {
             if (profile.preferences.targetRoles.includes(title)) return;
@@ -407,6 +438,7 @@ export function OnboardingPage() {
           onStartScan={() => void startScan()}
           onLater={() => void later()}
           onRetry={retry}
+          onPathsReady={rememberPaths}
         />
       )}
     </div>
@@ -432,6 +464,7 @@ function Wizard({
   onStartScan,
   onLater,
   onRetry,
+  onPathsReady,
 }: {
   profile: Profile;
   step: WizardStep;
@@ -451,6 +484,7 @@ function Wizard({
   onStartScan: () => void;
   onLater: () => void;
   onRetry: () => void;
+  onPathsReady: (save: (() => Promise<void>) | null) => void;
 }) {
   const copy = wizardCopy(step);
   const index = wizardStepIndex(step);
@@ -506,6 +540,7 @@ function Wizard({
           onJump={onJump}
           onStartScan={onStartScan}
           onLater={onLater}
+          onPathsReady={onPathsReady}
         />
         {actionError && (
           <div className="alert alert-error" role="alert">
@@ -545,6 +580,7 @@ function StepBody({
   onJump,
   onStartScan,
   onLater,
+  onPathsReady,
 }: {
   step: WizardStep;
   profile: Profile;
@@ -559,6 +595,7 @@ function StepBody({
   onJump: (step: WizardStep) => void;
   onStartScan: () => void;
   onLater: () => void;
+  onPathsReady: (save: (() => Promise<void>) | null) => void;
 }) {
   switch (step) {
     case "welcome":
@@ -618,6 +655,8 @@ function StepBody({
       );
     case "market":
       return <Market profile={profile} onEdit={onEdit} onPref={onPref} />;
+    case "paths":
+      return <OnboardingPaths profile={profile} onReady={onPathsReady} />;
     case "confirm":
       return <Confirm profile={profile} onJump={onJump} />;
     case "scan":
@@ -818,6 +857,7 @@ function Confirm({ profile, onJump }: { profile: Profile; onJump: (step: WizardS
         <button type="button" className="btn btn-ghost btn-sm" onClick={() => onJump("facts")}>Edit facts</button>
         <button type="button" className="btn btn-ghost btn-sm" onClick={() => onJump("roles")}>Edit titles</button>
         <button type="button" className="btn btn-ghost btn-sm" onClick={() => onJump("market")}>Edit place and pay</button>
+        <button type="button" className="btn btn-ghost btn-sm" onClick={() => onJump("paths")}>Edit search paths</button>
         <Link to="/profile" className="btn btn-ghost btn-sm">Open full editor</Link>
       </div>
     </>

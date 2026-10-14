@@ -77,8 +77,8 @@ function annualFloor(prefs: Preferences): number | null {
 }
 
 /**
- * A lane is where the job is and whether the pay clears the person's floor:
- * the two things that decide whether a job is worth an evening.
+ * Place and pay-floor label used until the person saves a search path.
+ * Search paths replace this label once they exist.
  */
 export function laneFor(location: string, payLow: number | null, payHigh: number | null, prefs: Preferences): string {
   const loc = location.toLowerCase();

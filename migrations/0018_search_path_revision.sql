@@ -1,0 +1,1 @@
+ALTER TABLE search_paths ADD COLUMN revision INTEGER NOT NULL DEFAULT 0;

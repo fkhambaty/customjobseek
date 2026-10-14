@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { rowEvidence } from "../../shared/agency";
 import { postingClosedCopy } from "../../shared/engine/liveness";
+import { PAY_NOT_PUBLISHED, showPayNotPublished } from "../../shared/engine/searchPaths";
 import type { JobRecord, JobStatus } from "../../shared/types";
 import { api } from "../api";
 import { useJobs } from "../data";
@@ -15,7 +16,7 @@ function Score({ job }: { job: JobRecord }) {
 }
 
 export function JobLine({ job, mode }: { job: JobRecord; mode: LineMode }) {
-  const { put, open, currency } = useJobs();
+  const { put, open, currency, searchPaths } = useJobs();
   const [busy, setBusy] = useState(false);
   const pay = formatPay(job, currency);
   const evidence = rowEvidence(job, today());
@@ -32,6 +33,8 @@ export function JobLine({ job, mode }: { job: JobRecord; mode: LineMode }) {
   const facts = [
     evidence.stage,
     job.lane,
+    job.archivedAt ? "Archived" : "",
+    showPayNotPublished(job, searchPaths.length > 0) ? PAY_NOT_PUBLISHED : "",
     pay,
     evidence.freshness.label,
     evidence.payProvenance === "unknown" ? "" : evidence.payLabel,

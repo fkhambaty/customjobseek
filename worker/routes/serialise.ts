@@ -20,6 +20,8 @@ export interface JobRow {
   created_at: string;
   updated_at: string;
   lane: string;
+  search_path_id: string | null;
+  archived_at: string | null;
   route: string;
   requisition: string;
   pay_low: number | null;
@@ -53,7 +55,7 @@ export const JOB_SELECT = `SELECT j.*, ${JOB_EXTRAS} FROM jobs j`;
 /** List rows skip the description and notes. The job page loads those on demand. */
 export const JOB_LIST_SELECT = `SELECT j.id, j.user_id, j.title, j.company, j.location, j.url, j.salary_text,
   '' AS description, j.status, j.fit_json, '' AS notes, j.next_action_at, j.applied_at, j.created_at, j.updated_at,
-  j.lane, j.route, j.requisition, j.pay_low, j.pay_high, j.pay_estimated, j.posted_at, j.rejected_at, j.closed_at,
+  j.lane, j.search_path_id, j.archived_at, j.route, j.requisition, j.pay_low, j.pay_high, j.pay_estimated, j.posted_at, j.rejected_at, j.closed_at,
   j.contact_count, '' AS details_ciphertext, j.live_status, j.source_checked_at, j.pay_provenance, j.interview_stage, ${JOB_EXTRAS}
   FROM jobs j`;
 
@@ -86,6 +88,8 @@ export function toJob(r: JobRow): JobRecord {
     updatedAt: r.updated_at,
     hasResume: Boolean(r.has_resume),
     lane: r.lane,
+    searchPathId: r.search_path_id ?? null,
+    archivedAt: r.archived_at ?? null,
     route: r.route || routeFromUrl(r.url),
     family: roleFamily(r.title),
     requisition: r.requisition,

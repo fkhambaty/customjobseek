@@ -67,7 +67,7 @@ export function AnalyticsPage() {
       <div className="page">
         <h1 className="page-title">Analytics</h1>
         {notice && <div className="alert alert-warn" role="status">{notice}</div>}
-        <p className="lede">Mark a few jobs as applied and this page starts telling you which lanes, routes and role types answer.</p>
+        <p className="lede">Mark a few jobs as applied and this page starts telling you which search paths, routes and role types answer.</p>
       </div>
     );
   }
@@ -149,7 +149,7 @@ export function AnalyticsPage() {
       </section>
 
       <div className="panels-2">
-        <section className="panel"><header><h2>By lane</h2></header><BreakdownTable rows={a.byLane} label="Lane" /></section>
+        <section className="panel"><header><h2>By search path</h2></header><BreakdownTable rows={a.byLane} label="Search path" /></section>
         <section className="panel"><header><h2>By where you applied</h2></header><BreakdownTable rows={a.byRoute} label="Route" /></section>
         <section className="panel"><header><h2>By fit score</h2></header><BreakdownTable rows={a.byFit} label="Fit" /></section>
         <section className="panel"><header><h2>By role type</h2></header><BreakdownTable rows={a.byFamily} label="Role type" /></section>

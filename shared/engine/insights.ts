@@ -49,15 +49,16 @@ export interface TodayQueues {
 
 /** What to do today, in the order that pays off: live conversations, then fresh applications, then people. */
 export function todayQueues(jobs: JobRecord[], today: string): TodayQueues {
+  const active = jobs.filter((job) => !job.archivedAt);
   const age = (iso: string | null) => daysBetween(iso, today) ?? Infinity;
-  const live = jobs
+  const live = active
     .filter((j) => j.status === "interview" || j.status === "offer")
     .sort((a, b) => (a.liveStatus === "closed" ? 1 : 0) - (b.liveStatus === "closed" ? 1 : 0));
-  const applyNext = jobs
+  const applyNext = active
     .filter((j) => TO_APPLY.has(j.status) && (j.fit.imported || j.fit.decision !== "skip"))
     .sort(openPostingFirst((a, b) => b.fit.score - a.fit.score || (payMid(b) ?? 0) - (payMid(a) ?? 0)));
 
-  const recent = jobs.filter((j) => j.status === "applied" && age(j.appliedAt) <= 30);
+  const recent = active.filter((j) => j.status === "applied" && age(j.appliedAt) <= 30);
   const seen = new Set<string>();
   const messageNow = recent
     .filter((j) => j.contactCount > 0 && j.messagesSent === 0)
@@ -70,10 +71,10 @@ export function todayQueues(jobs: JobRecord[], today: string): TodayQueues {
     });
   const needContact = recent.filter((j) => j.contactCount === 0).length;
 
-  const nudge = jobs
+  const nudge = active
     .filter((j) => j.status === "applied" && j.messagesSent > 0 && j.replies === 0 && age(j.lastTouchAt) >= 7 && age(j.appliedAt) <= 45)
     .sort(openPostingFirst(byPayThenScore));
-  const due = jobs
+  const due = active
     .filter((j) => j.nextActionAt !== null && j.nextActionAt <= today && !["rejected", "withdrawn", "closed"].includes(j.status))
     .sort(openPostingFirst((a, b) => (a.nextActionAt ?? "").localeCompare(b.nextActionAt ?? "")));
   return { live, applyNext, messageNow, nudge, due, needContact };
@@ -208,11 +209,12 @@ export function computeAnalytics(jobs: JobRecord[], today: string, weeks = 12): 
   }
 
   const silent = sent.filter((j) => j.status === "applied" && !hasAnswer(j));
-  const open = jobs.filter((j) => j.status === "applied" || TO_APPLY.has(j.status));
-  const openApps = jobs.filter((j) => j.status === "applied");
+  const current = jobs.filter((j) => !j.archivedAt);
+  const open = current.filter((j) => j.status === "applied" || TO_APPLY.has(j.status));
+  const openApps = current.filter((j) => j.status === "applied");
 
   const gapCount = new Map<string, number>();
-  for (const j of jobs) {
+  for (const j of current) {
     for (const g of new Set([...j.fit.missingRequired, ...j.fit.missingOther].map((s) => s.toLowerCase()))) {
       gapCount.set(g, (gapCount.get(g) ?? 0) + 1);
     }
@@ -226,7 +228,7 @@ export function computeAnalytics(jobs: JobRecord[], today: string, weeks = 12): 
   const byRoute = breakdown(sent, (j) => j.route);
   const byFamily = breakdown(sent, (j) => j.family);
   const queued = new Map<string, number>();
-  for (const j of jobs) if (TO_APPLY.has(j.status)) queued.set(j.family, (queued.get(j.family) ?? 0) + 1);
+  for (const j of current) if (TO_APPLY.has(j.status)) queued.set(j.family, (queued.get(j.family) ?? 0) + 1);
 
   const messaged = sent.filter((j) => j.messagesSent > 0);
   const messageReplies = messaged.filter((j) => j.replies > 0).length;
@@ -234,7 +236,7 @@ export function computeAnalytics(jobs: JobRecord[], today: string, weeks = 12): 
 
   const insights: string[] = [];
   const lane = best(byLane, 5);
-  if (lane) insights.push(`Your best reply rate by lane is ${lane.key}: ${pct(lane.answered, lane.sent)} of ${lane.sent} applications got an answer.`);
+  if (lane) insights.push(`Your best reply rate by search path is ${lane.key}: ${pct(lane.answered, lane.sent)} of ${lane.sent} applications got an answer.`);
   const route = best(byRoute, 5);
   if (route) insights.push(`By route, ${route.key} answers most often (${pct(route.answered, route.sent)}).`);
   const contactable = openApps.filter((j) => j.contactCount > 0 && j.messagesSent === 0).length;
