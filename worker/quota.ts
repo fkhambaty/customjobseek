@@ -57,7 +57,7 @@ const D1_QUERY = `query ($accountTag: String!, $since: Time!) {
   }
 }`;
 
-const D1_ROWS_QUERY = `query ($accountTag: String!, $since: Date!) {
+export const D1_ROWS_QUERY = `query ($accountTag: String!, $since: Date!) {
   viewer {
     accounts(filter: { accountTag: $accountTag }) {
       d1AnalyticsAdaptiveGroups(limit: 1000, filter: { date_geq: $since }) {
@@ -77,7 +77,7 @@ const STORAGE_QUERY = `query ($accountTag: String!, $since: Date!) {
   }
 }`;
 
-async function postGraphql(token: string, query: string, variables: Record<string, string>): Promise<unknown | null> {
+export async function postGraphql(token: string, query: string, variables: Record<string, string>): Promise<unknown | null> {
   try {
     const res = await fetch(GRAPHQL, {
       method: "POST",

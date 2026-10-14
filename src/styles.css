@@ -834,6 +834,14 @@ code { font-size: 0.95em; }
 .last-scan-kpis dd { margin: 0; font-family: var(--serif); font-size: 26px; }
 .last-scan-kpis .kpi-good dd { color: var(--good); }
 .last-scan-kpis .kpi-warn dd { color: var(--bad); }
+.capacity-page { max-width: 640px; margin: 72px auto; padding: 0 20px; }
+.capacity-notice { background: #f8f0dd; border: 1px solid #eadbb7; border-left: 3px solid var(--warn); border-radius: 8px; padding: 22px 24px; color: var(--ink); }
+.capacity-notice .kicker { color: var(--warn); }
+.capacity-notice h2 { font-family: var(--serif); font-weight: 500; font-size: 26px; margin: 0 0 8px; }
+.capacity-notice p { margin: 0 0 10px; font-size: 15px; line-height: 1.55; color: var(--ink-2); }
+.capacity-compact { padding: 14px 16px; margin: 0 0 18px; }
+.capacity-compact h2 { font-size: 19px; }
+.capacity-compact p { font-size: 13.5px; }
 .run-when { min-width: 120px; color: var(--ink); font-weight: 600; }
 @media (max-width: 560px) {
   .modal-layer { padding: 12px; }

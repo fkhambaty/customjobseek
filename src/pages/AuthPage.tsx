@@ -1,10 +1,11 @@
 import { useState, type FormEvent } from "react";
 import { Link, Navigate, useLocation, useNavigate, useSearchParams } from "react-router-dom";
-import { api } from "../api";
+import { api, ApiError } from "../api";
+import { CapacityNotice } from "../components/CapacityNotice";
 import { useSession } from "../session";
 
 export function AuthPage({ mode }: { mode: "login" | "signup" }) {
-  const { account, refresh } = useSession();
+  const { account, pause, refresh } = useSession();
   const navigate = useNavigate();
   const location = useLocation();
   const [params] = useSearchParams();
@@ -31,7 +32,7 @@ export function AuthPage({ mode }: { mode: "login" | "signup" }) {
       await api.login(email, password);
       await refresh();
     } catch (err) {
-      setError((err as Error).message);
+      if (!(err instanceof ApiError && err.pause)) setError((err as Error).message);
     } finally {
       setBusy(false);
     }
@@ -61,6 +62,7 @@ export function AuthPage({ mode }: { mode: "login" | "signup" }) {
             />
             {mode === "signup" ? <small className="muted">At least 10 characters.</small> : <small className="muted"><Link to="/reset">Forgot password?</Link></small>}
           </label>
+          {pause && <CapacityNotice pause={pause} compact />}
           {error && <div className="alert alert-error">{error}</div>}
           <button className="btn btn-primary btn-block" disabled={busy}>
             {busy ? "Please wait…" : mode === "signup" ? "Create account" : "Sign in"}

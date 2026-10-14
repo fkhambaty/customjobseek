@@ -2,7 +2,9 @@ import type { ReactNode } from "react";
 import { Link, Navigate, NavLink, Outlet, Route, Routes, useLocation } from "react-router-dom";
 import { needsGuidedOnboarding } from "../shared/onboardingWizard";
 import { profileReadiness } from "../shared/validate";
+import type { CapacityPause } from "../shared/dbCapacity";
 import { AppShell } from "./components/AppShell";
+import { CapacityNotice } from "./components/CapacityNotice";
 import { SiteLinks } from "./components/SiteLinks";
 import { JobsProvider, useJobs } from "./data";
 import { AccountPage } from "./pages/AccountPage";
@@ -79,10 +81,19 @@ function PublicShell({ children }: { children: ReactNode }) {
 
 const OPEN_PATHS = new Set(["/pricing", "/companies"]);
 
+function PausedPage({ pause }: { pause: CapacityPause }) {
+  return (
+    <PublicShell>
+      <div className="capacity-page"><CapacityNotice pause={pause} /></div>
+    </PublicShell>
+  );
+}
+
 function SignedIn({ children }: { children: ReactNode }) {
-  const { account, loading } = useSession();
+  const { account, loading, pause } = useSession();
   const location = useLocation();
   if (loading) return <div className="boot">Opening your search…</div>;
+  if (!account && pause) return <PausedPage pause={pause} />;
   if (!account) return <Navigate to="/login" state={{ from: location.pathname }} replace />;
   return children;
 }
@@ -103,16 +114,18 @@ function TodayGate() {
  * Pricing and the companies list are readable signed out, in the public frame.
  */
 function AppLayout() {
-  const { account, loading } = useSession();
+  const { account, loading, pause } = useSession();
   const location = useLocation();
   if (loading) return <div className="boot">Opening your search…</div>;
   if (!account) {
     if (OPEN_PATHS.has(location.pathname)) return <PublicShell><Outlet /></PublicShell>;
+    if (pause) return <PausedPage pause={pause} />;
     return <Navigate to="/login" state={{ from: location.pathname }} replace />;
   }
   return (
     <JobsProvider>
       <AppShell>
+        {pause && <CapacityNotice pause={pause} compact />}
         <Outlet />
       </AppShell>
     </JobsProvider>

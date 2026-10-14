@@ -3,7 +3,7 @@ import { createMiddleware } from "hono/factory";
 import { randomToken, sha256 } from "./crypto";
 import { HttpError, type AppContext, type AppEnv, type UserRow } from "./env";
 
-const COOKIE = "cjs_session";
+export const SESSION_COOKIE = "cjs_session";
 const SESSION_DAYS = 30;
 
 export async function startSession(c: AppContext, userId: string): Promise<void> {
@@ -12,7 +12,7 @@ export async function startSession(c: AppContext, userId: string): Promise<void>
   await c.env.DB.prepare("INSERT INTO sessions (token_hash, user_id, expires_at) VALUES (?, ?, ?)")
     .bind(await sha256(token), userId, expires.toISOString())
     .run();
-  setCookie(c, COOKIE, token, {
+  setCookie(c, SESSION_COOKIE, token, {
     httpOnly: true,
     secure: new URL(c.req.url).protocol === "https:",
     sameSite: "Lax",
@@ -27,9 +27,9 @@ export async function revokeUserSessions(db: D1Database, userId: string): Promis
 }
 
 export async function endSession(c: AppContext): Promise<void> {
-  const token = getCookie(c, COOKIE);
+  const token = getCookie(c, SESSION_COOKIE);
   if (token) await c.env.DB.prepare("DELETE FROM sessions WHERE token_hash = ?").bind(await sha256(token)).run();
-  deleteCookie(c, COOKIE, { path: "/" });
+  deleteCookie(c, SESSION_COOKIE, { path: "/" });
 }
 
 // Paid credits lapse after their validity window; the account drops back to the free plan with nothing left.
@@ -44,7 +44,7 @@ async function expireCredits(db: D1Database, user: UserRow): Promise<UserRow> {
 }
 
 async function userFromSession(c: AppContext): Promise<{ token: string | null; user: UserRow | null }> {
-  const token = getCookie(c, COOKIE) ?? null;
+  const token = getCookie(c, SESSION_COOKIE) ?? null;
   if (!token) return { token: null, user: null };
   const row = await c.env.DB.prepare(
     `SELECT u.* FROM sessions s JOIN users u ON u.id = s.user_id

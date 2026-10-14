@@ -2,6 +2,7 @@ import { Hono } from "hono";
 import { secureHeaders } from "hono/secure-headers";
 import { PLANS, PLAN_ORDER } from "../shared/plans";
 import { shouldCollectQuotas } from "../shared/capacity";
+import { capacityPause, isDailyQuotaError } from "../shared/dbCapacity";
 import { processQueuedScans, runDueSchedules } from "./autoScan";
 import { HttpError, type AppEnv, type Env } from "./env";
 import { indexUnhashedOpenings } from "./openingsSync";
@@ -23,6 +24,7 @@ import { mailPrefs } from "./routes/mail";
 import { support } from "./routes/support";
 import { workspace } from "./routes/workspace";
 import { publicErrorBody, publicErrorLog } from "./publicError";
+import { backgroundWorkAllowed, capacityGuard, CapacityPausedError } from "./dbCapacity";
 import { scanDue } from "./scan";
 
 const app = new Hono<AppEnv>();
@@ -40,6 +42,8 @@ app.use("/api/*", async (c, next) => {
   }
   await next();
 });
+
+app.use("/api/*", capacityGuard);
 
 app.route("/api/auth", auth);
 app.route("/api/onboarding", onboardingRoutes);
@@ -64,10 +68,31 @@ app.all("/api/*", () => {
 
 app.onError((err, c) => {
   if (err instanceof HttpError) return c.json({ error: err.message }, err.status);
+  if (err instanceof CapacityPausedError) return c.json(err.pause, 503, { "retry-after": retryAfter(err.pause.resetAt) });
+  if (isDailyQuotaError(err)) {
+    const pause = capacityPause("quota_reached");
+    return c.json(pause, 503, { "retry-after": retryAfter(pause.resetAt) });
+  }
   const reference = crypto.randomUUID();
   console.error(publicErrorLog({ reference, method: c.req.method, path: c.req.path, err }));
   return c.json(publicErrorBody(reference), 500);
 });
+
+function retryAfter(resetAt: string): string {
+  return String(Math.max(60, Math.ceil((Date.parse(resetAt) - Date.now()) / 1000)));
+}
+
+async function hourlyFreeWork(env: Env): Promise<void> {
+  if (!(await backgroundWorkAllowed(env))) {
+    console.log("Daily database reserve reached; skipping lifecycle mail, referral sweep and search indexing.");
+    return;
+  }
+  await Promise.all([
+    runLifecycleSweep(env).catch((err: unknown) => console.error("lifecycle mail failed", err)),
+    reconcileReferralRewards(env).catch((err: unknown) => console.error("referral reconcile failed", err)),
+    indexUnhashedOpenings(env).catch((err: unknown) => console.error("search index failed", err)),
+  ]);
+}
 
 type Schedule = "17 * * * *" | "30 * * * *" | "* * * * *";
 
@@ -87,10 +112,8 @@ export default {
     switch (job) {
       case "17 * * * *":
         ctx.waitUntil(scanDue(env));
-        ctx.waitUntil(runLifecycleSweep(env).catch((err: unknown) => console.error("lifecycle mail failed", err)));
-        ctx.waitUntil(reconcileReferralRewards(env).catch((err: unknown) => console.error("referral reconcile failed", err)));
         ctx.waitUntil(purgeExpired(env.DB).catch((err: unknown) => console.error("cleanup failed", err)));
-        ctx.waitUntil(indexUnhashedOpenings(env).catch((err: unknown) => console.error("search index failed", err)));
+        ctx.waitUntil(hourlyFreeWork(env).catch((err: unknown) => console.error("hourly work failed", err)));
         if (shouldCollectQuotas(event.cron, new Date(event.scheduledTime))) {
           ctx.waitUntil(collectDailyQuotas(env).catch((err: unknown) => console.error("quota collect failed", err)));
         }

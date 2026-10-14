@@ -8,16 +8,20 @@ import type { MessageSet } from "../shared/engine/outreach";
 import type { PathCommit, PathPreview, SearchPath, SearchPathDraft } from "../shared/engine/searchPaths";
 import type { Account, Channel, Contact, JobEvent, JobFull, JobRecord, JobStatus, Profile, TailoredResume } from "../shared/types";
 import { MAX_ORIGINAL_PDF_BYTES, originalPdfLimitMessage } from "../shared/resumeStorage";
+import { capacityMessage, parseCapacityPause, type CapacityPause } from "../shared/dbCapacity";
 import { JOB_LIST_CAP, JOB_LIST_PAGE_LIMIT, jobListCapNotice, parseJobListResponse } from "./jobList";
 
 export class ApiError extends Error {
   constructor(
     public status: number,
     message: string,
+    public pause: CapacityPause | null = null,
   ) {
     super(message);
   }
 }
+
+export const CAPACITY_EVENT = "cjs:capacity-paused";
 
 const enc = encodeURIComponent;
 
@@ -29,7 +33,14 @@ async function call<T>(method: string, path: string, body?: unknown): Promise<T>
     body: body === undefined ? (method === "GET" ? undefined : "{}") : JSON.stringify(body),
   });
   const data = (await res.json().catch(() => ({}))) as { error?: string };
-  if (!res.ok) throw new ApiError(res.status, data.error ?? `Request failed (${res.status})`);
+  if (!res.ok) {
+    const pause = res.status === 503 ? parseCapacityPause(data) : null;
+    if (pause) {
+      window.dispatchEvent(new CustomEvent<CapacityPause>(CAPACITY_EVENT, { detail: pause }));
+      throw new ApiError(res.status, capacityMessage(pause.reason, pause.resetAt), pause);
+    }
+    throw new ApiError(res.status, data.error ?? `Request failed (${res.status})`);
+  }
   return data as T;
 }
 
