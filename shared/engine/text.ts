@@ -191,15 +191,129 @@ export function termPattern(alias: string): RegExp {
   return re;
 }
 
+// Same character class as termPattern, including A-Z because that pattern is case-insensitive.
+function isTermChar(code: number): boolean {
+  return (code >= 48 && code <= 57) || (code >= 65 && code <= 90) || (code >= 97 && code <= 122) || code === 43 || code === 35;
+}
+
+function isAsciiAlnum(code: number): boolean {
+  return (code >= 48 && code <= 57) || (code >= 65 && code <= 90) || (code >= 97 && code <= 122);
+}
+
+function leftBoundary(text: string, index: number): boolean {
+  return index === 0 || !isTermChar(text.charCodeAt(index - 1));
+}
+
+function rightBoundary(text: string, index: number): boolean {
+  if (index >= text.length) return true;
+  const code = text.charCodeAt(index);
+  if (isTermChar(code)) return false;
+  return !(code === 46 && index + 1 < text.length && isAsciiAlnum(text.charCodeAt(index + 1)));
+}
+
+function containsAlias(haystack: string, alias: string): boolean {
+  if (!alias) return false;
+  let from = 0;
+  while (from <= haystack.length - alias.length) {
+    const at = haystack.indexOf(alias, from);
+    if (at < 0) return false;
+    if (leftBoundary(haystack, at) && rightBoundary(haystack, at + alias.length)) return true;
+    from = at + 1;
+  }
+  return false;
+}
+
+/** Literal word-boundary check. `text` may be mixed case; matching follows termPattern. */
+export function hasAlias(text: string, alias: string): boolean {
+  return containsAlias(text.toLowerCase(), alias.toLowerCase());
+}
+
 export function mentions(normalisedText: string, term: Term): boolean {
-  return term.aliases.some((a) => termPattern(a).test(normalisedText));
+  const haystack = normalisedText.toLowerCase();
+  return term.aliases.some((alias) => containsAlias(haystack, alias.toLowerCase()));
+}
+
+interface TermNode {
+  next: Map<number, TermNode>;
+  names: string[] | null;
+}
+
+function buildTermIndex(terms: Term[]): TermNode {
+  const root: TermNode = { next: new Map(), names: null };
+  for (const term of terms) {
+    for (const alias of term.aliases) {
+      const key = alias.toLowerCase();
+      if (!key) continue;
+      let node = root;
+      for (let i = 0; i < key.length; i++) {
+        const code = key.charCodeAt(i);
+        let child = node.next.get(code);
+        if (!child) {
+          child = { next: new Map(), names: null };
+          node.next.set(code, child);
+        }
+        node = child;
+      }
+      if (!node.names) node.names = [term.name];
+      else if (!node.names.includes(term.name)) node.names.push(term.name);
+    }
+  }
+  return root;
+}
+
+const CATALOGUE_INDEX = buildTermIndex(SKILL_CATALOGUE);
+
+function scanTermIndex(text: string, root: TermNode): Set<string> {
+  const found = new Set<string>();
+  const n = text.length;
+  let i = 0;
+  while (i < n) {
+    if (!leftBoundary(text, i)) {
+      i++;
+      continue;
+    }
+    const startCode = text.charCodeAt(i);
+    let node = root;
+    let j = i;
+    while (j < n) {
+      const child = node.next.get(text.charCodeAt(j));
+      if (!child) break;
+      node = child;
+      j++;
+      if (node.names && rightBoundary(text, j)) {
+        for (const name of node.names) found.add(name);
+      }
+    }
+    if (isTermChar(startCode)) {
+      i++;
+      while (i < n && isTermChar(text.charCodeAt(i))) i++;
+    } else {
+      i++;
+    }
+  }
+  return found;
+}
+
+/**
+ * Names of `terms` that occur in already-normalised text.
+ * One walk handles every alias, including overlaps such as "sql" inside "sql server".
+ */
+export function mentionedNamesIn(texts: readonly string[], terms: Term[]): Set<string>[] {
+  if (terms.length === 0) return texts.map(() => new Set<string>());
+  const index = terms === SKILL_CATALOGUE ? CATALOGUE_INDEX : buildTermIndex(terms);
+  return texts.map((text) => (text ? scanTermIndex(text, index) : new Set<string>()));
+}
+
+const CATALOGUE_BY_KEY = new Map<string, Term>();
+for (const term of SKILL_CATALOGUE) {
+  for (const key of [term.name.toLowerCase(), ...term.aliases]) {
+    const normalised = key.toLowerCase();
+    if (!CATALOGUE_BY_KEY.has(normalised)) CATALOGUE_BY_KEY.set(normalised, term);
+  }
 }
 
 export function catalogueEntryFor(name: string): Term | undefined {
-  const n = name.trim().toLowerCase();
-  return SKILL_CATALOGUE.find(
-    (t) => t.name.toLowerCase() === n || t.aliases.includes(n),
-  );
+  return CATALOGUE_BY_KEY.get(name.trim().toLowerCase());
 }
 
 // A user skill expands to its catalogue aliases, so "Postgres" on a profile matches "PostgreSQL" in a JD.

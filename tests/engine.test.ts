@@ -102,6 +102,7 @@ describe("parsers", () => {
     expect(parseYearsRequired("Minimum 7+ years of relevant experience")).toBe(7);
     expect(parseYearsRequired("5-8 years experience in data")).toBe(5);
     expect(parseYearsRequired("Founded 20 years ago")).toBeNull();
+    expect(parseYearsRequired("No number is stated")).toBeNull();
   });
 
   it("scores title alignment by shared words", () => {

@@ -6,6 +6,7 @@ import { employerKey } from "../shared/engine/catalog";
 import { dedupeOpenings, isExpired, liveListingAts, openingDedupKey, sourceById } from "../shared/engine/sources";
 import { nextRefreshDelayMs, planOpeningDelta, shouldExpireOmittedOpenings, type StoredOpening } from "../shared/capacity";
 import { incomingFromListing } from "../worker/openingsSync";
+import { scanFailureRecord } from "../worker/publicError";
 import { listOpenings } from "../worker/scan";
 // @ts-expect-error plain JS helper shared with the seed scripts
 import { d1 } from "./cloud.mjs";
@@ -124,9 +125,10 @@ async function scan(company: Company): Promise<void> {
     const openings = await listOpenings({ ats: company.ats, token: company.board_token, careerUrl: company.career_url, nameHint: company.name });
     console.log(`${company.name.padEnd(32)} ${String(await save(company, openings)).padStart(5)}`);
   } catch (err) {
-    const message = err instanceof Error ? err.message : "Scan failed";
-    await query("UPDATE companies SET scan_status = 'error', last_error = ?, last_scan_at = ? WHERE id = ?", [message.slice(0, 300), new Date().toISOString(), company.id]);
-    console.log(`${company.name.padEnd(32)} error: ${message}`);
+    const failure = scanFailureRecord(err, `/internal/company-scan/${company.id}`);
+    await query("UPDATE companies SET scan_status = 'error', last_error = ?, last_scan_at = ? WHERE id = ?", [failure.message.slice(0, 300), new Date().toISOString(), company.id]);
+    console.log(`${company.name.padEnd(32)} error: ${failure.message}`);
+    console.error(failure.log);
   }
 }
 

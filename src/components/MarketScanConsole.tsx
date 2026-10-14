@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
+import { pipelineCountLabel } from "../../shared/engine/liveness";
 import { scanStageLabel, type ScanStage } from "../../shared/engine/scanRules";
 import { api, type MarketScan, type MarketStats, type ScanSchedule } from "../api";
 import { useJobs } from "../data";
@@ -148,6 +149,9 @@ export function MarketScanConsole({ compact = false }: { compact?: boolean }) {
             })}
           </ol>
           {scan.queueAhead > 0 && <p className="scan-queue">{scan.queueAhead} earlier scan{scan.queueAhead === 1 ? "" : "s"} ahead of yours.</p>}
+          {(scan.pipelineChecked > 0 || scan.pipelineClosed > 0) && (
+            <p className="scan-pipeline">{pipelineCountLabel(scan.pipelineChecked, scan.pipelineClosed)}</p>
+          )}
         </>
       )}
 
@@ -186,6 +190,7 @@ export function MarketScanConsole({ compact = false }: { compact?: boolean }) {
           )}
           <div className="market-complete-foot">
             <span>{scan.charged ? "1 scan used" : "Not charged"}</span>
+            <span>{pipelineCountLabel(scan.pipelineChecked, scan.pipelineClosed)}</span>
             <span className="row-inline">
               {canStart && <button className="linkish" onClick={start}>Scan again</button>}
               <Link to="/discover">See the full market</Link>

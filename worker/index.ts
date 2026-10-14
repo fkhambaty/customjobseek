@@ -21,6 +21,7 @@ import { resumes } from "./routes/resumes";
 import { mailPrefs } from "./routes/mail";
 import { support } from "./routes/support";
 import { workspace } from "./routes/workspace";
+import { publicErrorBody, publicErrorLog } from "./publicError";
 import { scanDue } from "./scan";
 
 const app = new Hono<AppEnv>();
@@ -61,8 +62,9 @@ app.all("/api/*", () => {
 
 app.onError((err, c) => {
   if (err instanceof HttpError) return c.json({ error: err.message }, err.status);
-  console.error(err);
-  return c.json({ error: "Something went wrong on our side. Please try again." }, 500);
+  const reference = crypto.randomUUID();
+  console.error(publicErrorLog({ reference, method: c.req.method, path: c.req.path, err }));
+  return c.json(publicErrorBody(reference), 500);
 });
 
 type Schedule = "17 * * * *" | "30 * * * *" | "* * * * *";

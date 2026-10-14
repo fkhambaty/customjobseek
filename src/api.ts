@@ -1,4 +1,4 @@
-import type { BadMatchReason, InterviewStage } from "../shared/agency";
+import type { BadMatchReason, InterviewStage, LiveStatus } from "../shared/agency";
 import type { Plan } from "../shared/plans";
 import type { PaidSku, CookieChoice, SupportTopic } from "../shared/commercial";
 import type { CheckoutSession, OrderView, PublicBillingStatus } from "../shared/payments";
@@ -6,6 +6,7 @@ import type { OnboardingProgress, StoredWizardStep, WizardStep } from "../shared
 import type { ApplicationFile, JobDescriptionFile } from "../shared/engine/documents";
 import type { MessageSet } from "../shared/engine/outreach";
 import type { Account, Channel, Contact, JobEvent, JobFull, JobRecord, JobStatus, Profile, TailoredResume } from "../shared/types";
+import { MAX_ORIGINAL_PDF_BYTES, originalPdfLimitMessage } from "../shared/resumeStorage";
 import { JOB_LIST_CAP, JOB_LIST_PAGE_LIMIT, jobListCapNotice, parseJobListResponse } from "./jobList";
 
 export class ApiError extends Error {
@@ -70,6 +71,7 @@ export interface Person {
   title: string;
   company: string;
   status: JobStatus;
+  liveStatus: LiveStatus;
   contact: Contact;
 }
 
@@ -117,6 +119,8 @@ export interface MarketScan {
   charged: boolean;
   progress: number | null;
   error: string;
+  pipelineChecked: number;
+  pipelineClosed: number;
   prepared: JobRecord[];
 }
 
@@ -148,11 +152,11 @@ export interface ScanSchedule {
   scanRuns: number;
   manualAllowedAt: string | null;
   manualNote: string;
-  runs: { id: string; trigger: string; startedAt: string; preparedCount: number; charged: boolean; note: string }[];
+  runs: { id: string; trigger: string; startedAt: string; preparedCount: number; charged: boolean; note: string; pipelineChecked: number; pipelineClosed: number }[];
 }
 
 export interface ResumeLibrary {
-  tailored: { jobId: string; title: string; company: string; status: JobStatus; madeAt: string; built: boolean; saved: boolean }[];
+  tailored: { jobId: string; title: string; company: string; status: JobStatus; liveStatus: LiveStatus; madeAt: string; built: boolean; saved: boolean }[];
   base: { id: string; label: string; format: string; createdAt: string }[];
 }
 
@@ -246,6 +250,7 @@ export const api = {
   getProfile: () => call<{ profile: Profile; missing: string[] }>("GET", "/profile"),
   saveProfile: (p: Profile) => call<{ profile: Profile; missing: string[] }>("PUT", "/profile", p),
   importResume: async (file: File) => {
+    if (file.size > MAX_ORIGINAL_PDF_BYTES) throw new ApiError(400, originalPdfLimitMessage());
     const res = await fetch("/api/profile/resume-file", {
       method: "POST",
       credentials: "same-origin",
@@ -336,3 +341,5 @@ export const api = {
   accountExport: () => call<Record<string, unknown>>("GET", "/account/export"),
   support: (body: { email?: string; topic: SupportTopic; message: string }) => call<{ id: string }>("POST", "/support", body),
 };
+
+export { resumeFileLinks, resumeHtmlPath, resumePdfPath, resumeViewerPath, type ResumeArtifactKind } from "../shared/resumeFile";

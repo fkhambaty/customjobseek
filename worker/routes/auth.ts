@@ -179,6 +179,7 @@ export const auth = new Hono<AppEnv>()
       "support_requests",
       "job_events",
       "packs",
+      "resume_artifacts",
       "resume_uploads",
       "missed_reports",
       "resumes",

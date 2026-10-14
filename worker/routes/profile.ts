@@ -6,12 +6,18 @@ import { nextRunAt } from "../../shared/engine/scanRules";
 import { resumeTextInReadingOrder, type ResumeTextPage } from "../../shared/engine/resumeLayout";
 import { emptyProfile, type Profile } from "../../shared/types";
 import { profileReadiness, sanitiseProfile } from "../../shared/validate";
-import { decryptJson, encryptJson } from "../crypto";
+import { artifactIdentity, isPdf, safeResumeFilename } from "../../shared/resumeFile";
+import { ciphertextRowFits, D1_MAX_VALUE_BYTES, MAX_ORIGINAL_PDF_BYTES, originalPdfLimitMessage, UPLOAD_TEXT_CAP } from "../../shared/resumeStorage";
+import { renderPlainTextHtml } from "../../shared/resumeHtml";
+import { decryptJson, encryptBytes, encryptJson } from "../crypto";
+import { UPSERT_RESUME_ARTIFACT } from "../resumeArtifacts";
 import { HttpError, type AppEnv, type Env } from "../env";
 import { noteOnboarding } from "../onboarding";
 import { enforceRateLimit } from "../rateLimit";
 import { requireUser } from "../session";
 import { noteProductEvent, noteUsage } from "../usage";
+
+const encoder = new TextEncoder();
 
 export async function loadProfile(env: Env, userId: string, email: string): Promise<Profile> {
   const row = await env.DB.prepare("SELECT ciphertext FROM profiles WHERE user_id = ?").bind(userId).first<{ ciphertext: string }>();
@@ -48,8 +54,12 @@ export const profile = new Hono<AppEnv>()
   .post("/resume-file", async (c) => {
     const user = c.get("user");
     await enforceRateLimit(c.env.DB, "resume_import", user.id);
+    const declared = Number(c.req.header("content-length"));
+    if (Number.isFinite(declared) && declared > MAX_ORIGINAL_PDF_BYTES) throw new HttpError(400, originalPdfLimitMessage());
     const bytes = new Uint8Array(await c.req.arrayBuffer());
-    if (bytes.byteLength < 100 || bytes.byteLength > 2_000_000) throw new HttpError(400, "Upload a PDF under 2 MB.");
+    if (bytes.byteLength < 100) throw new HttpError(400, "That PDF is too small to read.");
+    if (bytes.byteLength > MAX_ORIGINAL_PDF_BYTES) throw new HttpError(400, originalPdfLimitMessage());
+    if (!isPdf(bytes)) throw new HttpError(422, "That file could not be read. Use a text-based PDF, not a scanned image.");
     const doc = await getDocumentProxy(bytes).catch(() => null);
     if (!doc) throw new HttpError(422, "That file could not be read. Use a text-based PDF, not a scanned image.");
     const pages: ResumeTextPage[] = [];
@@ -72,10 +82,35 @@ export const profile = new Hono<AppEnv>()
     }
     if (!text || text.trim().length < 80) throw new HttpError(422, "Almost no text came out of that PDF. It may be a scan.");
     const draft = sanitiseProfile(profileFromResumeText(text, user.email));
-    const filename = (c.req.header("x-file-name") ?? "").replace(/[^\w .()-]/g, "").slice(0, 120) || "Uploaded resume.pdf";
-    await c.env.DB.prepare("INSERT INTO resume_uploads (id, user_id, filename, label, format, text_ciphertext) VALUES (?, ?, ?, ?, 'text', ?)")
-      .bind(crypto.randomUUID(), user.id, filename, filename.replace(/\.pdf$/i, ""), await encryptJson(c.env.DATA_KEY, { text: text.slice(0, 100_000) }))
-      .run();
+    const rawName = (c.req.header("x-file-name") ?? "").replace(/[^\w .()-]/g, "").slice(0, 120);
+    const filename = safeResumeFilename(rawName || "Uploaded resume", "pdf");
+    const label = (rawName || "Uploaded resume").replace(/\.pdf$/i, "").slice(0, 120);
+    const plain = text.slice(0, UPLOAD_TEXT_CAP);
+    const html = renderPlainTextHtml(label, plain);
+    const uploadId = crypto.randomUUID();
+    const artifact = artifactIdentity("upload", uploadId);
+    const [textCipher, htmlCipher, pdfCipher] = await Promise.all([
+      encryptJson(c.env.DATA_KEY, { text: plain }),
+      encryptBytes(c.env.DATA_KEY, encoder.encode(html)),
+      encryptBytes(c.env.DATA_KEY, bytes),
+    ]);
+    if (textCipher.length > D1_MAX_VALUE_BYTES || !ciphertextRowFits(htmlCipher.length, pdfCipher.length)) {
+      throw new HttpError(400, originalPdfLimitMessage());
+    }
+    await c.env.DB.batch([
+      c.env.DB.prepare("INSERT INTO resume_uploads (id, user_id, filename, label, format, text_ciphertext) VALUES (?, ?, ?, ?, 'pdf', ?)")
+        .bind(uploadId, user.id, filename, label, textCipher),
+      c.env.DB.prepare(UPSERT_RESUME_ARTIFACT).bind(
+        user.id,
+        artifact.artifactKey,
+        artifact.kind,
+        artifact.jobId,
+        artifact.uploadId,
+        filename,
+        htmlCipher,
+        pdfCipher,
+      ),
+    ]);
     await noteUsage(c.env.DB, user.id, "imports");
     await noteOnboarding(c.env.DB, user.id, "resume");
     await noteProductEvent(c.env.DB, user.id, "resume_import");

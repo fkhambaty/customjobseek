@@ -221,7 +221,15 @@ input:focus, textarea:focus, select:focus { outline: none; border-color: var(--i
 .line-facts .hint { font-style: italic; }
 .line-facts .live { color: var(--good); }
 .line-facts .stale, .l-signal .stale { color: var(--warn); }
-.line-facts .closed, .l-signal .closed { color: var(--bad); }
+.line-facts .closed, .l-signal .closed { color: var(--bad); font-weight: 650; }
+.line.posting-closed,
+.line.posting-closed:hover { background: #f8ece8; box-shadow: inset 3px 0 0 var(--bad); }
+.posting-closed-note { display: block; margin-top: 6px; color: var(--bad); font-size: 13px; font-weight: 650; line-height: 1.4; }
+.jv-posting-closed { margin: 0 0 14px; padding: 12px 14px; background: #f8ece8; border: 1px solid #ead0c7; border-left: 3px solid var(--bad); color: var(--bad); font-size: 14px; font-weight: 650; }
+.ledger tbody tr.posting-closed td { background: #f8ece8; }
+.ledger tbody tr.posting-closed:hover td { background: #f3e4df; }
+.ledger tr.posting-closed td:first-child { box-shadow: inset 3px 0 0 var(--bad); }
+.scan-pipeline { margin: 8px 0 0; color: var(--bad); font-size: 13.5px; font-weight: 650; }
 .l-signal { display: block; margin-top: 3px; color: var(--muted); font-size: 12px; }
 .quiet-fold { margin: 8px 0 22px; }
 .quiet-fold summary { cursor: pointer; color: var(--muted); font-size: 14px; }
@@ -370,9 +378,33 @@ input:focus, textarea:focus, select:focus { outline: none; border-color: var(--i
 .ledger tbody tr { cursor: pointer; }
 .ledger tbody tr:hover { background: rgba(255, 254, 251, 0.8); }
 .ledger tr.cursor td:first-child { box-shadow: inset 2px 0 0 var(--accent); }
+.ledger tr.posting-closed.cursor td:first-child { box-shadow: inset 3px 0 0 var(--bad); }
 .ledger .num { text-align: right; white-space: nowrap; }
 .ledger caption { caption-side: bottom; padding: 16px; text-align: left; }
 .ledger.compact td { padding: 8px 10px; }
+.sort-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3em;
+  max-width: 100%;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  line-height: inherit;
+  white-space: nowrap;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+.ledger th.num .sort-btn,
+.breakdown th.num .sort-btn { width: 100%; justify-content: flex-end; }
+.sort-arrow { display: inline-block; min-width: 0.75em; font-weight: 700; letter-spacing: 0; text-transform: none; }
+.sort-arrow.idle { font-weight: 600; opacity: 0.72; }
+th[aria-sort] .sort-arrow { color: var(--ink); opacity: 1; }
 .l-title { display: block; font-weight: 600; }
 .l-sub { display: block; color: var(--muted); font-size: 13px; margin-top: 1px; }
 .l-lane { color: var(--ink-2); font-size: 13px; }
@@ -434,7 +466,7 @@ input:focus, textarea:focus, select:focus { outline: none; border-color: var(--i
 .breakdown { width: 100%; border-collapse: collapse; font-size: 13.5px; }
 .breakdown th { font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); font-weight: 600; text-align: left; padding: 4px 6px; border-bottom: 1px solid var(--line-2); }
 .breakdown td { padding: 7px 6px; border-bottom: 1px solid var(--line); }
-.breakdown .num { text-align: right; width: 64px; }
+.breakdown .num { text-align: right; }
 .breakdown .bar-col { width: 34%; }
 .breakdown .stack { display: flex; height: 8px; border-radius: 2px; overflow: hidden; min-width: 4px; }
 .breakdown .stack i { display: block; }
@@ -497,6 +529,9 @@ input:focus, textarea:focus, select:focus { outline: none; border-color: var(--i
 .truth.ok { background: var(--accent-soft); color: var(--accent); }
 .truth.warn { background: #f8f0dd; color: var(--warn); }
 .saved-resume iframe { width: 100%; height: 900px; border: 1px solid var(--line); border-radius: var(--radius); background: #fff; }
+.resume-file-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 4px 0 8px; }
+.resume-file-frame { display: block; width: 100%; height: min(1120px, calc(100vh - 220px)); min-height: 720px; border: 1px solid var(--line); border-radius: var(--radius); background: #fff; }
+@media (max-width: 720px) { .resume-file-frame { min-height: 520px; } }
 .empty-note { padding: 28px 0; }
 .empty-note p:first-child { font-family: var(--serif); font-size: 20px; margin-bottom: 4px; }
 .jd-text { white-space: pre-wrap; font-size: 14px; line-height: 1.65; color: var(--ink-2); }

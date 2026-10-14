@@ -1,5 +1,23 @@
+import { useMemo } from "react";
 import type { Breakdown, Bucket, WeekBar } from "../../shared/engine/insights";
 import { pct, shortDate } from "../format";
+import { rowsInTableOrder, type ColumnMap } from "../tableSort";
+import { useTableSort } from "../useTableSort";
+import { SortableHeader } from "./SortableHeader";
+
+type BreakdownSortKey = "label" | "sent" | "answered" | "interview";
+
+function rate(part: number, whole: number): number | null {
+  if (!whole) return null;
+  return part / whole;
+}
+
+const BREAKDOWN_COLUMNS: ColumnMap<Breakdown, BreakdownSortKey> = {
+  label: { key: "label", kind: "string", defaultDirection: "asc", value: (row) => row.key },
+  sent: { key: "sent", kind: "number", defaultDirection: "desc", value: (row) => row.sent },
+  answered: { key: "answered", kind: "number", defaultDirection: "desc", value: (row) => rate(row.answered, row.sent) },
+  interview: { key: "interview", kind: "number", defaultDirection: "desc", value: (row) => rate(row.interviews, row.sent) },
+};
 
 const SEGMENTS = [
   ["interview", "Interview"],
@@ -53,20 +71,23 @@ export function WeeksChart({ weeks }: { weeks: WeekBar[] }) {
 }
 
 export function BreakdownTable({ rows, label }: { rows: Breakdown[]; label: string }) {
+  const { sort, toggle } = useTableSort<BreakdownSortKey>({ key: "sent", direction: BREAKDOWN_COLUMNS.sent.defaultDirection });
+  const sorted = useMemo(() => rowsInTableOrder("application", rows, BREAKDOWN_COLUMNS, sort), [rows, sort]);
   const max = Math.max(1, ...rows.map((r) => r.sent));
   return (
+    <div className="table-scroll" tabIndex={0} role="region" aria-label={`${label} breakdown`}>
     <table className="breakdown">
       <thead>
         <tr>
-          <th>{label}</th>
-          <th className="bar-col" aria-hidden />
-          <th className="num">Sent</th>
-          <th className="num">Answered</th>
-          <th className="num">Interview</th>
+          <SortableHeader label={label} column="label" sort={sort} defaultDirection={BREAKDOWN_COLUMNS.label.defaultDirection} onSort={toggle} />
+          <th scope="col" className="bar-col" aria-hidden="true" />
+          <SortableHeader label="Sent" column="sent" sort={sort} defaultDirection={BREAKDOWN_COLUMNS.sent.defaultDirection} onSort={toggle} className="num" />
+          <SortableHeader label="Answered" column="answered" sort={sort} defaultDirection={BREAKDOWN_COLUMNS.answered.defaultDirection} onSort={toggle} className="num" />
+          <SortableHeader label="Interview" column="interview" sort={sort} defaultDirection={BREAKDOWN_COLUMNS.interview.defaultDirection} onSort={toggle} className="num" />
         </tr>
       </thead>
       <tbody>
-        {rows.map((r) => (
+        {sorted.map((r) => (
           <tr key={r.key}>
             <td>{r.key}</td>
             <td className="bar-col">
@@ -84,6 +105,7 @@ export function BreakdownTable({ rows, label }: { rows: Breakdown[]; label: stri
         ))}
       </tbody>
     </table>
+    </div>
   );
 }
 

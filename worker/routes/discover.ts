@@ -28,6 +28,8 @@ interface RunRow {
   prepared_count: number;
   charged: number;
   note: string;
+  pipeline_checked: number;
+  pipeline_closed: number;
 }
 
 async function scheduleView(env: AppEnv["Bindings"], userId: string, email: string, scanRuns: number, lastManual: string | null) {
@@ -40,7 +42,8 @@ async function scheduleView(env: AppEnv["Bindings"], userId: string, email: stri
     .first<ScheduleRow>();
   const scheduleZone = schedule ? scheduleTimeZone(schedule.schedule_version, schedule.timezone) : timeZone;
   const { results } = await env.DB.prepare(
-    "SELECT id, trigger, started_at, prepared_count, charged, note FROM scan_runs_log WHERE user_id = ? ORDER BY started_at DESC LIMIT 10",
+    `SELECT id, trigger, started_at, prepared_count, charged, note, pipeline_checked, pipeline_closed
+     FROM scan_runs_log WHERE user_id = ? ORDER BY started_at DESC LIMIT 10`,
   ).bind(userId).all<RunRow>();
   const wait = canRunManual(lastManual, new Date());
   return {
@@ -69,6 +72,8 @@ async function scheduleView(env: AppEnv["Bindings"], userId: string, email: stri
       preparedCount: row.prepared_count,
       charged: Boolean(row.charged),
       note: row.note,
+      pipelineChecked: row.pipeline_checked ?? 0,
+      pipelineClosed: row.pipeline_closed ?? 0,
     })),
   };
 }

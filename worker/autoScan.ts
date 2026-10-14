@@ -19,6 +19,8 @@ import { HttpError, type Env, type UserRow } from "./env";
 import { loadProfile } from "./routes/profile";
 import { JOB_SELECT, toJob, type JobRow } from "./routes/serialise";
 import { notifyScanComplete } from "./lifecycle";
+import { checkDuePipeline, type PipelineLivenessCounts } from "./pipelineLiveness";
+import { scanFailureRecord } from "./publicError";
 import { noteProductEvent, noteUsage } from "./usage";
 
 type ScanTrigger = "manual" | "scheduled";
@@ -41,6 +43,8 @@ interface MarketScanRow {
   charged: number;
   result_job_ids: string;
   error: string;
+  pipeline_checked: number;
+  pipeline_closed: number;
 }
 
 export interface MarketScanView {
@@ -60,13 +64,41 @@ export interface MarketScanView {
   charged: boolean;
   progress: number | null;
   error: string;
+  pipelineChecked: number;
+  pipelineClosed: number;
   prepared: JobRecord[];
 }
 
-async function logRun(env: Env, scanId: string, userId: string, trigger: ScanTrigger, prepared: number, charged: boolean, note: string): Promise<void> {
+async function logRun(
+  env: Env,
+  scanId: string,
+  userId: string,
+  trigger: ScanTrigger,
+  prepared: number,
+  charged: boolean,
+  pipelineChecked: number,
+  pipelineClosed: number,
+  note: string,
+): Promise<void> {
   await env.DB.prepare(
-    "INSERT INTO scan_runs_log (id, user_id, trigger, prepared_count, charged, note, market_scan_id) VALUES (?, ?, ?, ?, ?, ?, ?)",
-  ).bind(crypto.randomUUID(), userId, trigger, prepared, charged ? 1 : 0, note.slice(0, 300), scanId).run();
+    `INSERT INTO scan_runs_log (id, user_id, trigger, prepared_count, charged, note, market_scan_id, pipeline_checked, pipeline_closed)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+  ).bind(crypto.randomUUID(), userId, trigger, prepared, charged ? 1 : 0, note.slice(0, 300), scanId, pipelineChecked, pipelineClosed).run();
+}
+
+async function pipelineTotals(env: Env, scanId: string): Promise<PipelineLivenessCounts> {
+  const row = await env.DB.prepare("SELECT pipeline_checked, pipeline_closed FROM market_scans WHERE id = ?")
+    .bind(scanId)
+    .first<{ pipeline_checked: number; pipeline_closed: number }>();
+  return { checked: row?.pipeline_checked ?? 0, closed: row?.pipeline_closed ?? 0 };
+}
+
+async function rememberPipeline(env: Env, scanId: string, counts: PipelineLivenessCounts): Promise<void> {
+  await env.DB.prepare(
+    `UPDATE market_scans
+     SET pipeline_checked = pipeline_checked + ?, pipeline_closed = pipeline_closed + ?, updated_at = ?
+     WHERE id = ?`,
+  ).bind(counts.checked, counts.closed, new Date().toISOString(), scanId).run();
 }
 
 async function pauseSchedule(env: Env, userId: string, reason: string): Promise<void> {
@@ -165,17 +197,19 @@ export async function enqueueScan(env: Env, user: UserRow, trigger: ScanTrigger)
 
 async function completeWithNothing(env: Env, scan: MarketScanRow, message: string): Promise<void> {
   const now = new Date().toISOString();
+  const pipeline = await pipelineTotals(env, scan.id);
   await env.DB.prepare(
     `UPDATE market_scans SET status = 'complete', stage = 'complete', completed_at = ?, updated_at = ?,
      handpicked_count = 0, charged = 0, note = ? WHERE id = ?`,
   ).bind(now, now, message, scan.id).run();
   await env.DB.prepare("DELETE FROM market_scan_candidates WHERE scan_id = ?").bind(scan.id).run();
-  await logRun(env, scan.id, scan.user_id, scan.trigger, 0, false, message);
+  await logRun(env, scan.id, scan.user_id, scan.trigger, 0, false, pipeline.checked, pipeline.closed, message);
 }
 
-async function processScan(env: Env, scan: MarketScanRow): Promise<void> {
+export async function processScan(env: Env, scan: MarketScanRow): Promise<void> {
   const user = await env.DB.prepare("SELECT * FROM users WHERE id = ?").bind(scan.user_id).first<UserRow>();
   if (!user) throw new Error("Account not found");
+  await rememberPipeline(env, scan.id, await checkDuePipeline(env, user.id));
   const profile = await loadProfile(env, user.id, user.email);
   const packs = Math.min(PACKS_PER_SCAN, user.eval_credits, user.resume_credits);
   if ((user.scan_runs ?? 0) < 1 || packs < 1) {
@@ -265,9 +299,10 @@ async function processScan(env: Env, scan: MarketScanRow): Promise<void> {
          WHERE scan_id = ? AND EXISTS (SELECT 1 FROM market_scans WHERE id = ? AND charge_token = ?)`,
       ).bind(scan.id, scan.id, chargeToken),
       env.DB.prepare(
-        `INSERT INTO scan_runs_log (id, user_id, trigger, prepared_count, charged, note, market_scan_id)
-         SELECT ?, ?, ?, ?, 1, '', ?
-         WHERE EXISTS (SELECT 1 FROM market_scans WHERE id = ? AND charge_token = ?)
+        `INSERT INTO scan_runs_log (id, user_id, trigger, prepared_count, charged, note, market_scan_id, pipeline_checked, pipeline_closed)
+         SELECT ?, ?, ?, ?, 1, '', ?, pipeline_checked, pipeline_closed
+         FROM market_scans
+         WHERE id = ? AND charge_token = ?
            AND NOT EXISTS (SELECT 1 FROM scan_runs_log WHERE market_scan_id = ? AND charged = 1)`,
       ).bind(crypto.randomUUID(), user.id, scan.trigger, ids.length, scan.id, scan.id, chargeToken, scan.id),
     ]);
@@ -293,7 +328,7 @@ export async function runDueSchedules(env: Env): Promise<void> {
     try {
       await enqueueScan(env, user, "scheduled");
     } catch (error) {
-      console.error("scheduled scan failed", user.id, error);
+      console.error(scanFailureRecord(error, "/internal/scheduled-scan").log);
     }
   }
 }
@@ -317,17 +352,18 @@ export async function processQueuedScans(env: Env): Promise<void> {
     try {
       await processScan(env, { ...scan, status: "processing", stage: "searching", started_at: scan.started_at ?? now });
     } catch (error) {
-      const message = error instanceof Error ? error.message : "The scan stopped unexpectedly.";
+      const failure = scanFailureRecord(error, `/internal/market-scan/${scan.id}`);
       if (scan.trigger === "manual") {
         await env.DB.prepare("UPDATE users SET last_manual_scan_at = NULL WHERE id = ?").bind(scan.user_id).run();
       }
       await env.DB.prepare(
         `UPDATE market_scans SET status = 'failed', stage = 'failed', error = ?, completed_at = ?, updated_at = ?
          WHERE id = ? AND charged = 0`,
-      ).bind(message.slice(0, 300), new Date().toISOString(), new Date().toISOString(), scan.id).run();
+      ).bind(failure.message.slice(0, 300), new Date().toISOString(), new Date().toISOString(), scan.id).run();
       await env.DB.prepare("DELETE FROM market_scan_candidates WHERE scan_id = ?").bind(scan.id).run();
-      await logRun(env, scan.id, scan.user_id, scan.trigger, 0, false, message);
-      console.error("market scan failed", scan.id, error);
+      const pipeline = await pipelineTotals(env, scan.id);
+      await logRun(env, scan.id, scan.user_id, scan.trigger, 0, false, pipeline.checked, pipeline.closed, failure.message);
+      console.error(failure.log);
     }
   }
 }
@@ -367,6 +403,8 @@ export async function marketScanView(env: Env, userId: string, scanId?: string):
     charged: Boolean(row.charged),
     progress: scanProgress(row.stage, row.checked_count, row.candidate_count),
     error: row.error,
+    pipelineChecked: row.pipeline_checked ?? 0,
+    pipelineClosed: row.pipeline_closed ?? 0,
     prepared,
   };
 }

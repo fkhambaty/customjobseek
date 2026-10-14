@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { Link } from "react-router-dom";
 import { BAD_MATCH_REASONS, INTERVIEW_STAGES, interviewStageLabel, parseBadMatchReason, parseInterviewStage, rowEvidence, type BadMatchReason } from "../../shared/agency";
+import { postingClosedCopy } from "../../shared/engine/liveness";
 import { formatSalary } from "../../shared/engine/fit";
 import type { MessageSet } from "../../shared/engine/outreach";
+import { resumeHtmlPath } from "../../shared/resumeFile";
 import { CHANNELS, type Channel, type Contact, type JobFull, type JobStatus } from "../../shared/types";
 import { api, ApiError, type Pack } from "../api";
 import { useJobs } from "../data";
@@ -10,7 +12,7 @@ import { ago, formatPay, shortDate, today } from "../format";
 import { useSession } from "../session";
 import { FitCard, statusLabel } from "./FitCard";
 import { Markdown } from "./Markdown";
-import { Resume } from "./Resume";
+import { ResumeFileView } from "./ResumeFileView";
 import { UpgradePrompt } from "./UpgradePrompt";
 
 export const JOB_TABS = ["overview", "resume", "application", "jd", "people", "history"] as const;
@@ -277,6 +279,8 @@ function ResumeTab({ job, pack, onBuilt }: { job: JobFull; pack: Pack | null; on
   const { put } = useJobs();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [htmlReady, setHtmlReady] = useState(false);
+  const [pdfVersion, setPdfVersion] = useState(0);
 
   async function build() {
     setBusy(true);
@@ -285,9 +289,11 @@ function ResumeTab({ job, pack, onBuilt }: { job: JobFull; pack: Pack | null; on
       const made = await api.makeResume(job.id);
       onBuilt({ ...(pack ?? { savedResume: false, applicationNotes: null, jobNotes: null, statusNotes: null }), ...made });
       put({ ...job, hasResume: true, hasPack: true });
+      setPdfVersion((version) => version + 1);
       await refresh();
     } catch (e) {
       setError((e as Error).message);
+      if (e instanceof ApiError && e.status === 422) setHtmlReady(true);
       if (e instanceof ApiError && e.status === 402) await refresh();
     } finally {
       setBusy(false);
@@ -300,12 +306,6 @@ function ResumeTab({ job, pack, onBuilt }: { job: JobFull; pack: Pack | null; on
   return (
     <>
       <div className="jv-toolbar">
-        {resume && <a className="btn btn-primary btn-sm" href={`/print/${job.id}`} target="_blank" rel="noreferrer">Download PDF</a>}
-        {pack?.savedResume && (
-          <a className="btn btn-ghost btn-sm" href={`/api/jobs/${encodeURIComponent(job.id)}/resume.html`} target="_blank" rel="noreferrer">
-            Open saved resume
-          </a>
-        )}
         <button className="btn btn-ghost btn-sm" onClick={build} disabled={busy || !canBuild}>
           {busy ? "Building…" : resume ? "Rebuild from profile (free)" : "Build from profile · 1 credit"}
         </button>
@@ -313,23 +313,18 @@ function ResumeTab({ job, pack, onBuilt }: { job: JobFull; pack: Pack | null; on
       </div>
       {!canBuild && <UpgradePrompt evidence={job.fit.score > 0} blocked="resumes" />}
       {error && <div className="alert alert-error">{error}</div>}
+      {htmlReady && (
+        <p><a className="btn btn-ghost btn-sm" href={resumeHtmlPath("job", job.id)} target="_blank" rel="noreferrer">Open the exact HTML</a></p>
+      )}
       {resume && (
-        <>
-          <p className={ok ? "truth ok" : "truth warn"}>
-            {ok
-              ? "Every line traces to your profile, and nothing on your never-claim list appears."
-              : `Truth check: ${resume.provenance.neverClaimHits.length ? `never-claim terms found (${resume.provenance.neverClaimHits.join(", ")}). ` : ""}Fix the profile, then rebuild.`}
-          </p>
-          <div className="resume-preview"><Resume resume={resume} /></div>
-        </>
+        <p className={ok ? "truth ok" : "truth warn"}>
+          {ok
+            ? "Every line traces to your profile, and nothing on your never-claim list appears."
+            : `Truth check: ${resume.provenance.neverClaimHits.length ? `never-claim terms found (${resume.provenance.neverClaimHits.join(", ")}). ` : ""}Fix the profile, then rebuild.`}
+        </p>
       )}
-      {!resume && pack?.savedResume && (
-        <div className="saved-resume">
-          <p className="muted small">The resume you prepared for this job, kept exactly as it was.</p>
-          <iframe title="Saved resume" sandbox="" src={`/api/jobs/${encodeURIComponent(job.id)}/resume.html`} />
-        </div>
-      )}
-      {!resume && !pack?.savedResume && (
+      {(resume || pack?.savedResume) && <ResumeFileView kind="job" id={job.id} version={String(pdfVersion)} />}
+      {!resume && !pack?.savedResume && !htmlReady && (
         <div className="empty-note">
           <p>No resume for this job yet.</p>
           <p className="muted">Building one picks and orders your own profile lines for this job. Nothing is invented.</p>
@@ -627,6 +622,9 @@ export function JobView({ id, tab, onTab, onClose }: { id: string; tab: JobTab; 
           {onClose && <button className="btn btn-quiet btn-sm" onClick={onClose} aria-label="Close">Close</button>}
         </div>
       </header>
+      {job.liveStatus === "closed" && (
+        <p className="jv-posting-closed" role="status">{postingClosedCopy(job.status)}</p>
+      )}
       <nav className="jv-tabs" role="tablist">
         {JOB_TABS.map((t) => (
           <button key={t} role="tab" aria-selected={tab === t} className={tab === t ? "on" : ""} onClick={() => onTab(t)}>

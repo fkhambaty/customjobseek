@@ -1,7 +1,7 @@
 import { COUNTRIES, cityNames, countryByCode, countryNames } from "../geo";
 import type { Blocker, Decision, FitResult, ParsedSalary, Profile, SalaryPeriod } from "../types";
 import { familyLabel, resolveRole, seniorityLabel } from "./occupations";
-import { SKILL_CATALOGUE, mentions, normalise, termForName, termPattern, uniqueBy, type Term } from "./text";
+import { SKILL_CATALOGUE, hasAlias, mentionedNamesIn, normalise, termForName, uniqueBy, type Term } from "./text";
 
 export interface JobInput {
   title: string;
@@ -30,12 +30,43 @@ const CITY_ALIASES: Record<string, string[]> = {
 
 const TITLE_STOPWORDS = new Set(["and", "of", "the", "for", "in", "a", "an", "to", "with", "-", "&", "i", "ii", "iii"]);
 
+function isJsSpace(code: number): boolean {
+  return code === 32 || code === 9 || code === 10 || code === 11 || code === 12 || code === 13
+    || code === 0xa0 || code === 0x1680 || code === 0x2028 || code === 0x2029 || code === 0x202f
+    || code === 0x205f || code === 0x3000 || code === 0xfeff
+    || (code >= 0x2000 && code <= 0x200a);
+}
+
+function pushLine(parts: string[], text: string, start: number, end: number): void {
+  const line = normalise(text.slice(start, end));
+  if (line) parts.push(line);
+}
+
+// Same breaks as splitting on a newline or on whitespace after "." or ";" when the next letter is A-Z.
 export function splitLines(description: string): string[] {
-  return description
-    .replace(/<\/(p|li|div|h\d)>|<br\s*\/?>/gi, "\n")
-    .split(/\n|(?<=[.;])\s+(?=[A-Z])/)
-    .map((l) => normalise(l))
-    .filter(Boolean);
+  const prepared = description.replace(/<\/(p|li|div|h\d)>|<br\s*\/?>/gi, "\n");
+  const parts: string[] = [];
+  const n = prepared.length;
+  let start = 0;
+  for (let i = 0; i < n; i++) {
+    const code = prepared.charCodeAt(i);
+    if (code === 10) {
+      pushLine(parts, prepared, start, i);
+      start = i + 1;
+      continue;
+    }
+    if (code !== 46 && code !== 59) continue;
+    let j = i + 1;
+    if (j >= n || !isJsSpace(prepared.charCodeAt(j))) continue;
+    while (j < n && isJsSpace(prepared.charCodeAt(j))) j++;
+    const next = j < n ? prepared.charCodeAt(j) : 0;
+    if (next < 65 || next > 90) continue;
+    pushLine(parts, prepared, start, i + 1);
+    start = j;
+    i = j - 1;
+  }
+  pushLine(parts, prepared, start, n);
+  return parts;
 }
 
 // A term is "required" when it appears in any line that is not marked optional, either by its own
@@ -43,20 +74,21 @@ export function splitLines(description: string): string[] {
 export function classifyTerms(description: string, terms: Term[]): { required: Term[]; other: Term[] } {
   const lines = splitLines(description);
   let inPreferredSection = false;
-  const requiredNames = new Set<string>();
-  const seenNames = new Set<string>();
+  const requiredLines: string[] = [];
+  const optionalLines: string[] = [];
 
   for (const line of lines) {
     if (PREFERRED_HEADER.test(line)) inPreferredSection = true;
     else if (REQUIRED_HEADER.test(line)) inPreferredSection = false;
     const optional = inPreferredSection || PREFERRED_LINE.test(line);
-    for (const term of terms) {
-      if (!mentions(line, term)) continue;
-      seenNames.add(term.name);
-      if (!optional) requiredNames.add(term.name);
-    }
+    (optional ? optionalLines : requiredLines).push(line);
   }
 
+  const foundNames = mentionedNamesIn([requiredLines.join("\n"), optionalLines.join("\n")], terms);
+  const requiredNames = foundNames[0] ?? new Set<string>();
+  const optionalNames = foundNames[1] ?? new Set<string>();
+  const seenNames = new Set(requiredNames);
+  for (const name of optionalNames) seenNames.add(name);
   const found = terms.filter((t) => seenNames.has(t.name));
   return {
     required: found.filter((t) => requiredNames.has(t.name)),
@@ -65,6 +97,7 @@ export function classifyTerms(description: string, terms: Term[]): { required: T
 }
 
 export function parseYearsRequired(description: string): number | null {
+  if (!/\d/.test(description)) return null;
   const text = normalise(description);
   const re = /(\d{1,2})\s*\+?\s*(?:(?:-|to)\s*\d{1,2}\s*\+?\s*)?(?:years?|yrs?)\b(?:\s+of)?(?:[^.]{0,60}?\bexperience)?/g;
   let best: number | null = null;
@@ -235,20 +268,28 @@ export function describedWorkMode(text: string): WorkMode {
   return "unspecified";
 }
 
-function mentionsPlace(haystack: string, name: string): boolean {
-  return termPattern(name).test(normalise(haystack));
-}
-
 // Longest names first so "Papua New Guinea" wins over a shorter name inside it.
 const COUNTRY_SCAN = [...COUNTRIES].sort((a, b) => b.name.length - a.name.length);
 
+interface CountryProbe {
+  code: string;
+  names: string[];
+  codeRe: RegExp;
+}
+
+const COUNTRY_PROBES: CountryProbe[] = COUNTRY_SCAN.map((country) => ({
+  code: country.code,
+  names: countryNames(country.code)
+    .filter((name) => name.length > 2)
+    .map((name) => name.toLowerCase()),
+  codeRe: new RegExp(`\\b${country.code.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`),
+}));
+
 function countriesIn(location: string): string[] {
+  const haystack = normalise(location);
   const found: string[] = [];
-  for (const country of COUNTRY_SCAN) {
-    const names = countryNames(country.code);
-    const named = names.some((n) => n.length > 2 && mentionsPlace(location, n));
-    const coded = new RegExp(`\\b${country.code}\\b`).test(location);
-    if (named || coded) found.push(country.code);
+  for (const country of COUNTRY_PROBES) {
+    if (country.names.some((name) => hasAlias(haystack, name)) || country.codeRe.test(location)) found.push(country.code);
   }
   return found;
 }
@@ -279,8 +320,18 @@ function countriesFromCities(location: string): string[] {
 }
 
 function hasPlacePhrase(haystack: string, phrase: string): boolean {
-  const escaped = phrase.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  return new RegExp(`(?:^|\\s)${escaped}(?:$|\\s)`).test(haystack);
+  if (!phrase) return false;
+  let from = 0;
+  while (from <= haystack.length - phrase.length) {
+    const at = haystack.indexOf(phrase, from);
+    if (at < 0) return false;
+    const before = at === 0 || haystack.charCodeAt(at - 1) === 32;
+    const afterAt = at + phrase.length;
+    const after = afterAt === haystack.length || haystack.charCodeAt(afterAt) === 32;
+    if (before && after) return true;
+    from = at + 1;
+  }
+  return false;
 }
 
 /** A chosen country keeps openings in that country, its cities, or remote work that names no other country. */
@@ -307,7 +358,8 @@ export function locationCheck(job: JobInput, profile: Profile): { blocker?: Bloc
   const isRemote = mode === "remote";
   const cityHaystack = where || head;
   const wanted = prefs.cities.flatMap((c) => cityNames(c));
-  const cityHit = wanted.some((c) => mentionsPlace(cityHaystack, c));
+  const cityNorm = normalise(cityHaystack);
+  const cityHit = wanted.some((c) => hasAlias(cityNorm, c));
   const found = countriesIn(where);
   const home = prefs.country;
   const foreign = found.filter((c) => c !== home);
@@ -375,15 +427,18 @@ function salaryCheck(job: JobInput, profile: Profile): { blocker?: Blocker; note
 }
 
 export function heldTerms(profile: Profile): Term[] {
-  const never = profile.neverClaim.map((n) => termForName(n));
-  const blocked = (t: Term) => never.some((n) => n.name.toLowerCase() === t.name.toLowerCase());
-
-  const fromSkills = profile.skills.map((s) => termForName(s.name));
-  const evidence = normalise(profile.experience.flatMap((e) => e.bullets.map((b) => b.text)).join(" \n "));
-  const fromBullets = SKILL_CATALOGUE.filter((t) => mentions(evidence, t));
-  const certificates = normalise(profile.certifications.map((c) => `${c.name} ${c.issuer}`).join(" \n "));
-  const fromCertificates = SKILL_CATALOGUE.filter((t) => mentions(certificates, t));
-  return uniqueBy([...fromSkills, ...fromBullets, ...fromCertificates], (t) => t.name.toLowerCase()).filter((t) => !blocked(t));
+  const neverNames = new Set(profile.neverClaim.map((name) => termForName(name).name.toLowerCase()));
+  const fromSkills = profile.skills.map((skill) => termForName(skill.name));
+  const evidence = normalise(profile.experience.flatMap((role) => role.bullets.map((bullet) => bullet.text)).join(" \n "));
+  const certificates = normalise(profile.certifications.map((item) => `${item.name} ${item.issuer}`).join(" \n "));
+  const foundInProfile = mentionedNamesIn([evidence, certificates], SKILL_CATALOGUE);
+  const bulletNames = foundInProfile[0] ?? new Set<string>();
+  const certificateNames = foundInProfile[1] ?? new Set<string>();
+  const fromBullets = SKILL_CATALOGUE.filter((term) => bulletNames.has(term.name));
+  const fromCertificates = SKILL_CATALOGUE.filter((term) => certificateNames.has(term.name));
+  return uniqueBy([...fromSkills, ...fromBullets, ...fromCertificates], (term) => term.name.toLowerCase()).filter(
+    (term) => !neverNames.has(term.name.toLowerCase()),
+  );
 }
 
 export function evaluateFit(job: JobInput, profile: Profile): FitResult {
@@ -410,7 +465,7 @@ export function evaluateFit(job: JobInput, profile: Profile): FitResult {
   if (pay.note) notes.push(pay.note);
 
   const titleLower = normalise(job.title);
-  const excluded = profile.preferences.excludedTitleWords.find((w) => w.trim() && termPattern(w.trim()).test(titleLower));
+  const excluded = profile.preferences.excludedTitleWords.find((w) => w.trim() && hasAlias(titleLower, w.trim()));
   if (excluded) blockers.push({ kind: "title", message: `The title contains "${excluded}", which you asked to exclude.` });
 
   const never = profile.neverClaim.map((n) => termForName(n).name.toLowerCase());

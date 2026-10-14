@@ -63,8 +63,23 @@ export async function encryptJson(secret: string, value: unknown): Promise<strin
 }
 
 export async function decryptJson<T>(secret: string, payload: string): Promise<T> {
-  const [iv, ct] = payload.split(".");
-  if (!iv || !ct) throw new Error("Malformed ciphertext");
+  const plain = await decryptBytes(secret, payload);
+  return JSON.parse(decoder.decode(plain)) as T;
+}
+
+export async function encryptBytes(secret: string, value: Uint8Array): Promise<string> {
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const plain = new Uint8Array(value.byteLength);
+  plain.set(value);
+  const ct = await crypto.subtle.encrypt({ name: "AES-GCM", iv }, await dataKey(secret), plain);
+  return `${toB64(iv)}.${toB64(ct)}`;
+}
+
+export async function decryptBytes(secret: string, payload: string): Promise<Uint8Array> {
+  const parts = payload.split(".");
+  const iv = parts[0] ?? "";
+  const ct = parts[1] ?? "";
+  if (parts.length !== 2 || !iv || !ct) throw new Error("Malformed ciphertext");
   const pt = await crypto.subtle.decrypt({ name: "AES-GCM", iv: fromB64(iv) }, await dataKey(secret), fromB64(ct));
-  return JSON.parse(decoder.decode(pt)) as T;
+  return new Uint8Array(pt);
 }

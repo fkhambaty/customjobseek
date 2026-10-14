@@ -33,6 +33,7 @@ import {
 import { noteAdapter } from "./adapters";
 import type { Env } from "./env";
 import { notifyOwner } from "./notify";
+import { scanFailureRecord } from "./publicError";
 import { applyOpeningDelta, incomingFromListing, loadStoredOpenings } from "./openingsSync";
 
 export type { Opening, OpeningRead };
@@ -290,7 +291,8 @@ export async function scanCompany(env: Env, companyId: string): Promise<{ count:
     await noteAdapter(env, company.ats, true);
     return { count, error: "" };
   } catch (err) {
-    const message = err instanceof Error ? err.message : "Scan failed";
+    const failure = scanFailureRecord(err, `/internal/company-scan/${companyId}`);
+    console.error(failure.log);
     const failures = (company.consecutive_failures ?? 0) + 1;
     const nextAt = new Date(Date.now() + nextRefreshDelayMs({
       priority: company.scan_priority ?? 0,
@@ -303,10 +305,10 @@ export async function scanCompany(env: Env, companyId: string): Promise<{ count:
        consecutive_failures = ?, next_scan_at = ?
        WHERE id = ?`,
     )
-      .bind(message.slice(0, 300), new Date().toISOString(), failures, nextAt, companyId)
+      .bind(failure.message.slice(0, 300), new Date().toISOString(), failures, nextAt, companyId)
       .run();
     await noteAdapter(env, company.ats, false);
-    return { count: 0, error: message };
+    return { count: 0, error: failure.message };
   }
 }
 
@@ -344,7 +346,7 @@ export async function addCareerPage(env: Env, rawUrl: string, userId: string | n
   const scanned = await scanCompany(env, companyId);
   const coverage = source.listing === "live" ? "live" : board.ats === "aggregator" || board.ats === "licensed" ? "partnership" : "unsupported";
   const message = source.listing === "live"
-    ? (scanned.error ? `Scan problem: ${scanned.error}` : `${scanned.count} open roles found.`)
+    ? (scanned.error || `${scanned.count} open roles found.`)
     : source.savedNote;
   return { companyId, name: board.nameHint, ats: board.ats, count: scanned.count, error: scanned.error, coverage, message };
 }

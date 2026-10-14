@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { COUNTRIES, currencies, preferencesForCountry } from "../../shared/geo";
+import { originalPdfLimitMessage } from "../../shared/resumeStorage";
 import type { Bullet, Experience, Profile, SalaryPeriod } from "../../shared/types";
 import { api } from "../api";
 import { CountrySelect, TimeZoneField } from "../components/CountrySelect";
@@ -169,7 +170,7 @@ export function ProfilePage() {
             />
           </label>
         </div>
-        <p className="muted small">Text-based PDFs only. Nothing is saved until you press Save profile, so you can correct what the reader got wrong.</p>
+        <p className="muted small">{originalPdfLimitMessage()} Nothing is saved until you press Save profile, so you can correct what the reader got wrong.</p>
       </section>
 
       <section className="card">

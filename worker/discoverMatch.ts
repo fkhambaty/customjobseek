@@ -5,9 +5,11 @@ import { buildApplication, buildJobFile } from "../shared/engine/documents";
 import { evaluateFit, locationCheck, marketLocationOk, titleTokens, type JobInput } from "../shared/engine/fit";
 import { occupationSearchWords, resolveRole } from "../shared/engine/occupations";
 import { tailorResume } from "../shared/engine/tailor";
+import { artifactIdentity } from "../shared/resumeFile";
 import { emptyDetails, type Contact, type Profile } from "../shared/types";
 import { encryptJson } from "./crypto";
-import type { Env } from "./env";
+import { INSERT_RESUME_ARTIFACT, tailoredArtifactValues } from "./resumeArtifacts";
+import { HttpError, type Env } from "./env";
 import { fetchJob, isFetchableUrl } from "./jobFetch";
 
 export interface DiscoverRow {
@@ -197,12 +199,17 @@ export async function packStatements(
   const contacts = contactsFrom(input.description);
   const details = { ...emptyDetails(), contacts };
   const pay = annualPay(input, profile);
-  const packed = await Promise.all([
-    encryptJson(env.DATA_KEY, resume),
-    encryptJson(env.DATA_KEY, application),
-    encryptJson(env.DATA_KEY, jobFile),
-    encryptJson(env.DATA_KEY, details),
+  const [packed, resumeFile] = await Promise.all([
+    Promise.all([
+      encryptJson(env.DATA_KEY, resume),
+      encryptJson(env.DATA_KEY, application),
+      encryptJson(env.DATA_KEY, jobFile),
+      encryptJson(env.DATA_KEY, details),
+    ]),
+    tailoredArtifactValues(env.DATA_KEY, resume),
   ]);
+  if (resumeFile.refusal) throw new HttpError(422, resumeFile.refusal);
+  const artifact = artifactIdentity("job", id);
 
   const jobBinds = [
     id, userId, input.title, input.company, input.location, input.url, input.salaryText, input.description,
@@ -225,6 +232,14 @@ export async function packStatements(
         [id],
       ),
       gated(env.DB, "INSERT INTO resumes (job_id, user_id, ciphertext) VALUES (?, ?, ?)", [id, userId, packed[0]], gate, "SELECT 1 FROM resumes WHERE job_id = ?", [id]),
+      gated(
+        env.DB,
+        INSERT_RESUME_ARTIFACT,
+        [userId, artifact.artifactKey, artifact.kind, artifact.jobId, artifact.uploadId, resumeFile.filename, resumeFile.htmlCipher, resumeFile.pdfCipher],
+        gate,
+        "SELECT 1 FROM resume_artifacts WHERE user_id = ? AND artifact_key = ?",
+        [userId, artifact.artifactKey],
+      ),
       gated(env.DB, "INSERT INTO packs (job_id, user_id, kind, ciphertext) VALUES (?, ?, 'application', ?)", [id, userId, packed[1]], gate, "SELECT 1 FROM packs WHERE job_id = ? AND kind = 'application'", [id]),
       gated(env.DB, "INSERT INTO packs (job_id, user_id, kind, ciphertext) VALUES (?, ?, 'jd', ?)", [id, userId, packed[2]], gate, "SELECT 1 FROM packs WHERE job_id = ? AND kind = 'jd'", [id]),
       gated(

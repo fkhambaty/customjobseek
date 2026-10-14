@@ -35,18 +35,26 @@ function cacheStore(): Cache | null {
   return storage?.default ?? null;
 }
 
+/** A cache hit is frozen. Security headers still need a response they can change. */
+function editableResponse(response: Response, extra?: Record<string, string>): Response {
+  const headers = new Headers();
+  response.headers.forEach((value, key) => headers.set(key, value));
+  if (extra) {
+    for (const [key, value] of Object.entries(extra)) headers.set(key, value);
+  }
+  return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
+}
+
 async function readPublic(c: AppContext, load: () => Promise<Response>): Promise<Response> {
   await enforceRateLimit(c.env.DB, "companies_read", requestIp((name) => c.req.header(name)));
   const cache = cacheStore();
   const key = new Request(c.req.url, { method: "GET" });
   if (cache) {
     const hit = await cache.match(key);
-    if (hit) return hit;
+    if (hit) return editableResponse(hit);
   }
   const response = await load();
-  const headers = new Headers(response.headers);
-  headers.set("cache-control", "public, max-age=60");
-  const cached = new Response(response.body, { status: response.status, headers });
+  const cached = editableResponse(response, { "cache-control": "public, max-age=60" });
   if (cache) c.executionCtx?.waitUntil(cache.put(key, cached.clone()));
   return cached;
 }

@@ -1,13 +1,33 @@
 import { useEffect, useMemo, useState } from "react";
 import { todayQueues } from "../../shared/engine/insights";
+import { postingClosedCopy } from "../../shared/engine/liveness";
+import { JOB_STATUSES } from "../../shared/types";
 import { api, type Activity, type Person } from "../api";
 import { statusLabel } from "../components/FitCard";
 import { CompanyThreads } from "../components/CompanyThreads";
 import { JobLine } from "../components/JobLine";
+import { SortableHeader } from "../components/SortableHeader";
 import { useJobs } from "../data";
 import { shortDate, today } from "../format";
+import { rowsInTableOrder, type ColumnMap } from "../tableSort";
+import { useTableSort } from "../useTableSort";
 
 type View = "send" | "companies" | "log" | "people";
+type LogSortKey = "at" | "kind" | "person" | "role";
+type PeopleSortKey = "person" | "role" | "status";
+
+const LOG_COLUMNS: ColumnMap<Activity, LogSortKey> = {
+  at: { key: "at", kind: "date", defaultDirection: "desc", value: (row) => row.at },
+  kind: { key: "kind", kind: "status", defaultDirection: "asc", statusOrder: ["message", "reply", "note"], value: (row) => row.kind },
+  person: { key: "person", kind: "string", defaultDirection: "asc", value: (row) => row.person },
+  role: { key: "role", kind: "string", defaultDirection: "asc", value: (row) => [row.title, row.company] },
+};
+
+const PEOPLE_COLUMNS: ColumnMap<Person, PeopleSortKey> = {
+  person: { key: "person", kind: "string", defaultDirection: "asc", value: (row) => row.contact.name || row.contact.email },
+  role: { key: "role", kind: "string", defaultDirection: "asc", value: (row) => [row.company, row.title] },
+  status: { key: "status", kind: "status", defaultDirection: "asc", statusOrder: JOB_STATUSES, value: (row) => row.status },
+};
 
 export function OutreachPage() {
   const { jobs, error, notice, open } = useJobs();
@@ -15,6 +35,8 @@ export function OutreachPage() {
   const [activity, setActivity] = useState<Activity[] | null>(null);
   const [people, setPeople] = useState<Person[] | null>(null);
   const [query, setQuery] = useState("");
+  const { sort: logSort, toggle: toggleLog } = useTableSort<LogSortKey>({ key: "at", direction: LOG_COLUMNS.at.defaultDirection });
+  const { sort: peopleSort, toggle: togglePeople } = useTableSort<PeopleSortKey>(null);
   const q = useMemo(() => (jobs ? todayQueues(jobs, today()) : null), [jobs]);
 
   useEffect(() => {
@@ -26,10 +48,12 @@ export function OutreachPage() {
     setActivity(null);
   }, [jobs]);
 
-  const filteredPeople = (people ?? []).filter((p) => {
+  const logged = useMemo(() => rowsInTableOrder("application", activity ?? [], LOG_COLUMNS, logSort), [activity, logSort]);
+  const filteredPeople = useMemo(() => {
     const s = query.trim().toLowerCase();
-    return !s || `${p.contact.name} ${p.contact.email} ${p.company} ${p.title}`.toLowerCase().includes(s);
-  });
+    const matched = (people ?? []).filter((p) => !s || `${p.contact.name} ${p.contact.email} ${p.company} ${p.title}`.toLowerCase().includes(s));
+    return rowsInTableOrder("application", matched, PEOPLE_COLUMNS, peopleSort);
+  }, [people, query, peopleSort]);
 
   if (error && !jobs) {
     return (
@@ -92,10 +116,15 @@ export function OutreachPage() {
         <div className="table-scroll" tabIndex={0} role="region" aria-label="Sent messages and replies">
           <table className="ledger">
             <thead>
-              <tr><th scope="col">Date</th><th scope="col">What</th><th scope="col">Who</th><th scope="col">Role</th></tr>
+              <tr>
+                <SortableHeader label="Date" column="at" sort={logSort} defaultDirection={LOG_COLUMNS.at.defaultDirection} onSort={toggleLog} />
+                <SortableHeader label="What" column="kind" sort={logSort} defaultDirection={LOG_COLUMNS.kind.defaultDirection} onSort={toggleLog} />
+                <SortableHeader label="Who" column="person" sort={logSort} defaultDirection={LOG_COLUMNS.person.defaultDirection} onSort={toggleLog} />
+                <SortableHeader label="Role" column="role" sort={logSort} defaultDirection={LOG_COLUMNS.role.defaultDirection} onSort={toggleLog} />
+              </tr>
             </thead>
             <tbody>
-              {(activity ?? []).map((a) => (
+              {logged.map((a) => (
                 <tr
                   key={a.id}
                   tabIndex={0}
@@ -122,13 +151,19 @@ export function OutreachPage() {
           <div className="table-scroll" tabIndex={0} role="region" aria-label="People">
           <table className="ledger">
             <thead>
-              <tr><th scope="col">Person</th><th scope="col">Company and role</th><th scope="col">Status</th><th scope="col"><span className="clip">Profile</span></th></tr>
+              <tr>
+                <SortableHeader label="Person" column="person" sort={peopleSort} defaultDirection={PEOPLE_COLUMNS.person.defaultDirection} onSort={togglePeople} />
+                <SortableHeader label="Company and role" column="role" sort={peopleSort} defaultDirection={PEOPLE_COLUMNS.role.defaultDirection} onSort={togglePeople} />
+                <SortableHeader label="Status" column="status" sort={peopleSort} defaultDirection={PEOPLE_COLUMNS.status.defaultDirection} onSort={togglePeople} />
+                <th scope="col"><span className="clip">Profile</span></th>
+              </tr>
             </thead>
             <tbody>
               {filteredPeople.map((p) => (
                 <tr
                   key={`${p.jobId}-${p.contact.id}`}
                   tabIndex={0}
+                  className={p.liveStatus === "closed" ? "posting-closed" : undefined}
                   onClick={() => open(p.jobId, "people")}
                   onKeyDown={(event) => {
                     if (event.key === "Enter") open(p.jobId, "people");
@@ -138,10 +173,23 @@ export function OutreachPage() {
                     <span className="l-title">{p.contact.name || p.contact.email}</span>
                     {p.contact.role && <span className="l-sub">{p.contact.role}</span>}
                   </td>
-                  <td><span className="l-title">{p.company}</span><span className="l-sub">{p.title}</span></td>
+                  <td>
+                    <span className="l-title">{p.company}</span>
+                    <span className="l-sub">{p.title}</span>
+                    {p.liveStatus === "closed" && <span className="posting-closed-note">{postingClosedCopy(p.status)}</span>}
+                  </td>
                   <td>{statusLabel(p.status)}</td>
-                  <td onClick={(e) => e.stopPropagation()}>
-                    {p.contact.url && <a href={p.contact.url} target="_blank" rel="noreferrer">Profile ↗</a>}
+                  <td onClick={(event) => event.stopPropagation()} onKeyDown={(event) => event.stopPropagation()}>
+                    {p.contact.url && (
+                      <a
+                        href={p.contact.url}
+                        target="_blank"
+                        rel="noreferrer"
+                        onKeyDown={(event) => event.stopPropagation()}
+                      >
+                        Profile ↗
+                      </a>
+                    )}
                   </td>
                 </tr>
               ))}

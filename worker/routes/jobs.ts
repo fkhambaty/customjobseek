@@ -1,5 +1,5 @@
 import { Hono } from "hono";
-import { badMatchSupportMessage, parseBadMatchReason, parseInterviewStage, payProvenanceFor } from "../../shared/agency";
+import { badMatchSupportMessage, parseBadMatchReason, parseInterviewStage, parseLiveStatus, payProvenanceFor } from "../../shared/agency";
 import { laneFor, routeFromUrl } from "../../shared/engine/classify";
 import { buildApplication, buildJobFile } from "../../shared/engine/documents";
 import { evaluateFit, type JobInput } from "../../shared/engine/fit";
@@ -19,18 +19,21 @@ import {
   type Profile,
   type TailoredResume,
 } from "../../shared/types";
+import { resumeFileHeaders } from "../../shared/resumeFile";
 import { profileReadiness } from "../../shared/validate";
 import { decryptJson, encryptJson } from "../crypto";
+import { commitTailoredResume } from "../resumeCharge";
+import { keepExactHtml, tailoredArtifactValues } from "../resumeArtifacts";
 import { HttpError, type AppEnv, type Env } from "../env";
 import { notifyOwner } from "../notify";
 import { logCompanyMessage } from "../threads";
 import { aggregatorBlock, fetchJob, isFetchableUrl } from "../jobFetch";
+import { storeEvaluatedJob } from "../jobCharge";
 import { noteOnboarding } from "../onboarding";
 import { enforceRateLimit } from "../rateLimit";
 import { requireUser } from "../session";
 import { noteProductEvent, noteUsage } from "../usage";
 import { loadProfile } from "./profile";
-import { SAVED_FILE_HEADERS } from "./resumes";
 import { nextJobCursor, parseJobListQuery } from "../../shared/capacity";
 import { JOB_LIST_SELECT, JOB_SELECT, toJob, type JobRow } from "./serialise";
 
@@ -95,31 +98,6 @@ async function loadEvents(env: Env, userId: string, jobId: string): Promise<JobE
 async function full(env: Env, userId: string, id: string): Promise<JobFull> {
   const row = await getJob(env, userId, id);
   return { ...toJob(row), details: await loadDetails(env, row), events: await loadEvents(env, userId, id) };
-}
-
-async function spendCredit(env: Env, userId: string, kind: "eval" | "resume", jobId: string): Promise<boolean> {
-  const column = kind === "eval" ? "eval_credits" : "resume_credits";
-  const res = await env.DB.prepare(`UPDATE users SET ${column} = ${column} - 1 WHERE id = ? AND ${column} > 0`).bind(userId).run();
-  if (!res.meta.changes) return false;
-  await env.DB.prepare(
-    "INSERT INTO credit_ledger (user_id, kind, eval_delta, resume_delta, job_id) VALUES (?, ?, ?, ?, ?)",
-  )
-    .bind(userId, `spend_${kind}`, kind === "eval" ? -1 : 0, kind === "resume" ? -1 : 0, jobId)
-    .run();
-  switch (kind) {
-    case "eval":
-      await noteUsage(env.DB, userId, "checks");
-      await noteOnboarding(env.DB, userId, "first_check");
-      break;
-    case "resume":
-      await noteUsage(env.DB, userId, "resumes");
-      break;
-    default: {
-      const unexpected: never = kind;
-      throw new Error(String(unexpected));
-    }
-  }
-  return true;
 }
 
 /** Stored pay is only ever the person's own currency, so lists and lanes never compare across currencies. */
@@ -213,14 +191,16 @@ export const jobs = new Hono<AppEnv>()
   .get("/people", async (c) => {
     const user = c.get("user");
     const { results } = await c.env.DB.prepare(
-      "SELECT id, title, company, status, details_ciphertext FROM jobs WHERE user_id = ? AND contact_count > 0 ORDER BY updated_at DESC",
+      "SELECT id, title, company, status, live_status, details_ciphertext FROM jobs WHERE user_id = ? AND contact_count > 0 ORDER BY updated_at DESC",
     )
       .bind(user.id)
-      .all<{ id: string; title: string; company: string; status: string; details_ciphertext: string }>();
+      .all<{ id: string; title: string; company: string; status: string; live_status: string; details_ciphertext: string }>();
     const out = [];
     for (const r of results) {
       const d = await decryptJson<JobDetails>(c.env.DATA_KEY, r.details_ciphertext);
-      for (const contact of d.contacts ?? []) out.push({ jobId: r.id, title: r.title, company: r.company, status: r.status, contact });
+      for (const contact of d.contacts ?? []) {
+        out.push({ jobId: r.id, title: r.title, company: r.company, status: r.status, liveStatus: parseLiveStatus(r.live_status), contact });
+      }
     }
     return c.json(out);
   })
@@ -233,33 +213,39 @@ export const jobs = new Hono<AppEnv>()
 
     const fit = evaluateFit(input, profile);
     const id = crypto.randomUUID();
-    if (!(await spendCredit(c.env, user.id, "eval", id))) {
-      throw new HttpError(402, "You have used all your fit checks. Pick a plan to continue.");
-    }
     const pay = payFor(fit, profile);
     const provenance = payProvenanceFor({ salaryText: input.salaryText, payEstimated: false, parsed: fit.parsedSalary !== null });
-    await c.env.DB.prepare(
-      `INSERT INTO jobs (id, user_id, title, company, location, url, salary_text, description, fit_json, lane, route, pay_low, pay_high, pay_provenance)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    )
-      .bind(
-        id,
-        user.id,
-        input.title,
-        input.company,
-        input.location,
-        input.url,
-        input.salaryText,
-        input.description,
-        JSON.stringify(fit),
-        laneOf(input.location, fit, profile),
-        routeFromUrl(input.url),
-        pay.low,
-        pay.high,
-        provenance,
-      )
-      .run();
-    return c.json(toJob(await getJob(c.env, user.id, id)), 201);
+    const saved = await storeEvaluatedJob(c.env.DB, {
+      id,
+      userId: user.id,
+      title: input.title,
+      company: input.company,
+      location: input.location,
+      url: input.url,
+      salaryText: input.salaryText,
+      description: input.description,
+      fitJson: JSON.stringify(fit),
+      lane: laneOf(input.location, fit, profile),
+      route: routeFromUrl(input.url),
+      payLow: pay.low,
+      payHigh: pay.high,
+      provenance,
+    });
+    switch (saved) {
+      case "unpaid":
+        throw new HttpError(402, "You have used all your fit checks. Pick a plan to continue.");
+      case "stored":
+        await noteUsage(c.env.DB, user.id, "checks");
+        await noteOnboarding(c.env.DB, user.id, "first_check");
+        break;
+      case "replay":
+        break;
+      default: {
+        const unexpected: never = saved;
+        throw new Error(String(unexpected));
+      }
+    }
+    return c.json(toJob(await getJob(c.env, user.id, id)), saved === "stored" ? 201 : 200);
   })
   .get("/:id", async (c) => c.json(await full(c.env, c.get("user").id, c.req.param("id"))))
   .patch("/:id", async (c) => {
@@ -288,9 +274,11 @@ export const jobs = new Hono<AppEnv>()
     await c.env.DB.batch([
       c.env.DB.prepare(
         `UPDATE jobs SET status = ?, notes = ?, next_action_at = ?, applied_at = ?, rejected_at = ?, closed_at = ?,
-         interview_stage = ?, updated_at = datetime('now')
+         interview_stage = ?, streak = CASE WHEN ? = 1 THEN 0 ELSE streak END,
+         auto_closed_from = CASE WHEN ? = 1 THEN NULL ELSE auto_closed_from END,
+         updated_at = datetime('now')
          WHERE id = ? AND user_id = ?`,
-      ).bind(status, notes, nextActionAt, appliedAt, rejectedAt, closedAt, interviewStage, job.id, user.id),
+      ).bind(status, notes, nextActionAt, appliedAt, rejectedAt, closedAt, interviewStage, changed ? 1 : 0, changed ? 1 : 0, job.id, user.id),
       ...(changed
         ? [
             c.env.DB.prepare("INSERT INTO job_events (id, job_id, user_id, kind, status, at) VALUES (?, ?, ?, 'status', ?, ?)").bind(
@@ -420,7 +408,7 @@ export const jobs = new Hono<AppEnv>()
     const user = c.get("user");
     const job = await getJob(c.env, user.id, c.req.param("id"));
     await c.env.DB.batch([
-      ...["resumes", "packs", "job_events", "thread_messages", "bad_match_reports"]
+      ...["resumes", "packs", "resume_artifacts", "job_events", "thread_messages", "bad_match_reports"]
         .map((t) => c.env.DB.prepare(`DELETE FROM ${t} WHERE job_id = ? AND user_id = ?`).bind(job.id, user.id)),
       c.env.DB.prepare("DELETE FROM jobs WHERE id = ? AND user_id = ?").bind(job.id, user.id),
     ]);
@@ -443,7 +431,7 @@ export const jobs = new Hono<AppEnv>()
       .first<{ ciphertext: string }>();
     if (!row) throw new HttpError(404, "No saved resume file for this job.");
     const html = await decryptJson<string>(c.env.DATA_KEY, row.ciphertext);
-    return c.body(html, 200, SAVED_FILE_HEADERS);
+    return c.body(html, 200, resumeFileHeaders({ format: "html", disposition: "inline" }, "Resume.html"));
   })
   .post("/:id/resume", async (c) => {
     const user = c.get("user");
@@ -452,43 +440,52 @@ export const jobs = new Hono<AppEnv>()
     const missing = profileReadiness(profile);
     if (missing.length) throw new HttpError(400, `Finish your profile first: add ${missing.join(", ")}.`);
 
-    // Rebuilding a resume for the same job is free, so profile edits never cost a second credit.
-    if (!job.has_resume && !(await spendCredit(c.env, user.id, "resume", job.id))) {
-      throw new HttpError(402, "You have used all your tailored resumes. Pick a plan to continue.");
-    }
     const fit = evaluateFit(
       { title: job.title, company: job.company, location: job.location, salaryText: job.salary_text, description: job.description },
       profile,
     );
     const resume = tailorResume(profile, fit, { id: job.id, title: job.title, company: job.company });
+    // The PDF is built before the batch. If it fails, the credit below is never touched.
+    const resumeFile = await tailoredArtifactValues(c.env.DATA_KEY, resume);
+    if (resumeFile.refusal) {
+      await keepExactHtml(c.env, user.id, job.id, resumeFile);
+      throw new HttpError(422, resumeFile.refusal);
+    }
     const application = buildApplication(profile, fit, resume);
     const jobFile = buildJobFile(
       { title: job.title, company: job.company, location: job.location, url: job.url, salaryText: job.salary_text, description: job.description },
       fit,
     );
-    const resumeCipher = await encryptJson(c.env.DATA_KEY, resume);
-    const packed = [
-      ["application", application],
-      ["jd", jobFile],
-    ] as const;
-    const stored = await Promise.all(packed.map(async ([kind, body]) => [kind, await encryptJson(c.env.DATA_KEY, body)] as const));
-    await c.env.DB.batch([
-      c.env.DB.prepare(
-        `INSERT INTO resumes (job_id, user_id, ciphertext) VALUES (?, ?, ?)
-         ON CONFLICT(job_id) DO UPDATE SET ciphertext = excluded.ciphertext, created_at = datetime('now')`,
-      ).bind(job.id, user.id, resumeCipher),
-      c.env.DB.prepare("DELETE FROM packs WHERE job_id = ? AND user_id = ? AND kind = 'resume'").bind(job.id, user.id),
-      ...stored.map(([kind, ciphertext]) =>
-        c.env.DB.prepare(
-          `INSERT INTO packs (job_id, user_id, kind, ciphertext, created_at) VALUES (?, ?, ?, ?, datetime('now'))
-           ON CONFLICT(job_id, kind) DO UPDATE SET ciphertext = excluded.ciphertext, created_at = excluded.created_at`,
-        ).bind(job.id, user.id, kind, ciphertext),
-      ),
-      c.env.DB.prepare(
-        `UPDATE jobs SET fit_json = ?, status = CASE WHEN status = 'evaluated' THEN 'resume_ready' ELSE status END,
-         updated_at = datetime('now') WHERE id = ?`,
-      ).bind(JSON.stringify(fit), job.id),
+    const [resumeCipher, applicationCipher, jobFileCipher] = await Promise.all([
+      encryptJson(c.env.DATA_KEY, resume),
+      encryptJson(c.env.DATA_KEY, application),
+      encryptJson(c.env.DATA_KEY, jobFile),
     ]);
+    const saved = await commitTailoredResume(c.env.DB, {
+      userId: user.id,
+      jobId: job.id,
+      charge: !job.has_resume,
+      fitJson: JSON.stringify(fit),
+      resumeCipher,
+      applicationCipher,
+      jobFileCipher,
+      filename: resumeFile.filename,
+      htmlCipher: resumeFile.htmlCipher,
+      pdfCipher: resumeFile.pdfCipher,
+    });
+    switch (saved) {
+      case "unpaid":
+        throw new HttpError(402, "You have used all your tailored resumes. Pick a plan to continue.");
+      case "charged":
+        await noteUsage(c.env.DB, user.id, "resumes");
+        break;
+      case "rebuilt":
+        break;
+      default: {
+        const unexpected: never = saved;
+        throw new Error(String(unexpected));
+      }
+    }
     return c.json({ resume, application, jobFile });
   })
   .get("/:id/pack", async (c) => {

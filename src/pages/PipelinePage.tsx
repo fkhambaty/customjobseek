@@ -1,13 +1,30 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { rowEvidence } from "../../shared/agency";
+import { postingClosedCopy } from "../../shared/engine/liveness";
 import { payMid } from "../../shared/engine/insights";
 import { JOB_STATUSES, type JobRecord, type JobStatus } from "../../shared/types";
 import { api } from "../api";
 import { statusLabel } from "../components/FitCard";
+import { SortableHeader } from "../components/SortableHeader";
 import { useJobs } from "../data";
 import { formatPay, shortDate, today } from "../format";
+import { rowsInTableOrder, type ColumnMap } from "../tableSort";
+import { useTableSort } from "../useTableSort";
 
-type SortKey = "added" | "applied" | "score" | "pay" | "company";
+type PipelineSortKey = "added" | "role" | "company" | "lane" | "pay" | "fit" | "applied" | "people" | "status";
+type PipelinePreset = "added" | "applied" | "fit" | "pay" | "company";
+
+const PIPELINE_COLUMNS: ColumnMap<JobRecord, PipelineSortKey> = {
+  added: { key: "added", kind: "date", defaultDirection: "desc", value: (job) => job.createdAt },
+  role: { key: "role", kind: "string", defaultDirection: "asc", value: (job) => [job.title, job.company] },
+  company: { key: "company", kind: "string", defaultDirection: "asc", value: (job) => job.company },
+  lane: { key: "lane", kind: "string", defaultDirection: "asc", value: (job) => job.lane },
+  pay: { key: "pay", kind: "number", defaultDirection: "desc", value: (job) => payMid(job) },
+  fit: { key: "fit", kind: "number", defaultDirection: "desc", value: (job) => (job.fit.imported && !job.fit.score ? null : job.fit.score) },
+  applied: { key: "applied", kind: "date", defaultDirection: "desc", value: (job) => job.appliedAt },
+  people: { key: "people", kind: "number", defaultDirection: "desc", value: (job) => [job.contactCount, job.messagesSent, job.replies] },
+  status: { key: "status", kind: "status", defaultDirection: "asc", statusOrder: JOB_STATUSES, value: (job) => job.status },
+};
 
 const GROUPS: { id: string; label: string; statuses: JobStatus[] }[] = [
   { id: "all", label: "All", statuses: [...JOB_STATUSES] },
@@ -34,22 +51,41 @@ function uniq(values: string[]): string[] {
   return [...new Set(values.filter(Boolean))].sort();
 }
 
-function sorter(key: SortKey): (a: JobRecord, b: JobRecord) => number {
+function isPreset(key: PipelineSortKey): key is PipelinePreset {
   switch (key) {
     case "added":
-      return (a, b) => b.createdAt.localeCompare(a.createdAt);
     case "applied":
-      return (a, b) => (b.appliedAt ?? "").localeCompare(a.appliedAt ?? "");
-    case "score":
-      return (a, b) => b.fit.score - a.fit.score;
+    case "fit":
     case "pay":
-      return (a, b) => (payMid(b) ?? 0) - (payMid(a) ?? 0);
     case "company":
-      return (a, b) => a.company.localeCompare(b.company);
+      return true;
+    case "role":
+    case "lane":
+    case "people":
+    case "status":
+      return false;
     default: {
       const never: never = key;
       return never;
     }
+  }
+}
+
+function activePreset(sort: { key: PipelineSortKey; direction: "asc" | "desc" } | null): PipelinePreset | null {
+  if (sort === null || !isPreset(sort.key) || sort.direction !== PIPELINE_COLUMNS[sort.key].defaultDirection) return null;
+  return sort.key;
+}
+
+function presetKey(value: string): PipelinePreset | null {
+  switch (value) {
+    case "added":
+    case "applied":
+    case "fit":
+    case "pay":
+    case "company":
+      return value;
+    default:
+      return null;
   }
 }
 
@@ -60,7 +96,7 @@ export function PipelinePage() {
   const [lane, setLane] = useState("");
   const [family, setFamily] = useState("");
   const [route, setRoute] = useState("");
-  const [sort, setSort] = useState<SortKey>("added");
+  const { sort, setSort, toggle } = useTableSort<PipelineSortKey>({ key: "added", direction: PIPELINE_COLUMNS.added.defaultDirection });
   const [cursor, setCursor] = useState(0);
   const search = useRef<HTMLInputElement>(null);
 
@@ -68,20 +104,20 @@ export function PipelinePage() {
   const shown = useMemo(() => {
     const g = GROUPS.find((x) => x.id === group)!;
     const q = query.trim().toLowerCase();
-    return all
+    const filtered = all
       .filter((j) => g.statuses.includes(j.status))
       .filter((j) => !lane || j.lane === lane)
       .filter((j) => !family || j.family === family)
       .filter((j) => !route || j.route === route)
-      .filter((j) => !q || `${j.title} ${j.company} ${j.location} ${j.requisition}`.toLowerCase().includes(q))
-      .sort(sorter(sort));
+      .filter((j) => !q || `${j.title} ${j.company} ${j.location} ${j.requisition}`.toLowerCase().includes(q));
+    return rowsInTableOrder("application", filtered, PIPELINE_COLUMNS, sort);
   }, [all, group, query, lane, family, route, sort]);
 
   useEffect(() => setCursor(0), [group, query, lane, family, route, sort]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      const typing = e.target instanceof HTMLInputElement || e.target instanceof HTMLSelectElement || e.target instanceof HTMLTextAreaElement;
+      const typing = e.target instanceof HTMLInputElement || e.target instanceof HTMLSelectElement || e.target instanceof HTMLTextAreaElement || e.target instanceof HTMLButtonElement;
       if (e.key === "/" && !typing) {
         e.preventDefault();
         search.current?.focus();
@@ -144,10 +180,18 @@ export function PipelinePage() {
             <option value="">Every route</option>
             {uniq(all.map((j) => j.route)).map((l) => <option key={l}>{l}</option>)}
           </select>
-          <select value={sort} onChange={(e) => setSort(e.target.value as SortKey)} aria-label="Sort">
+          <select
+            value={activePreset(sort) ?? "custom"}
+            onChange={(e) => {
+              const next = presetKey(e.target.value);
+              if (next) setSort({ key: next, direction: PIPELINE_COLUMNS[next].defaultDirection });
+            }}
+            aria-label="Sort"
+          >
+            {activePreset(sort) === null && <option value="custom">Sorted by column</option>}
             <option value="added">Newest first</option>
             <option value="applied">Recently applied</option>
-            <option value="score">Best fit</option>
+            <option value="fit">Best fit</option>
             <option value="pay">Highest pay</option>
             <option value="company">Company A–Z</option>
           </select>
@@ -159,20 +203,20 @@ export function PipelinePage() {
       <table className="ledger">
         <thead>
           <tr>
-            <th scope="col">Role</th>
-            <th scope="col">Lane</th>
-            <th scope="col" className="num">Pay</th>
-            <th scope="col" className="num">Fit</th>
-            <th scope="col">Applied</th>
-            <th scope="col">People</th>
-            <th scope="col">Status</th>
+            <SortableHeader label="Role" column="role" sort={sort} defaultDirection={PIPELINE_COLUMNS.role.defaultDirection} onSort={toggle} />
+            <SortableHeader label="Lane" column="lane" sort={sort} defaultDirection={PIPELINE_COLUMNS.lane.defaultDirection} onSort={toggle} />
+            <SortableHeader label="Pay" column="pay" sort={sort} defaultDirection={PIPELINE_COLUMNS.pay.defaultDirection} onSort={toggle} className="num" />
+            <SortableHeader label="Fit" column="fit" sort={sort} defaultDirection={PIPELINE_COLUMNS.fit.defaultDirection} onSort={toggle} className="num" />
+            <SortableHeader label="Applied" column="applied" sort={sort} defaultDirection={PIPELINE_COLUMNS.applied.defaultDirection} onSort={toggle} />
+            <SortableHeader label="People" column="people" sort={sort} defaultDirection={PIPELINE_COLUMNS.people.defaultDirection} onSort={toggle} />
+            <SortableHeader label="Status" column="status" sort={sort} defaultDirection={PIPELINE_COLUMNS.status.defaultDirection} onSort={toggle} />
           </tr>
         </thead>
         <tbody>
           {shown.map((j, i) => (
             <tr
               key={j.id}
-              className={i === cursor ? "cursor" : ""}
+              className={[i === cursor ? "cursor" : "", j.liveStatus === "closed" ? "posting-closed" : ""].filter(Boolean).join(" ")}
               tabIndex={0}
               aria-current={i === cursor ? "true" : undefined}
               onClick={() => open(j.id)}
@@ -184,6 +228,7 @@ export function PipelinePage() {
                 <span className="l-title">{j.title}</span>
                 <span className="l-sub">{j.company}{j.route && ` · ${j.route}`}</span>
                 <PipelineSignal job={j} />
+                {j.liveStatus === "closed" && <span className="posting-closed-note">{postingClosedCopy(j.status)}</span>}
               </td>
               <td className="l-lane">{j.lane}</td>
               <td className="num">{formatPay(j, currency)}</td>

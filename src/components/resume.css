@@ -66,6 +66,20 @@
 .resume .subrole { color: #3d4f5c; font-size: 9pt; margin-bottom: 2px; }
 .resume li { break-inside: avoid; }
 
+@media screen and (max-width: 800px) {
+  .resume {
+    width: auto;
+    min-height: 0;
+    margin: 0;
+    padding: 16px 14px 28px;
+    box-shadow: none;
+  }
+  .resume h1 { font-size: 18pt; overflow-wrap: anywhere; }
+  .resume .headline, .resume .contact, .resume p, .resume li { overflow-wrap: anywhere; }
+  .resume .job-header { flex-wrap: wrap; }
+  .resume .job-date { white-space: normal; }
+}
+
 @media print {
   @page { size: A4; margin: 11mm 14mm 12mm; }
   .resume { box-shadow: none; margin: 0; padding: 0; width: auto; min-height: auto; }

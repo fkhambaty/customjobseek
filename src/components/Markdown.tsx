@@ -54,6 +54,8 @@ export function Markdown({ source }: { source: string }) {
       const rows: string[][] = [];
       i += 2;
       while (i < lines.length && /^\s*\|/.test(lines[i]!)) rows.push(cells(lines[i++]!));
+      // Document content, not an application dataset. Leave the rows in source order.
+      // Application tables go through rowsInTableOrder("application", ...). "markdown" does not sort.
       blocks.push(
         <div className="md-table" key={key}>
           <table>

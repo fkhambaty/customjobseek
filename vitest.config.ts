@@ -1,5 +1,7 @@
 import { defineConfig } from "vitest/config";
+import { resumeFontPlugins } from "./vite.plugins.ts";
 
 export default defineConfig({
-  test: { include: ["tests/**/*.test.ts"], environment: "node" },
+  plugins: resumeFontPlugins(),
+  test: { include: ["tests/**/*.test.ts"], environment: "node", fileParallelism: false },
 });

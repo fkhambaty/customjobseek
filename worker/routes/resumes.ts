@@ -1,9 +1,13 @@
-import { Hono } from "hono";
+import { Hono, type Context } from "hono";
+import { parseLiveStatus } from "../../shared/agency";
 import { tailorResume } from "../../shared/engine/tailor";
-import type { FitResult } from "../../shared/types";
+import { renderPlainTextHtml } from "../../shared/resumeHtml";
+import { parseResumeFileRoute, resumeFileHeaders, toPublicResumeUpload } from "../../shared/resumeFile";
+import type { FitResult, TailoredResume } from "../../shared/types";
 import { profileReadiness } from "../../shared/validate";
 import { decryptJson } from "../crypto";
 import { HttpError, type AppEnv } from "../env";
+import { ensureJobResumeFile, ensureMasterResumeFile, ensureUploadResumeFile, type StoredResumeFile } from "../resumeArtifacts";
 import { requireUser } from "../session";
 import { loadProfile } from "./profile";
 
@@ -20,14 +24,33 @@ const NO_JOB: FitResult = {
   parsedSalary: null,
 };
 
-export const SAVED_FILE_HEADERS = {
-  "content-type": "text/html; charset=utf-8",
-  "content-security-policy": "default-src 'none'; style-src 'unsafe-inline'; img-src data:; font-src data:",
-  "x-content-type-options": "nosniff",
-};
+async function prepareMaster(c: Context<AppEnv>): Promise<{ resume: TailoredResume; file: StoredResumeFile }> {
+  const user = c.get("user");
+  const profile = await loadProfile(c.env, user.id, user.email);
+  const missing = profileReadiness(profile);
+  if (missing.length) throw new HttpError(400, `Finish your profile first: add ${missing.join(", ")}.`);
+  const resume = tailorResume(profile, NO_JOB, { id: "master", title: "", company: "" });
+  const stamp = await c.env.DB.prepare("SELECT updated_at FROM profiles WHERE user_id = ?")
+    .bind(user.id)
+    .first<{ updated_at: string }>();
+  const file = await ensureMasterResumeFile(c.env, user.id, resume, stamp?.updated_at ?? "");
+  return { resume, file };
+}
 
-function escapeHtml(s: string): string {
-  return s.replace(/[&<>"']/g, (ch) => `&#${ch.charCodeAt(0)};`);
+async function openResumeFile(c: Context<AppEnv>, kind: "master" | "job" | "upload", id: string): Promise<StoredResumeFile> {
+  const user = c.get("user");
+  switch (kind) {
+    case "master":
+      return (await prepareMaster(c)).file;
+    case "job":
+      return ensureJobResumeFile(c.env, user.id, id);
+    case "upload":
+      return ensureUploadResumeFile(c.env, user.id, id);
+    default: {
+      const unexpected: never = kind;
+      throw new HttpError(404, unexpected);
+    }
+  }
 }
 
 export const resumes = new Hono<AppEnv>()
@@ -36,7 +59,7 @@ export const resumes = new Hono<AppEnv>()
     const user = c.get("user");
     const [tailored, base] = await Promise.all([
       c.env.DB.prepare(
-        `SELECT j.id, j.title, j.company, j.status,
+        `SELECT j.id, j.title, j.company, j.status, j.live_status,
            COALESCE(MAX(r.created_at), MAX(p.created_at)) AS made_at,
            CASE
              WHEN MAX(r.job_id) IS NOT NULL OR SUM(CASE WHEN p.kind = 'resume' AND p.ciphertext != '' THEN 1 ELSE 0 END) > 0 THEN 1
@@ -51,8 +74,8 @@ export const resumes = new Hono<AppEnv>()
          ORDER BY made_at DESC`,
       )
         .bind(user.id)
-        .all<{ id: string; title: string; company: string; status: string; made_at: string; built: number; saved: number }>(),
-      c.env.DB.prepare("SELECT id, label, filename, format, created_at FROM resume_uploads WHERE user_id = ? AND format = 'html' ORDER BY created_at DESC")
+        .all<{ id: string; title: string; company: string; status: string; live_status: string; made_at: string; built: number; saved: number }>(),
+      c.env.DB.prepare("SELECT id, label, filename, format, created_at FROM resume_uploads WHERE user_id = ? ORDER BY created_at DESC")
         .bind(user.id)
         .all<{ id: string; label: string; filename: string; format: string; created_at: string }>(),
     ]);
@@ -62,19 +85,30 @@ export const resumes = new Hono<AppEnv>()
         title: r.title,
         company: r.company,
         status: r.status,
+        liveStatus: parseLiveStatus(r.live_status),
         madeAt: r.made_at,
         built: Boolean(r.built),
         saved: Boolean(r.saved),
       })),
-      base: base.results.map((r) => ({ id: r.id, label: r.label || r.filename, format: r.format, createdAt: r.created_at })),
+      base: base.results.map((r) => toPublicResumeUpload(r)),
     });
   })
   .get("/master", async (c) => {
-    const user = c.get("user");
-    const profile = await loadProfile(c.env, user.id, user.email);
-    const missing = profileReadiness(profile);
-    if (missing.length) throw new HttpError(400, `Finish your profile first: add ${missing.join(", ")}.`);
-    return c.json(tailorResume(profile, NO_JOB, { id: "master", title: "", company: "" }));
+    const { resume } = await prepareMaster(c);
+    return c.json(resume);
+  })
+  .get("/files/:kind/:id/:format", async (c) => {
+    const route = parseResumeFileRoute(c.req.param("kind"), c.req.param("id"), c.req.param("format"), c.req.query("download") ?? null);
+    if (!route) throw new HttpError(404, "Resume not found.");
+    const file = await openResumeFile(c, route.kind, route.id);
+    const headers = resumeFileHeaders(route, file.filename);
+    if (route.format === "pdf") {
+      if (file.pdfRefusal) throw new HttpError(422, file.pdfRefusal);
+      const body = new Uint8Array(file.pdf.byteLength);
+      body.set(file.pdf);
+      return c.body(body, 200, headers);
+    }
+    return c.body(file.html, 200, headers);
   })
   .get("/base/:id", async (c) => {
     const user = c.get("user");
@@ -83,14 +117,15 @@ export const resumes = new Hono<AppEnv>()
       .first<{ label: string; format: string; text_ciphertext: string }>();
     if (!row) throw new HttpError(404, "Resume not found.");
     const body = await decryptJson<{ text: string }>(c.env.DATA_KEY, row.text_ciphertext);
-    const html =
-      row.format === "html"
-        ? body.text
-        : `<!doctype html><meta charset="utf-8"><title>${escapeHtml(row.label)}</title>
-           <pre style="font:14px/1.55 Georgia,serif;white-space:pre-wrap;max-width:780px;margin:32px auto">${escapeHtml(body.text)}</pre>`;
-    return c.body(html, 200, SAVED_FILE_HEADERS);
+    const html = row.format === "html" ? body.text : renderPlainTextHtml(row.label, body.text);
+    return c.body(html, 200, resumeFileHeaders({ format: "html", disposition: "inline" }, row.label || "Resume"));
   })
   .delete("/base/:id", async (c) => {
-    await c.env.DB.prepare("DELETE FROM resume_uploads WHERE id = ? AND user_id = ?").bind(c.req.param("id"), c.get("user").id).run();
+    const user = c.get("user");
+    const id = c.req.param("id");
+    await c.env.DB.batch([
+      c.env.DB.prepare("DELETE FROM resume_artifacts WHERE user_id = ? AND upload_id = ?").bind(user.id, id),
+      c.env.DB.prepare("DELETE FROM resume_uploads WHERE id = ? AND user_id = ?").bind(id, user.id),
+    ]);
     return c.json({ ok: true });
   });

@@ -113,6 +113,17 @@ describe("queues and analytics", () => {
     expect(q.live).toHaveLength(1);
   });
 
+  it("keeps an open posting ahead of a closed one and still shows the closed conversation", () => {
+    const q = todayQueues([
+      job({ id: "closed-interview", status: "interview", liveStatus: "closed", fit: { ...fit, score: 90 } }),
+      job({ id: "open-interview", status: "interview", liveStatus: "live", fit: { ...fit, score: 10 } }),
+      job({ id: "open-apply", status: "resume_ready", liveStatus: "live", fit: { ...fit, score: 20 } }),
+      job({ id: "closed-apply", status: "resume_ready", liveStatus: "closed", fit: { ...fit, score: 99 } }),
+    ], today);
+    expect(q.live.map((item) => item.id)).toEqual(["open-interview", "closed-interview"]);
+    expect(q.applyNext.map((item) => item.id)).toEqual(["open-apply", "closed-apply"]);
+  });
+
   it("measures answers, interviews and time to a no", () => {
     const a = computeAnalytics(jobs, today);
     expect(a.submitted).toBe(6);

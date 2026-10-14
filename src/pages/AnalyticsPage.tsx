@@ -1,9 +1,39 @@
 import { useMemo } from "react";
-import { agencyOutcomes } from "../../shared/agency";
-import { computeAnalytics } from "../../shared/engine/insights";
+import { agencyOutcomes, type SourceEffect } from "../../shared/agency";
+import { computeAnalytics, type Analytics } from "../../shared/engine/insights";
 import { BreakdownTable, Columns, Legend, Rows, WeeksChart } from "../components/Charts";
+import { SortableHeader } from "../components/SortableHeader";
 import { useJobs } from "../data";
 import { pct, today } from "../format";
+import { rowsInTableOrder, type ColumnMap } from "../tableSort";
+import { useTableSort } from "../useTableSort";
+
+type TargetingRow = Analytics["targeting"][number];
+type SourceSortKey = "source" | "sent" | "replied" | "interviews" | "replyRate" | "interviewRate";
+type RejectionSortKey = "family" | "sent" | "rejected" | "interviews" | "rejectionRate" | "queued";
+
+function rate(part: number, whole: number): number | null {
+  if (!whole) return null;
+  return part / whole;
+}
+
+const SOURCE_COLUMNS: ColumnMap<SourceEffect, SourceSortKey> = {
+  source: { key: "source", kind: "string", defaultDirection: "asc", value: (row) => row.source },
+  sent: { key: "sent", kind: "number", defaultDirection: "desc", value: (row) => row.sent },
+  replied: { key: "replied", kind: "number", defaultDirection: "desc", value: (row) => row.replied },
+  interviews: { key: "interviews", kind: "number", defaultDirection: "desc", value: (row) => row.interviews },
+  replyRate: { key: "replyRate", kind: "number", defaultDirection: "desc", value: (row) => rate(row.replied, row.sent) },
+  interviewRate: { key: "interviewRate", kind: "number", defaultDirection: "desc", value: (row) => rate(row.interviews, row.sent) },
+};
+
+const REJECTION_COLUMNS: ColumnMap<TargetingRow, RejectionSortKey> = {
+  family: { key: "family", kind: "string", defaultDirection: "asc", value: (row) => row.key },
+  sent: { key: "sent", kind: "number", defaultDirection: "desc", value: (row) => row.sent },
+  rejected: { key: "rejected", kind: "number", defaultDirection: "desc", value: (row) => row.rejected },
+  interviews: { key: "interviews", kind: "number", defaultDirection: "desc", value: (row) => row.interviews },
+  rejectionRate: { key: "rejectionRate", kind: "number", defaultDirection: "desc", value: (row) => rate(row.rejected, row.sent) },
+  queued: { key: "queued", kind: "number", defaultDirection: "desc", value: (row) => row.queued },
+};
 
 function Figure({ label, value, note, tone }: { label: string; value: string | number; note: string; tone?: "good" | "bad" }) {
   return (
@@ -19,6 +49,10 @@ export function AnalyticsPage() {
   const { jobs, error, notice } = useJobs();
   const a = useMemo(() => (jobs ? computeAnalytics(jobs, today()) : null), [jobs]);
   const outcomes = useMemo(() => (jobs ? agencyOutcomes(jobs, today()) : null), [jobs]);
+  const { sort: sourceSort, toggle: toggleSource } = useTableSort<SourceSortKey>({ key: "sent", direction: SOURCE_COLUMNS.sent.defaultDirection });
+  const { sort: rejectionSort, toggle: toggleRejection } = useTableSort<RejectionSortKey>({ key: "sent", direction: REJECTION_COLUMNS.sent.defaultDirection });
+  const sources = useMemo(() => rowsInTableOrder("application", outcomes?.sources ?? [], SOURCE_COLUMNS, sourceSort), [outcomes, sourceSort]);
+  const rejections = useMemo(() => rowsInTableOrder("application", a?.targeting ?? [], REJECTION_COLUMNS, rejectionSort), [a, rejectionSort]);
   if (error && !jobs) {
     return (
       <div className="page">
@@ -82,16 +116,16 @@ export function AnalyticsPage() {
             <caption>Heard back counts applications where you logged at least one reply. It is not a count of messages, and it is not the job board answering.</caption>
             <thead>
               <tr>
-                <th scope="col">Source</th>
-                <th scope="col" className="num">Sent</th>
-                <th scope="col" className="num">Heard back</th>
-                <th scope="col" className="num">Interviews</th>
-                <th scope="col" className="num">Heard-back rate</th>
-                <th scope="col" className="num">Interview rate</th>
+                <SortableHeader label="Source" column="source" sort={sourceSort} defaultDirection={SOURCE_COLUMNS.source.defaultDirection} onSort={toggleSource} />
+                <SortableHeader label="Sent" column="sent" sort={sourceSort} defaultDirection={SOURCE_COLUMNS.sent.defaultDirection} onSort={toggleSource} className="num" />
+                <SortableHeader label="Heard back" column="replied" sort={sourceSort} defaultDirection={SOURCE_COLUMNS.replied.defaultDirection} onSort={toggleSource} className="num" />
+                <SortableHeader label="Interviews" column="interviews" sort={sourceSort} defaultDirection={SOURCE_COLUMNS.interviews.defaultDirection} onSort={toggleSource} className="num" />
+                <SortableHeader label="Heard-back rate" column="replyRate" sort={sourceSort} defaultDirection={SOURCE_COLUMNS.replyRate.defaultDirection} onSort={toggleSource} className="num" />
+                <SortableHeader label="Interview rate" column="interviewRate" sort={sourceSort} defaultDirection={SOURCE_COLUMNS.interviewRate.defaultDirection} onSort={toggleSource} className="num" />
               </tr>
             </thead>
             <tbody>
-              {outcomes.sources.map((row) => (
+              {sources.map((row) => (
                 <tr key={row.source}>
                   <td>{row.source}</td>
                   <td className="num">{row.sent}</td>
@@ -146,16 +180,16 @@ export function AnalyticsPage() {
         <table className="ledger compact">
           <thead>
             <tr>
-              <th scope="col">Role type</th>
-              <th scope="col" className="num">Sent</th>
-              <th scope="col" className="num">Rejected</th>
-              <th scope="col" className="num">Interviews</th>
-              <th scope="col" className="num">Rejection rate</th>
-              <th scope="col" className="num">Waiting to apply</th>
+              <SortableHeader label="Role type" column="family" sort={rejectionSort} defaultDirection={REJECTION_COLUMNS.family.defaultDirection} onSort={toggleRejection} />
+              <SortableHeader label="Sent" column="sent" sort={rejectionSort} defaultDirection={REJECTION_COLUMNS.sent.defaultDirection} onSort={toggleRejection} className="num" />
+              <SortableHeader label="Rejected" column="rejected" sort={rejectionSort} defaultDirection={REJECTION_COLUMNS.rejected.defaultDirection} onSort={toggleRejection} className="num" />
+              <SortableHeader label="Interviews" column="interviews" sort={rejectionSort} defaultDirection={REJECTION_COLUMNS.interviews.defaultDirection} onSort={toggleRejection} className="num" />
+              <SortableHeader label="Rejection rate" column="rejectionRate" sort={rejectionSort} defaultDirection={REJECTION_COLUMNS.rejectionRate.defaultDirection} onSort={toggleRejection} className="num" />
+              <SortableHeader label="Waiting to apply" column="queued" sort={rejectionSort} defaultDirection={REJECTION_COLUMNS.queued.defaultDirection} onSort={toggleRejection} className="num" />
             </tr>
           </thead>
           <tbody>
-            {a.targeting.map((r) => (
+            {rejections.map((r) => (
               <tr key={r.key}>
                 <td>{r.key}</td>
                 <td className="num">{r.sent}</td>

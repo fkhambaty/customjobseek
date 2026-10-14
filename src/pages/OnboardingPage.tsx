@@ -12,6 +12,7 @@ import {
   type WizardStep,
 } from "../../shared/onboardingWizard";
 import type { Bullet, Experience, Profile, SalaryPeriod } from "../../shared/types";
+import { originalPdfLimitMessage } from "../../shared/resumeStorage";
 import { profileReadiness } from "../../shared/validate";
 import { api } from "../api";
 import { CountrySelect, TimeZoneField } from "../components/CountrySelect";
@@ -586,7 +587,7 @@ function StepBody({
               }}
             />
           </label>
-          <p className="muted small">Text PDFs under 2 MB. After it is read, you still have to press Continue on the next step. Nothing is treated as final until you confirm it.</p>
+          <p className="muted small">{originalPdfLimitMessage()} After it is read, you still have to press Continue on the next step. Nothing is treated as final until you confirm it.</p>
         </div>
       );
     case "facts":

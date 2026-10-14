@@ -34,6 +34,10 @@ function byPayThenScore(a: JobRecord, b: JobRecord): number {
   return (payMid(b) ?? 0) - (payMid(a) ?? 0) || b.fit.score - a.fit.score;
 }
 
+function openPostingFirst(compare: (a: JobRecord, b: JobRecord) => number): (a: JobRecord, b: JobRecord) => number {
+  return (a, b) => (a.liveStatus === "closed" ? 1 : 0) - (b.liveStatus === "closed" ? 1 : 0) || compare(a, b);
+}
+
 export interface TodayQueues {
   live: JobRecord[];
   applyNext: JobRecord[];
@@ -46,16 +50,18 @@ export interface TodayQueues {
 /** What to do today, in the order that pays off: live conversations, then fresh applications, then people. */
 export function todayQueues(jobs: JobRecord[], today: string): TodayQueues {
   const age = (iso: string | null) => daysBetween(iso, today) ?? Infinity;
-  const live = jobs.filter((j) => j.status === "interview" || j.status === "offer");
+  const live = jobs
+    .filter((j) => j.status === "interview" || j.status === "offer")
+    .sort((a, b) => (a.liveStatus === "closed" ? 1 : 0) - (b.liveStatus === "closed" ? 1 : 0));
   const applyNext = jobs
     .filter((j) => TO_APPLY.has(j.status) && (j.fit.imported || j.fit.decision !== "skip"))
-    .sort((a, b) => b.fit.score - a.fit.score || (payMid(b) ?? 0) - (payMid(a) ?? 0));
+    .sort(openPostingFirst((a, b) => b.fit.score - a.fit.score || (payMid(b) ?? 0) - (payMid(a) ?? 0)));
 
   const recent = jobs.filter((j) => j.status === "applied" && age(j.appliedAt) <= 30);
   const seen = new Set<string>();
   const messageNow = recent
     .filter((j) => j.contactCount > 0 && j.messagesSent === 0)
-    .sort(byPayThenScore)
+    .sort(openPostingFirst(byPayThenScore))
     .filter((j) => {
       const key = j.company.toLowerCase();
       if (seen.has(key)) return false;
@@ -66,10 +72,10 @@ export function todayQueues(jobs: JobRecord[], today: string): TodayQueues {
 
   const nudge = jobs
     .filter((j) => j.status === "applied" && j.messagesSent > 0 && j.replies === 0 && age(j.lastTouchAt) >= 7 && age(j.appliedAt) <= 45)
-    .sort(byPayThenScore);
+    .sort(openPostingFirst(byPayThenScore));
   const due = jobs
     .filter((j) => j.nextActionAt !== null && j.nextActionAt <= today && !["rejected", "withdrawn", "closed"].includes(j.status))
-    .sort((a, b) => (a.nextActionAt ?? "").localeCompare(b.nextActionAt ?? ""));
+    .sort(openPostingFirst((a, b) => (a.nextActionAt ?? "").localeCompare(b.nextActionAt ?? "")));
   return { live, applyNext, messageNow, nudge, due, needContact };
 }
 

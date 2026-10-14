@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { rowEvidence } from "../../shared/agency";
+import { postingClosedCopy } from "../../shared/engine/liveness";
 import type { JobRecord, JobStatus } from "../../shared/types";
 import { api } from "../api";
 import { useJobs } from "../data";
@@ -41,8 +42,9 @@ export function JobLine({ job, mode }: { job: JobRecord; mode: LineMode }) {
     mode === "message" || mode === "nudge" ? evidence.outreach.note : "",
   ].filter(Boolean);
 
+  const postingClosed = job.liveStatus === "closed";
   return (
-    <li className="line">
+    <li className={postingClosed ? "line posting-closed" : "line"}>
       <Score job={job} />
       <button className="line-main" onClick={() => open(job.id)}>
         <span className="line-title">{job.title}</span>
@@ -55,6 +57,7 @@ export function JobLine({ job, mode }: { job: JobRecord; mode: LineMode }) {
           {evidence.blocker && <span className="flag">{evidence.blocker}</span>}
           {mode === "message" && <span className="hint">{job.contactCount === 1 ? "1 person saved" : `${job.contactCount} people saved`}</span>}
         </span>
+        {postingClosed && <span className="posting-closed-note">{postingClosedCopy(job.status)}</span>}
       </button>
       <span className="line-actions">
         {mode === "apply" && (

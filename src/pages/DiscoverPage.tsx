@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { DISCOVER_COVERAGE } from "../../shared/engine/sources";
+import { pipelineCountLabel } from "../../shared/engine/liveness";
 import { formatZonedHour } from "../../shared/engine/scanRules";
 import { api, ApiError, type DiscoverRow, type ScanSchedule } from "../api";
 import { MarketScanConsole } from "../components/MarketScanConsole";
@@ -123,6 +124,7 @@ export function DiscoverPage() {
                 <span>{run.trigger === "scheduled" ? "Daily" : "By hand"}</span>
                 <span>{run.preparedCount ? `${run.preparedCount} prepared` : "Nothing prepared"}</span>
                 <span>{run.charged ? "1 scan used" : "Not charged"}</span>
+                <span>{pipelineCountLabel(run.pipelineChecked, run.pipelineClosed)}</span>
                 {run.note && <span>{run.note}</span>}
               </li>
             ))}
