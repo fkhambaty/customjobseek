@@ -45,6 +45,9 @@ describe("database capacity", () => {
     const newYork = localResetTime("2026-10-15T00:00:00.000Z", now, "en-US", "America/New_York");
     expect(newYork).toContain("8:00");
     expect(newYork).toContain("today");
+    const rawOffset = localResetTime("2026-10-15T00:00:00.000Z", now, "en-GB", "Asia/Kolkata");
+    expect(rawOffset).toContain("05:30 your time tomorrow");
+    expect(rawOffset).not.toMatch(/GMT/);
   });
 
   it("explains the pause plainly for both reasons", () => {

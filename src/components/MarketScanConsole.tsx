@@ -50,6 +50,7 @@ export function MarketScanConsole({ compact = false }: { compact?: boolean }) {
   useEffect(() => {
     Promise.all([api.currentMarketScan(), api.scanSchedule(), api.companyStats()])
       .then(([current, schedule, market]) => {
+        if (current.scan?.status === "complete") finalised.current = current.scan.id;
         setScan(current.scan);
         setQuota(schedule);
         setStats(market);
@@ -70,7 +71,7 @@ export function MarketScanConsole({ compact = false }: { compact?: boolean }) {
     if (!scan || scan.status !== "complete" || finalised.current === scan.id) return;
     finalised.current = scan.id;
     window.dispatchEvent(new Event(SCAN_FINISHED_EVENT));
-    void Promise.all([reload(), refresh(), api.scanSchedule().then(setQuota)]);
+    Promise.all([reload(), refresh(), api.scanSchedule().then(setQuota)]).catch((e: Error) => setError(e.message));
   }, [refresh, reload, scan]);
 
   useEffect(() => {

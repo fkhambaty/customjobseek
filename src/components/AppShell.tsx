@@ -107,9 +107,9 @@ export function AppShell({ children }: { children: ReactNode }) {
             <span>{firstName || account?.email}</span>
             <button
               className="linkish"
-              onClick={async () => {
-                await signOut();
+              onClick={() => {
                 navigate("/");
+                void signOut();
               }}
             >
               Sign out

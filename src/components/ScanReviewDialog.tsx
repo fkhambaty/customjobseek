@@ -119,7 +119,7 @@ export function ScanReviewDialog({ onClose, onStarted }: { onClose: () => void; 
           </section>
 
           <dl className="scan-review-cost">
-            <div><dt>Uses</dt><dd>{isUnlimited(scansLeft) ? "Unlimited scans" : `1 of ${plural(scansLeft, "scan")} left`}</dd></div>
+            <div><dt>Uses</dt><dd>{isUnlimited(scansLeft) ? "Unlimited scans" : scansLeft > 0 ? `1 of your ${plural(scansLeft, "scan")}` : "No scans left"}</dd></div>
             <div><dt>Prepares</dt><dd>Up to {Math.min(3, packsLeft)} packs</dd></div>
             <div><dt>Takes</dt><dd>About 1–3 min</dd></div>
           </dl>

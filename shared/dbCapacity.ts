@@ -57,7 +57,10 @@ function untilText(resetAt: Date, now: Date): string {
 /** The reset time in the reader's own time zone, e.g. "5:30 am IST tomorrow". */
 export function localResetTime(resetAt: string, now: Date = new Date(), locale?: string, timeZone?: string): string {
   const reset = new Date(resetAt);
-  const time = new Intl.DateTimeFormat(locale, { hour: "numeric", minute: "2-digit", timeZoneName: "short", timeZone }).format(reset);
+  const parts = new Intl.DateTimeFormat(locale, { hour: "numeric", minute: "2-digit", timeZoneName: "short", timeZone }).formatToParts(reset);
+  const time = parts
+    .map((part) => (part.type === "timeZoneName" && /^(GMT|UTC)[+-−]/.test(part.value) ? "your time" : part.value))
+    .join("");
   const dayOf = (d: Date) => new Intl.DateTimeFormat("en-CA", { year: "numeric", month: "2-digit", day: "2-digit", timeZone }).format(d);
   const today = dayOf(now);
   const tomorrow = dayOf(new Date(now.getTime() + 86_400_000));
