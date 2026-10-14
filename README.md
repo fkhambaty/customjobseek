@@ -4,6 +4,15 @@ Paste a job. Get an honest fit decision and a tailored, ATS-friendly resume buil
 
 This is a standalone product. It shares no code, data, or database with the private FK Command Center.
 
+## Project documentation
+
+- [Complete handoff](docs/handoff.md): clone-to-production setup, decisions,
+  history, incidents, recovery, smoke tests, constraints, and next work.
+- [Architecture](docs/architecture.md): rendered system, data, security,
+  crawler, scan, document, capacity, and deployment diagrams.
+- [Operations](docs/operations.md): secrets, schedules, Razorpay, retention,
+  quota mail, and production safeguards.
+
 ## What the first version does
 
 1. A user creates a factual career profile: roles, achievement lines, skills, and a **never claim** list of tools they do not have.
@@ -19,7 +28,7 @@ The resume prints to an A4 PDF with real, extractable text, in the same single-c
 
 | Plan | Price | Fit checks | Resumes | Validity |
 |------|-------|-----------|---------|----------|
-| Free | ₹0 | 3 | 1 | — |
+| Free | ₹0 | 3 | 3 | — |
 | Starter | ₹599 | 10 | 10 | 180 days |
 | Growth | ₹999 | 25 | 25 | 180 days |
 | Pro | ₹1,999 | 60 | 60 | 180 days |
@@ -72,7 +81,13 @@ The profile stores a country, the cities inside it (or any city you type), a cur
 
 ## Companies we scan
 
-Anyone signed in can paste a job link the tool missed. The company's career page is added to the `companies` table and scanned. Greenhouse, Lever, Ashby, Workable and SmartRecruiters boards are re-read every six hours. Workday and other sites are stored for a later adapter. Openings are titles, locations and links. A fit check still happens only when a person chooses a job.
+Anyone signed in can paste a job link the tool missed. The company's career
+page is added to the `companies` table and scanned. Supported public boards are
+re-read on a priority and backoff schedule rather than one fixed interval. A
+background pass handles at most 20 due companies and stops early when database
+capacity must be preserved. Adapter capabilities differ: some sources provide
+full descriptions and others only a list. Openings are matched automatically,
+but a deep fit check is still bounded and personalized to one user's profile.
 
 ## Documents, all from code
 
@@ -86,8 +101,12 @@ Sign-up, confirmation and password reset go through Resend, same as the other pr
 
 `scripts/seed-from-command-center.mjs` copies one person's own profile and job history from a local Command Center into their account. It does not copy recruiter contacts, and it does not write anything back. Set `SITE_URL` to the deployed site so the password-reset email is sent.
 
-## Not built yet
+## Intentionally unavailable or incomplete
 
-- Email verification and password reset.
-- Rate limiting on sign-in and link reading.
-- Automatic job discovery, outreach, and references. These are later stages once people pay for the core pack.
+- Checkout remains closed until real seller details and Razorpay live setup are
+  verified.
+- The product drafts outreach but does not contact people or auto-apply.
+- Some career platforms have list-only or incomplete adapters. Current
+  capabilities are documented in `docs/architecture.md`.
+- The browser E2E scenarios should be promoted into a committed Playwright
+  suite; the durable smoke checklist is in `docs/handoff.md`.

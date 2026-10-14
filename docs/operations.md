@@ -2,6 +2,10 @@
 
 This note is for the person who runs CustomJobSeek. It does not contain a resume, a password, or a sign-in code.
 
+For a new-computer setup, production smoke checklist, recovery steps, and the
+history behind these safeguards, read [the complete handoff](handoff.md). For
+system and data-flow diagrams, read [the architecture](architecture.md).
+
 ## Before launch: legal name and checkout
 
 **Do not invent a company name or a street address.** The legal pages stay neutral until `LEGAL_NAME` and `LEGAL_ADDRESS` are set to the real operator. Those are optional Worker vars. They are not set in this repository, and the pages do not copy `OWNER_EMAIL` or `MAIL_FROM` into that sentence.
@@ -22,10 +26,14 @@ Cloudflare's free plan allows five cron triggers. This worker uses three:
 
 The daily quota check does not add a fourth trigger. It rides the `17 * * * *` job, and it runs only when that job fires at 06:00 UTC.
 
-Apply `migrations/0010_capacity.sql` on the database you are using before the new scan code runs. This repository does not apply that migration to production from here.
+Apply every pending migration before deploying code that depends on it. Check
+the remote list first; do not assume a migration shown in this repository is
+already in production.
 
 ```bash
 npm run db:migrate:local
+npx wrangler d1 migrations list customjobseek --remote
+npm run db:migrate:remote
 ```
 
 ## Secrets and plain settings
@@ -38,6 +46,9 @@ Copy `.dev.vars.example` to `.dev.vars` for local work. Production secrets are s
 | `RESEND_API_KEY` | secret | Sends mail and reads Resend usage |
 | `CF_ACCOUNT_ID` | secret | Account tag for Cloudflare analytics |
 | `CF_ANALYTICS_API_TOKEN` | secret | Token that can read GraphQL analytics. It is not an admin token |
+| `RAZORPAY_KEY_ID` | secret | Public checkout identifier returned only when checkout is enabled |
+| `RAZORPAY_KEY_SECRET` | secret | Creates and verifies Razorpay orders |
+| `RAZORPAY_WEBHOOK_SECRET` | secret | Verifies the raw webhook body |
 | `OWNER_EMAIL` | var, `fktiindia@gmail.com` | Inbox for operational notes |
 | `MAIL_FROM` | var | The From address on those notes |
 | `PAYMENTS_ENABLED` | var, `false` | Checkout stays closed unless this is the string `true` |
@@ -107,7 +118,12 @@ How soon we read a board again depends on its priority:
 
 If a refresh finds nothing new, the next wait stretches, up to a week. If a refresh fails, the wait doubles, also up to a week. The stored error is a short status, not a board token.
 
-Discovery looks up normalized title words in `opening_search`. It does not use a leading `%word%` search. The hourly job fills that index for older rows a few hundred at a time.
+Discovery looks up normalized title words in `opening_search`. It does not use a
+leading `%word%` search. Board refreshes maintain the index for openings they
+touch. There is deliberately no unbounded hourly backfill: an earlier backfill
+was removed after it consumed too much of the D1 daily write allowance. If old
+rows need indexing, implement and run a bounded, observable maintenance command
+after checking the day's write budget.
 
 ## Job list
 
