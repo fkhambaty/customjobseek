@@ -4,6 +4,7 @@ import { api, ApiError, type NewJob } from "../api";
 import { Field } from "../components/fields";
 import { UpgradePrompt } from "../components/UpgradePrompt";
 import { useJobs } from "../data";
+import { isUnlimited } from "../format";
 import { useSession } from "../session";
 
 const EMPTY: NewJob = { title: "", company: "", location: "", salaryText: "", description: "", url: "" };
@@ -62,7 +63,7 @@ export function NewJobPage() {
   return (
     <div className="page narrow-wide">
       <h1>Check a job</h1>
-      <p className="muted">Uses 1 fit check. You have {account?.evalCredits ?? 0} left.</p>
+      <p className="muted">Uses 1 fit check. You have {isUnlimited(account?.evalCredits ?? 0) ? "unlimited checks" : `${account?.evalCredits ?? 0} left`}.</p>
 
       {outOfChecks && <UpgradePrompt evidence={evidence} blocked="checks" />}
       {outOfChecks && !evidence && (

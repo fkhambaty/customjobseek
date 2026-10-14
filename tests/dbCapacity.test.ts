@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
+import { MAX_OPENING_WRITES_PER_PASS, capOpeningWrites, type OpeningOp } from "../shared/capacity";
 import {
+  BACKGROUND_STOP_AT,
   FREE_PAUSE_AT,
   capacityMessage,
   capacityPause,
@@ -7,6 +9,7 @@ import {
   localResetTime,
   nextQuotaReset,
   parseCapacityPause,
+  shouldPauseBackground,
   shouldPauseFreeAccounts,
 } from "../shared/dbCapacity";
 
@@ -48,6 +51,29 @@ describe("database capacity", () => {
     const now = new Date("2026-10-14T10:29:00Z");
     expect(capacityMessage("quota_reached", nextQuotaReset(now), now, "en-IN", "Asia/Kolkata")).toMatch(/means things are going well/);
     expect(capacityMessage("saving_for_paid", nextQuotaReset(now), now, "en-IN", "Asia/Kolkata")).toMatch(/Free accounts work again/);
+  });
+
+  it("stops background work at half of either daily meter", () => {
+    expect(shouldPauseBackground(null)).toBe(false);
+    expect(shouldPauseBackground({ rowsRead: 0, rowsWritten: 49_999 })).toBe(false);
+    expect(shouldPauseBackground({ rowsRead: 0, rowsWritten: BACKGROUND_STOP_AT * 100_000 })).toBe(true);
+    expect(shouldPauseBackground({ rowsRead: 2_500_000, rowsWritten: 0 })).toBe(true);
+  });
+
+  it("caps opening writes per pass but keeps every expiry", () => {
+    const row = {} as never;
+    const ops: OpeningOp[] = [
+      ...Array.from({ length: 5 }, () => ({ kind: "add" as const, row })),
+      { kind: "expire", externalId: "gone-1" },
+      ...Array.from({ length: 3 }, () => ({ kind: "change" as const, storedExternalId: "x", row })),
+      { kind: "expire", externalId: "gone-2" },
+    ];
+    const capped = capOpeningWrites(ops, 4);
+    expect(capped.deferred).toBe(4);
+    expect(capped.ops.filter((op) => op.kind === "expire")).toHaveLength(2);
+    expect(capped.ops.filter((op) => op.kind !== "expire")).toHaveLength(4);
+    expect(capOpeningWrites(ops).deferred).toBe(0);
+    expect(MAX_OPENING_WRITES_PER_PASS).toBeLessThanOrEqual(250);
   });
 
   it("round-trips the response body", () => {

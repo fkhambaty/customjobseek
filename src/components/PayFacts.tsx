@@ -1,5 +1,6 @@
 import { Link } from "react-router-dom";
 import { inrLabel, type OfferFacts, type WalletView } from "../../shared/payments";
+import { creditAmount } from "../format";
 
 export function PayFacts({ facts }: { facts: OfferFacts }) {
   return (
@@ -25,7 +26,7 @@ export function WalletLine({ wallet }: { wallet: WalletView }) {
     : "";
   return (
     <p className="wallet-line">
-      Wallet: {wallet.evalCredits} fit checks, {wallet.resumeCredits} tailored resumes, {wallet.scanRuns} scans on the {wallet.plan} plan.{expiry}
+      Wallet: {creditAmount(wallet.evalCredits)} fit checks, {creditAmount(wallet.resumeCredits)} tailored resumes, {creditAmount(wallet.scanRuns)} scans on the {wallet.plan} plan.{expiry}
     </p>
   );
 }

@@ -93,6 +93,17 @@ export function plural(n: number, word: string, many = `${word}s`): string {
   return `${n} ${n === 1 ? word : many}`;
 }
 
+/** Balances at or above this are a standing comp, not a number the person should see. */
+export const UNLIMITED_CREDITS = 100_000;
+
+export function isUnlimited(n: number): boolean {
+  return n >= UNLIMITED_CREDITS;
+}
+
+export function creditAmount(n: number): string {
+  return isUnlimited(n) ? "Unlimited" : String(n);
+}
+
 export function pct(n: number, d: number): string {
   return d ? `${Math.round((n / d) * 100)}%` : "–";
 }

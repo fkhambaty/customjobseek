@@ -1,4 +1,3 @@
-import { employerKey } from "../shared/engine/catalog";
 import { openingDedupKey } from "../shared/engine/sources";
 import {
   openingContentHash,
@@ -154,77 +153,4 @@ export function incomingFromListing(
     expiresAt: opening.expiresAt ?? null,
     tokens: searchTokens(opening.title),
   };
-}
-
-/** Fills old fingerprints gradually so the free D1 daily write budget is not consumed by backfill. */
-export async function indexUnhashedOpenings(env: Env, limit = 50): Promise<number> {
-  const { results } = await env.DB.prepare(
-    `SELECT o.company_id, o.external_id, o.title, o.location, o.url, o.employer_key, o.provenance, o.expires_at,
-            c.career_url, c.ats, c.board_token
-     FROM openings o JOIN companies c ON c.id = o.company_id
-     WHERE o.content_hash = ''
-     LIMIT ?`,
-  ).bind(limit).all<{
-    company_id: string;
-    external_id: string;
-    title: string;
-    location: string;
-    url: string;
-    employer_key: string;
-    provenance: string;
-    expires_at: string | null;
-    career_url: string;
-    ats: string;
-    board_token: string;
-  }>();
-  const statements: D1PreparedStatement[] = [];
-  for (const row of results) {
-    const employer = row.employer_key || employerKey(row.career_url) || `${row.ats}:${row.board_token.toLowerCase()}`;
-    const provenance = row.provenance || `${row.ats}:indexed`;
-    const identity = openingDedupKey({
-      employerKey: employer,
-      externalId: row.external_id,
-      url: row.url,
-      title: row.title,
-      location: row.location,
-    });
-    const hash = openingContentHash({
-      externalId: row.external_id,
-      canonicalUrl: identity.canonicalUrl,
-      title: identity.titleKey,
-      location: identity.locationKey,
-    });
-    statements.push(
-      env.DB.prepare(
-        `UPDATE openings SET
-           content_hash = ?,
-           dedup_key = CASE WHEN dedup_key = '' THEN ? ELSE dedup_key END,
-           canonical_url = CASE WHEN canonical_url = '' THEN ? ELSE canonical_url END,
-           title_key = CASE WHEN title_key = '' THEN ? ELSE title_key END,
-           location_key = CASE WHEN location_key = '' THEN ? ELSE location_key END,
-           employer_key = CASE WHEN employer_key = '' THEN ? ELSE employer_key END,
-           provenance = CASE WHEN provenance = '' THEN ? ELSE provenance END
-         WHERE company_id = ? AND external_id = ? AND content_hash = ''`,
-      ).bind(
-        hash,
-        identity.dedupKey,
-        identity.canonicalUrl.slice(0, 1000),
-        identity.titleKey.slice(0, 200),
-        identity.locationKey.slice(0, 200),
-        employer.slice(0, 200),
-        provenance.slice(0, 80),
-        row.company_id,
-        row.external_id,
-      ),
-    );
-    if (row.expires_at && Date.parse(row.expires_at) <= Date.now()) {
-      statements.push(env.DB.prepare("DELETE FROM opening_search WHERE company_id = ? AND external_id = ?").bind(row.company_id, row.external_id));
-    } else {
-      statements.push(...tokenStatements(env.DB, row.company_id, row.external_id, searchTokens(row.title)));
-    }
-  }
-  for (const group of chunk(statements, 40)) {
-    if (group.length) await env.DB.batch(group);
-  }
-  return results.length;
 }

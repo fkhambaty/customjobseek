@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { Link, NavLink, useNavigate, useSearchParams } from "react-router-dom";
 import { todayQueues } from "../../shared/engine/insights";
 import { useJobs } from "../data";
-import { plural, today } from "../format";
+import { isUnlimited, plural, today } from "../format";
 import { useSession } from "../session";
 import { JOB_TABS, JobView, type JobTab } from "./JobView";
 import { ScanReviewDialog } from "./ScanReviewDialog";
@@ -98,7 +98,9 @@ export function AppShell({ children }: { children: ReactNode }) {
         <div className="side-foot">
           {account && (
             <Link to="/account" className="credits">
-              {plural(account.scanRuns, "scan")} · {plural(account.evalCredits, "check")} · {plural(account.resumeCredits, "resume")} left
+              {isUnlimited(account.scanRuns) && isUnlimited(account.evalCredits) && isUnlimited(account.resumeCredits)
+                ? "Unlimited scans, checks and resumes"
+                : `${plural(account.scanRuns, "scan")} · ${plural(account.evalCredits, "check")} · ${plural(account.resumeCredits, "resume")} left`}
             </Link>
           )}
           <div className="side-user">

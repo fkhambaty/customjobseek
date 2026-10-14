@@ -39,6 +39,13 @@ export function shouldPauseFreeAccounts(usage: DbUsage | null): boolean {
   return usage !== null && dbUsageShare(usage) >= FREE_PAUSE_AT;
 }
 
+/** Employer refresh and housekeeping stop here, so at least half of each day stays for people using the site. */
+export const BACKGROUND_STOP_AT = 0.5;
+
+export function shouldPauseBackground(usage: DbUsage | null): boolean {
+  return usage !== null && dbUsageShare(usage) >= BACKGROUND_STOP_AT;
+}
+
 function untilText(resetAt: Date, now: Date): string {
   const minutes = Math.max(1, Math.ceil((resetAt.getTime() - now.getTime()) / 60_000));
   if (minutes < 60) return `about ${minutes} min`;

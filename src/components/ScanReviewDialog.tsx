@@ -5,7 +5,7 @@ import { SEARCH_PATH_LIMIT } from "../../shared/engine/searchPaths";
 import type { Preferences } from "../../shared/types";
 import { api, type MarketScan, type ScanSchedule } from "../api";
 import { useJobs } from "../data";
-import { plural } from "../format";
+import { isUnlimited, plural } from "../format";
 import { useSession } from "../session";
 
 export const SCAN_STARTED_EVENT = "cjs:scan-started";
@@ -119,7 +119,7 @@ export function ScanReviewDialog({ onClose, onStarted }: { onClose: () => void; 
           </section>
 
           <dl className="scan-review-cost">
-            <div><dt>Uses</dt><dd>1 of {plural(scansLeft, "scan")} left</dd></div>
+            <div><dt>Uses</dt><dd>{isUnlimited(scansLeft) ? "Unlimited scans" : `1 of ${plural(scansLeft, "scan")} left`}</dd></div>
             <div><dt>Prepares</dt><dd>Up to {Math.min(3, packsLeft)} packs</dd></div>
             <div><dt>Takes</dt><dd>About 1–3 min</dd></div>
           </dl>

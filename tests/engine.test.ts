@@ -257,6 +257,30 @@ B.E. Computer Engineering, Pune University 2016`;
     ]);
   });
 
+  it("reads roles whose dates share the title line", () => {
+    const text = `Asha Verma
+asha@example.com · +91 98765 43210
+
+EXPERIENCE
+Senior Software Engineer, Razorpay — Jan 2021 – Present
+Cut payment settlement time from 2 days to 4 hours by redesigning the ledger service in Go.
+Led a team of 4 engineers that moved 30 services to Kubernetes.
+Software Engineer | Flipkart | Jul 2017 - Dec 2020
+Built the order events pipeline on Kafka handling 50,000 events per second in 2019.
+
+EDUCATION
+B.Tech, Computer Science, NIT Trichy, 2017`;
+    const p = profileFromResumeText(text);
+    expect(p.experience).toEqual([
+      expect.objectContaining({ title: "Senior Software Engineer", company: "Razorpay", start: "Jan 2021", end: "Present" }),
+      expect.objectContaining({ title: "Software Engineer", company: "Flipkart", start: "Jul 2017", end: "Dec 2020" }),
+    ]);
+    expect(p.experience[0]?.bullets).toHaveLength(2);
+    expect(p.experience[1]?.bullets.map((b) => b.text)).toEqual([
+      "Built the order events pipeline on Kafka handling 50,000 events per second in 2019.",
+    ]);
+  });
+
   it("restores a two-column resume before assigning fields", () => {
     const item = (str: string, x: number, y: number) => ({ str, x, y });
     const text = resumeTextInReadingOrder([{

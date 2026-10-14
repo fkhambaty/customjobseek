@@ -60,7 +60,8 @@ export const profile = new Hono<AppEnv>()
     if (bytes.byteLength < 100) throw new HttpError(400, "That PDF is too small to read.");
     if (bytes.byteLength > MAX_ORIGINAL_PDF_BYTES) throw new HttpError(400, originalPdfLimitMessage());
     if (!isPdf(bytes)) throw new HttpError(422, "That file could not be read. Use a text-based PDF, not a scanned image.");
-    const doc = await getDocumentProxy(bytes).catch(() => null);
+    // pdf.js transfers the buffer it is given; the original bytes are encrypted and stored below.
+    const doc = await getDocumentProxy(bytes.slice()).catch(() => null);
     if (!doc) throw new HttpError(422, "That file could not be read. Use a text-based PDF, not a scanned image.");
     const pages: ResumeTextPage[] = [];
     for (let pageNumber = 1; pageNumber <= doc.numPages; pageNumber++) {

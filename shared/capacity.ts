@@ -273,6 +273,38 @@ export function planOpeningDelta(
   return { ops, unchanged, liveCount: incoming.length };
 }
 
+/** One opening write costs dozens of D1 rows once search tokens and indexes count, so each pass writes at most this many. */
+export const MAX_OPENING_WRITES_PER_PASS = 250;
+
+/** Keeps every expiry and the first `limit` adds, changes and reactivations. The rest wait for the next pass. */
+export function capOpeningWrites(ops: OpeningOp[], limit = MAX_OPENING_WRITES_PER_PASS): { ops: OpeningOp[]; deferred: number } {
+  const kept: OpeningOp[] = [];
+  let writes = 0;
+  let deferred = 0;
+  for (const op of ops) {
+    switch (op.kind) {
+      case "expire":
+        kept.push(op);
+        break;
+      case "add":
+      case "change":
+      case "reactivate":
+        if (writes < limit) {
+          kept.push(op);
+          writes += 1;
+        } else {
+          deferred += 1;
+        }
+        break;
+      default: {
+        const unexpected: never = op;
+        throw new Error(String(unexpected));
+      }
+    }
+  }
+  return { ops: kept, deferred };
+}
+
 export const COMPANY_PAGE_DEFAULT = 40;
 export const COMPANY_PAGE_MAX = 80;
 

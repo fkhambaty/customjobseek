@@ -18,6 +18,10 @@ function linesOf(text: string): string[] {
 function isHeading(line: string): string | null {
   const m = line.match(SECTION);
   if (!m) return null;
+  // "Software Engineer" or "Projects shipped in 2021" are content, not headings.
+  const rest = line.slice(m[0].length).trim();
+  const shaped = rest === "" || /^[:\-–—]/.test(rest) || /^(?:&|and)\s+\w+(?:\s+\w+)?:?$/i.test(rest) || (line === line.toUpperCase() && line.length <= 40);
+  if (!shaped) return null;
   const word = (m[1] ?? "").toLowerCase();
   if (/experience|employment/.test(word)) return "experience";
   if (/education/.test(word)) return "education";
@@ -35,9 +39,27 @@ function dates(line: string): string[] {
   return line.match(/\b(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|Aug(?:ust)?|Sep(?:tember)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)\s+(?:19|20)\d{2}\b|\b(?:19|20)\d{2}\b|\bPresent\b/gi) ?? [];
 }
 
+const MONTH = "(?:Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|June?|July?|Aug(?:ust)?|Sep(?:t(?:ember)?)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?)\\.?";
+const POINT = `(?:${MONTH}\\s+)?(?:19|20)\\d{2}`;
+/** "Senior Engineer, Acme — Jan 2021 – Present" or "Engineer | Acme | 2017 - 2020" on one line. */
+const INLINE_ROLE = new RegExp(`^(.{2,140}?)[\\s,|(–—-]*(${POINT})\\s*(?:[–—-]|to)\\s*(present|current|now|${POINT})\\s*\\)?$`, "i");
+
+function inlineRole(line: string): { title: string; company: string; start: string; end: string } | null {
+  if (line.length > 180) return null;
+  const match = line.match(INLINE_ROLE);
+  if (!match) return null;
+  const head = (match[1] ?? "").replace(/[\s,|(–—-]+$/, "").trim();
+  if (head.length < 2 || /[.!?]$/.test(head) || head.split(/\s+/).length > 14) return null;
+  if (new RegExp(`^(?:${MONTH}|${POINT})$`, "i").test(head) || !/[a-z]{2}/i.test(head.replace(new RegExp(MONTH, "gi"), ""))) return null;
+  const end = match[3] ?? "";
+  return { ...roleParts(head), start: match[2] ?? "", end: /^(present|current|now)$/i.test(end) ? "Present" : end };
+}
+
 function roleParts(line: string): { title: string; company: string } {
   const at = line.match(/^(.+?)\s+at\s+(.+)$/i);
   if (at) return { title: at[1] ?? line, company: at[2] ?? "" };
+  const pipe = line.match(/^([^|]{2,100}?)\s*\|\s*([^|]{2,100}?)(?:\s*\|.*)?$/);
+  if (pipe) return { title: pipe[1]?.trim() ?? line, company: pipe[2]?.trim() ?? "" };
   const comma = line.match(/^([^,]{2,100}),\s*([^,]{2,100})$/);
   if (comma) return { title: comma[1] ?? line, company: comma[2] ?? "" };
   const dash = line.match(/^(.{2,100}?)\s+[–—-]\s+(.{2,100})$/);
@@ -62,7 +84,21 @@ function parseExperience(input: string[]): Profile["experience"] {
   for (let i = 0; i < input.length; i++) {
     const line = input[i] ?? "";
     const next = input[i + 1] ?? "";
-    if (looksLikeDate(next) && next.length < 60) {
+    const inline = inlineRole(line);
+    if (inline) {
+      flush();
+      current = {
+        id: `exp${experience.length}`,
+        title: inline.title.slice(0, 120),
+        company: inline.company.slice(0, 120),
+        location: "",
+        start: inline.start,
+        end: inline.end,
+        bullets: [],
+      };
+      continue;
+    }
+    if (looksLikeDate(next) && next.length < 60 && !inlineRole(next)) {
       flush();
       const role = roleParts(line);
       const range = dates(next);

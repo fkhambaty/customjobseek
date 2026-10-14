@@ -23,6 +23,7 @@ import {
 } from "../shared/engine/listings";
 import { dedupeOpenings, isExpired, liveListingAts, openingDedupKey, sourceById } from "../shared/engine/sources";
 import {
+  capOpeningWrites,
   describeOpeningRead,
   nextRefreshDelayMs,
   planOpeningDelta,
@@ -31,6 +32,7 @@ import {
   type OpeningRead,
 } from "../shared/capacity";
 import { noteAdapter } from "./adapters";
+import { backgroundWorkAllowed } from "./dbCapacity";
 import type { Env } from "./env";
 import { notifyOwner } from "./notify";
 import { scanFailureRecord } from "./publicError";
@@ -40,6 +42,8 @@ export type { Opening, OpeningRead };
 
 const PAGE_CAP = 2000;
 const TEAMTAILOR_CAP = 500;
+/** A board with writes held back by the per-pass cap is read again in a few hours, not after its normal refresh. */
+const DEFERRED_RESCAN_MS = 3 * 60 * 60_000;
 
 function isIndiaLocation(location: string): boolean {
   return /\b(india|bengaluru|bangalore|hyderabad|pune|gurugram|gurgaon|noida|mumbai|chennai|kolkata|ahmedabad)\b/i.test(location);
@@ -242,16 +246,17 @@ async function saveOpenings(
   );
   const expireOmitted = shouldExpireOmittedOpenings(read);
   const delta = planOpeningDelta(await loadStoredOpenings(env.DB, company.id), incoming, nowIso, expireOmitted);
-  await applyOpeningDelta(env.DB, company.id, delta.ops, nowIso);
+  const capped = capOpeningWrites(delta.ops);
+  await applyOpeningDelta(env.DB, company.id, capped.ops, nowIso);
   const quiet = delta.ops.length === 0;
   const unchangedScans = quiet ? (company.unchanged_scans ?? 0) + 1 : 0;
   const source = sourceById(company.ats as Ats);
-  const nextAt = new Date(now.getTime() + nextRefreshDelayMs({
+  const nextAt = new Date(now.getTime() + (capped.deferred > 0 ? DEFERRED_RESCAN_MS : nextRefreshDelayMs({
     priority: company.scan_priority ?? 0,
     consecutiveFailures: 0,
     unchangedScans,
     freshnessHours: source.freshnessHours,
-  })).toISOString();
+  }))).toISOString();
   const hasIndiaOpenings = incoming.some((row) => isIndiaLocation(row.location));
   await env.DB.prepare(
     `UPDATE companies SET scan_status = 'ok', last_error = '', opening_count = ?, last_scan_at = ?,
@@ -360,11 +365,17 @@ export async function scanDue(env: Env): Promise<void> {
      ORDER BY scan_priority DESC, last_scan_at IS NOT NULL, last_scan_at LIMIT 20`,
   ).bind(...live, new Date().toISOString()).all<{ id: string }>();
   let failed = 0;
+  let attempted = 0;
   for (const row of results) {
+    if (!(await backgroundWorkAllowed(env))) {
+      console.log("Daily database budget for background work reached; employer refresh stops until midnight UTC.");
+      break;
+    }
+    attempted += 1;
     const scanned = await scanCompany(env, row.id);
     if (scanned.error) failed += 1;
   }
-  if (!scanFailureSpike(results.length, failed)) return;
+  if (!scanFailureSpike(attempted, failed)) return;
   const hour = new Date().toISOString().slice(0, 13);
   await notifyOwner(env, {
     kind: "scan_failure_spike",

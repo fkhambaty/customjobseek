@@ -5,7 +5,7 @@ import { inrLabel, offerFacts, type OrderView } from "../../shared/payments";
 import { PLANS, type PlanId } from "../../shared/plans";
 import { api, type AccountHome } from "../api";
 import { WalletLine } from "../components/PayFacts";
-import { plural } from "../format";
+import { creditAmount, isUnlimited, plural } from "../format";
 import { useSession } from "../session";
 
 export function AccountPage() {
@@ -97,9 +97,9 @@ export function AccountPage() {
       <div className="card">
         <h2>Credits</h2>
         <div className="stat-row">
-          <div className="stat"><span className="stat-n">{account.evalCredits}</span><span className="muted">fit checks left</span></div>
-          <div className="stat"><span className="stat-n">{account.resumeCredits}</span><span className="muted">tailored resumes left</span></div>
-          <div className="stat"><span className="stat-n">{account.scanRuns}</span><span className="muted">scans left</span></div>
+          <div className="stat"><span className={`stat-n${isUnlimited(account.evalCredits) ? " stat-word" : ""}`}>{creditAmount(account.evalCredits)}</span><span className="muted">fit checks left</span></div>
+          <div className="stat"><span className={`stat-n${isUnlimited(account.resumeCredits) ? " stat-word" : ""}`}>{creditAmount(account.resumeCredits)}</span><span className="muted">tailored resumes left</span></div>
+          <div className="stat"><span className={`stat-n${isUnlimited(account.scanRuns) ? " stat-word" : ""}`}>{creditAmount(account.scanRuns)}</span><span className="muted">scans left</span></div>
           <div className="stat"><span className="stat-n">{plan.name}</span><span className="muted">current plan</span></div>
         </div>
         <WalletLine wallet={{

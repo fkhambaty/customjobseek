@@ -5,7 +5,6 @@ import { shouldCollectQuotas } from "../shared/capacity";
 import { capacityPause, isDailyQuotaError } from "../shared/dbCapacity";
 import { processQueuedScans, runDueSchedules } from "./autoScan";
 import { HttpError, type AppEnv, type Env } from "./env";
-import { indexUnhashedOpenings } from "./openingsSync";
 import { collectDailyQuotas } from "./quota";
 import { runLifecycleSweep } from "./lifecycle";
 import { reconcileReferralRewards } from "./referrals";
@@ -84,13 +83,12 @@ function retryAfter(resetAt: string): string {
 
 async function hourlyFreeWork(env: Env): Promise<void> {
   if (!(await backgroundWorkAllowed(env))) {
-    console.log("Daily database reserve reached; skipping lifecycle mail, referral sweep and search indexing.");
+    console.log("Daily database budget for background work reached; skipping lifecycle mail and referral sweep.");
     return;
   }
   await Promise.all([
     runLifecycleSweep(env).catch((err: unknown) => console.error("lifecycle mail failed", err)),
     reconcileReferralRewards(env).catch((err: unknown) => console.error("referral reconcile failed", err)),
-    indexUnhashedOpenings(env).catch((err: unknown) => console.error("search index failed", err)),
   ]);
 }
 

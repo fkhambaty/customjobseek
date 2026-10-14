@@ -701,6 +701,7 @@ th[aria-sort] .sort-arrow { color: var(--ink); opacity: 1; }
 .stat-row { display: flex; gap: 32px; margin: 8px 0 16px; flex-wrap: wrap; }
 .stat { display: flex; flex-direction: column; }
 .stat-n { font-family: var(--serif); font-size: 30px; }
+.stat-word { font-size: 22px; }
 .danger-zone { border-color: #ead0c7; }
 
 /* Print page */

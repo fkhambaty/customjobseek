@@ -4,6 +4,7 @@ import { pipelineCountLabel } from "../../shared/engine/liveness";
 import { scanStageLabel, type ScanStage } from "../../shared/engine/scanRules";
 import { api, type MarketScan, type MarketStats, type ScanSchedule } from "../api";
 import { useJobs } from "../data";
+import { creditAmount, isUnlimited } from "../format";
 import { useSession } from "../session";
 import { SCAN_FINISHED_EVENT, SCAN_STARTED_EVENT, ScanReviewDialog } from "./ScanReviewDialog";
 import { UpgradePrompt } from "./UpgradePrompt";
@@ -119,7 +120,7 @@ export function MarketScanConsole({ compact = false }: { compact?: boolean }) {
         <div className="market-ready">
           <div><strong>Up to 24</strong><span>strong openings read</span></div>
           <div><strong>Best 3</strong><span>prepared for you</span></div>
-          <div><strong>{quota?.scanRuns ?? account?.scanRuns ?? 0}</strong><span>scan{(quota?.scanRuns ?? 0) === 1 ? "" : "s"} left</span></div>
+          <div><strong>{creditAmount(quota?.scanRuns ?? account?.scanRuns ?? 0)}</strong><span>{isUnlimited(quota?.scanRuns ?? account?.scanRuns ?? 0) ? "scans" : `scan${(quota?.scanRuns ?? 0) === 1 ? "" : "s"} left`}</span></div>
           <p>Usually 1–3 minutes. Fit, resume, application notes and named contacts are prepared together.</p>
         </div>
       )}

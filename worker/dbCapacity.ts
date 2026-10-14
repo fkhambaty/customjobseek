@@ -2,7 +2,7 @@ import { getCookie } from "hono/cookie";
 import { createMiddleware } from "hono/factory";
 import { cloudflareMeters } from "../shared/capacity";
 import { utcDay } from "../shared/commercial";
-import { capacityPause, shouldPauseFreeAccounts, type CapacityPause, type DbUsage } from "../shared/dbCapacity";
+import { capacityPause, shouldPauseBackground, shouldPauseFreeAccounts, type CapacityPause, type DbUsage } from "../shared/dbCapacity";
 import { sha256 } from "./crypto";
 import type { AppEnv, Env } from "./env";
 import { D1_ROWS_QUERY, postGraphql } from "./quota";
@@ -67,8 +67,8 @@ export const capacityGuard = createMiddleware<AppEnv>(async (c, next) => {
   throw new CapacityPausedError(capacityPause("saving_for_paid"));
 });
 
-/** Background work that only helps free browsing stops once the paid reserve begins. */
+/** Background work stops at half of the daily allowance. */
 export async function backgroundWorkAllowed(env: Env): Promise<boolean> {
   const usage = await todaysDbUsage(env).catch(() => null);
-  return !shouldPauseFreeAccounts(usage);
+  return !shouldPauseBackground(usage);
 }
