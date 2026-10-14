@@ -418,6 +418,13 @@ The Razorpay implementation exists, but checkout is closed while
 5. confirmation that webhook replay, recovery, refund, and wallet behavior are
    correct.
 
+The account was submitted for Razorpay verification on 14 October 2026, with an
+expected 24–48-hour review. Verification pending is not activation. Once the
+dashboard explicitly shows live payments are active, follow
+[`docs/razorpay-go-live.md`](razorpay-go-live.md). The runbook contains the exact
+secret setup, direct webhook URL, events, closed-mode verification, final
+one-line switch, controlled purchase, refund, and emergency-close steps.
+
 Notify the operator before any purchase that moves real money.
 
 ### Search-path semantics

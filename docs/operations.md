@@ -4,7 +4,10 @@ This note is for the person who runs CustomJobSeek. It does not contain a resume
 
 For a new-computer setup, production smoke checklist, recovery steps, and the
 history behind these safeguards, read [the complete handoff](handoff.md). For
-system and data-flow diagrams, read [the architecture](architecture.md).
+system and data-flow diagrams, read [the architecture](architecture.md). When
+Razorpay verification finishes, follow the
+[Razorpay go-live runbook](razorpay-go-live.md) without skipping its test,
+approval, first-purchase, or rollback steps.
 
 ## Before launch: legal name and checkout
 

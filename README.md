@@ -12,6 +12,8 @@ This is a standalone product. It shares no code, data, or database with the priv
   crawler, scan, document, capacity, and deployment diagrams.
 - [Operations](docs/operations.md): secrets, schedules, Razorpay, retention,
   quota mail, and production safeguards.
+- [Razorpay go-live](docs/razorpay-go-live.md): exact verification, test,
+  enablement, first-purchase, refund, and emergency-close procedure.
 
 ## What the first version does
 

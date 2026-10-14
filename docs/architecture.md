@@ -524,6 +524,10 @@ Razorpay integration exists, but checkout is intentionally closed while
 itself. Credits are granted only after a valid signed webhook or server-side
 verification of a captured order with the expected amount.
 
+The account entered Razorpay verification on 14 October 2026. Verification
+pending is not permission to enable checkout. The exact activation and rollback
+procedure is [`docs/razorpay-go-live.md`](razorpay-go-live.md).
+
 Refund integrity rules:
 
 - reverse only unused purchased credits,
