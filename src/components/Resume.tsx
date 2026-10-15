@@ -21,10 +21,35 @@ export function Resume({ resume }: { resume: TailoredResume }) {
         </section>
       )}
 
-      {resume.coreStrengths.length > 0 && (
+      {(resume.selectedImpact?.length ?? 0) > 0 && (
+        <section>
+          <h2>Selected Impact</h2>
+          <ul className="impact">
+            {resume.selectedImpact?.map((line) => <li key={line}>{line}</li>)}
+          </ul>
+        </section>
+      )}
+
+      {(resume.capabilityGroups?.length ?? 0) > 0 ? (
+        <section>
+          <h2>Core Capabilities</h2>
+          {resume.capabilityGroups?.map((group) => (
+            <p className="cap" key={group.name}>
+              <strong>{group.name}:</strong> {group.items.join(", ")}
+            </p>
+          ))}
+        </section>
+      ) : resume.coreStrengths.length > 0 ? (
         <section>
           <h2>Core Strengths</h2>
           <p>{resume.coreStrengths.join("  •  ")}</p>
+        </section>
+      ) : null}
+
+      {resume.aiAssistedDelivery && (
+        <section>
+          <h2>AI-Assisted Delivery</h2>
+          <p>{resume.aiAssistedDelivery}</p>
         </section>
       )}
 
@@ -46,43 +71,38 @@ export function Resume({ resume }: { resume: TailoredResume }) {
                   <li key={b.id}>{b.text}</li>
                 ))}
               </ul>
+              {(r.environment?.length ?? 0) > 0 && (
+                <div className="environment"><strong>Environment:</strong> {r.environment?.join(", ")}</div>
+              )}
             </div>
           ))}
         </section>
       )}
 
-      {resume.skills.length > 0 && (
+      {(resume.capabilityGroups?.length ?? 0) === 0 && resume.skills.length > 0 && (
         <section>
           <h2>Skills</h2>
           <p>{resume.skills.join(", ")}</p>
         </section>
       )}
 
-      {resume.education.length > 0 && (
+      {(resume.education.length > 0 || resume.certifications.length > 0) && (
         <section>
-          <h2>Education</h2>
+          <h2>Education &amp; Certifications</h2>
           {resume.education.map((e) => (
-            <p key={e.id}>
+            <p className="education" key={e.id}>
               <strong>{e.degree}</strong>
               {e.institution && `, ${e.institution}`}
               {e.year && ` (${e.year})`}
             </p>
           ))}
-        </section>
-      )}
-
-      {resume.certifications.length > 0 && (
-        <section>
-          <h2>Certifications</h2>
-          <ul>
-            {resume.certifications.map((c) => (
-              <li key={c.id}>
-                {c.name}
-                {c.issuer && `, ${c.issuer}`}
-                {c.year && ` (${c.year})`}
-              </li>
-            ))}
-          </ul>
+          {resume.certifications.length > 0 && (
+            <p className="education">
+              {resume.certifications.map((c) =>
+                `${c.name}${c.issuer ? `, ${c.issuer}` : ""}${c.year ? ` (${c.year})` : ""}`,
+              ).join("  |  ")}
+            </p>
+          )}
         </section>
       )}
     </article>

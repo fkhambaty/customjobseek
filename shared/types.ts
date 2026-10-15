@@ -107,7 +107,13 @@ export interface TailoredRole {
   start: string;
   end: string;
   bullets: Bullet[];
+  environment?: string[];
   omittedBulletCount: number;
+}
+
+export interface ResumeCapabilityGroup {
+  name: string;
+  items: string[];
 }
 
 export interface TailoredResume {
@@ -116,6 +122,9 @@ export interface TailoredResume {
   contact: string[];
   summary: string;
   coreStrengths: string[];
+  selectedImpact?: string[];
+  capabilityGroups?: ResumeCapabilityGroup[];
+  aiAssistedDelivery?: string;
   skills: string[];
   roles: TailoredRole[];
   education: Education[];

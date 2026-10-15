@@ -190,6 +190,46 @@ describe("tailorResume", () => {
     expect(r.skills).not.toContain("Databricks");
     expect(r.provenance.neverClaimHits).toEqual(["Power BI"]);
   });
+
+  it("packages a data engineer in the CommandCenter order even when profile skills are descriptive phrases", () => {
+    const p = profile({
+      headline: "ANALYTICS ENGINEER | PRODUCTION DBT, WAREHOUSE MODELLING & RECONCILIATION",
+      skills: [
+        { name: "Snowflake — Dynamic Tables, Streams and Tasks, Staged Ingestion", level: "expert" },
+        { name: "dbt — staging, intermediate and mart models, incremental patterns, snapshots, tests and documentation", level: "expert" },
+        { name: "Expert SQL", level: "expert" },
+        { name: "PostgreSQL", level: "working" },
+        { name: "MSSQL", level: "expert" },
+        { name: "Apache Airflow", level: "working" },
+        { name: "Dimensional and Analytical Data Modelling", level: "expert" },
+        { name: "AWS", level: "working" },
+        { name: "S3", level: "working" },
+      ],
+    });
+    const fit = {
+      ...evaluateFit(job(), p),
+      matchedRequired: ["SQL", "Snowflake", "dbt", "Airflow", "Data Modelling", "AWS"],
+      matchedOther: ["S3"],
+    };
+    const r = tailorResume(p, fit, { id: "j1", title: "Senior Data Engineer", company: "Siemens" });
+    expect(r.headline).toBe("DATA ENGINEER | SNOWFLAKE, DBT, SQL, APACHE AIRFLOW & WAREHOUSE PLATFORMS");
+    expect(r.coreStrengths).toEqual([
+      "Snowflake",
+      "dbt",
+      "SQL",
+      "Analytics Engineering",
+      "PostgreSQL",
+      "MSSQL",
+      "Apache Airflow",
+      "Data Modelling",
+    ]);
+    expect(r.capabilityGroups?.map((group) => group.name)).toEqual(expect.arrayContaining([
+      "Warehousing & Transformation",
+      "Data Architecture & Modelling",
+      "Governance & Regulated Delivery",
+    ]));
+    expect(r.selectedImpact).toContain("Built 120 dbt models on Snowflake with tests that fail the build on bad numbers");
+  });
 });
 
 describe("sanitiseProfile", () => {

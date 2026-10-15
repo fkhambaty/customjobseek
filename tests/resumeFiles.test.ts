@@ -175,7 +175,7 @@ describe("resume HTML", () => {
     expect(html).toContain('class="resume"');
     expect(html).toContain('name="viewport" content="width=device-width, initial-scale=1"');
     expect(html).toContain("@media screen and (max-width: 800px)");
-    expect(html).toContain("#0e4a52");
+    expect(html).toContain("#0b4f8a");
     expect(html).toContain("Professional Experience");
     expect(html).toContain("Acme");
     expect(renderResumeHtml(resume())).toBe(renderResumeHtml(resume()));
@@ -184,6 +184,24 @@ describe("resume HTML", () => {
     expect(plain).toContain("&#60;b&#62;");
     expect(htmlToVisibleText("<style>h1{}</style><script>alert(1)</script><p>Hello &amp; welcome</p>")).toContain("Hello & welcome");
     expect(htmlToVisibleText("<script>alert(1)</script><p>Hello</p>")).not.toContain("alert");
+  });
+
+  it("renders the CommandCenter section order and role environment", () => {
+    const html = renderResumeHtml(resume({
+      selectedImpact: ["Built 120 dbt models on Snowflake."],
+      capabilityGroups: [
+        { name: "Warehousing & Transformation", items: ["Snowflake", "dbt", "SQL"] },
+        { name: "Orchestration & Quality", items: ["Apache Airflow", "Data Quality"] },
+      ],
+      aiAssistedDelivery: "Used AI-assisted development with human review before merge.",
+      roles: resume().roles.map((role) => ({ ...role, environment: ["Snowflake", "dbt", "SQL"] })),
+    }));
+    expect(html.indexOf("Selected Impact")).toBeLessThan(html.indexOf("Core Capabilities"));
+    expect(html.indexOf("Core Capabilities")).toBeLessThan(html.indexOf("AI-Assisted Delivery"));
+    expect(html.indexOf("AI-Assisted Delivery")).toBeLessThan(html.indexOf("Professional Experience"));
+    expect(html).toContain("<strong>Environment:</strong> Snowflake, dbt, SQL");
+    expect(html).toContain("Education &amp; Certifications");
+    expect(html).not.toContain("<h2>Skills</h2>");
   });
 });
 

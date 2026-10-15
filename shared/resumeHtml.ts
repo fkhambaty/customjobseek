@@ -6,69 +6,80 @@ export const RESUME_CSS = `.resume {
   width: 210mm;
   min-height: 297mm;
   margin: 0 auto;
-  padding: 11mm 14mm 12mm;
+  padding: 12mm 13mm;
   background: #fff;
-  color: #182534;
-  font-family: Calibri, Carlito, "Segoe UI", Arial, sans-serif;
-  font-size: 10pt;
-  line-height: 1.33;
+  color: #1a2430;
+  font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+  font-size: 10.1pt;
+  line-height: 1.44;
   box-shadow: 0 10px 35px rgba(17, 37, 58, 0.14);
   text-align: left;
 }
 .resume header {
-  border-bottom: 2px solid #0e4a52;
-  padding-bottom: 7px;
-  margin-bottom: 7px;
+  border-bottom: 2pt solid #0b4f8a;
+  padding-bottom: 8pt;
 }
 .resume h1 {
   margin: 0;
-  color: #0e4a52;
-  font-size: 21pt;
+  color: #0f1b28;
+  font-size: 23pt;
+  font-weight: 800;
   line-height: 1;
-  letter-spacing: 0.4px;
+  letter-spacing: -0.4pt;
   text-transform: uppercase;
 }
 .resume .headline {
-  margin-top: 5px;
-  color: #0e4a52;
-  font-size: 9.8pt;
-  font-weight: 700;
-  letter-spacing: 0.35px;
+  margin-top: 4pt;
+  color: #0b4f8a;
+  font-size: 9.6pt;
+  font-weight: 800;
+  letter-spacing: 0.3pt;
+  line-height: 1.3;
+  text-transform: uppercase;
 }
 .resume .contact {
-  margin-top: 5px;
-  color: #2c3d4a;
-  font-size: 9.2pt;
+  margin-top: 5pt;
+  color: #4a5a6b;
+  font-size: 8.9pt;
   white-space: pre-wrap;
 }
 .resume h2 {
-  margin: 10px 0 5px;
-  padding-bottom: 3px;
-  border-bottom: 2px solid #0e4a52;
-  color: #0e4a52;
-  font-size: 10.2pt;
-  letter-spacing: 0.85px;
+  margin: 8pt 0 3pt;
+  padding-bottom: 2pt;
+  border-bottom: 0.8pt solid #c9d6e3;
+  color: #0b4f8a;
+  font-size: 9.6pt;
+  font-weight: 800;
+  letter-spacing: 0.9pt;
   text-transform: uppercase;
   break-after: avoid;
+  page-break-after: avoid;
 }
-.resume p { margin: 0 0 4px; white-space: pre-wrap; }
-.resume ul { margin: 2px 0 0 16px; padding: 0; }
-.resume li { margin: 0 0 4.5px; padding-left: 1px; }
-.resume .job { margin-bottom: 11px; }
+.resume p { margin: 0 0 4.5pt; text-align: justify; white-space: pre-wrap; }
+.resume ul { margin: 0 0 0 13pt; padding: 0; }
+.resume li { margin: 0 0 3pt; text-align: justify; break-inside: avoid; page-break-inside: avoid; }
+.resume .impact { display: grid; grid-template-columns: 1fr 1fr; column-gap: 16pt; row-gap: 3.5pt; margin-left: 13pt; }
+.resume .impact li { margin: 0 0 0 12pt; text-align: left; }
+.resume .cap { margin-bottom: 3.5pt; font-size: 9.2pt; line-height: 1.4; text-align: left; break-inside: avoid; page-break-inside: avoid; }
+.resume strong { color: #0f1b28; font-weight: 700; }
+.resume .job { margin-bottom: 6pt; }
 .resume .job-header {
   display: flex;
   justify-content: space-between;
-  gap: 12px;
+  gap: 10pt;
   align-items: baseline;
-  margin-bottom: 1px;
+  margin-bottom: 1.5pt;
   break-after: avoid;
   break-inside: avoid;
+  page-break-after: avoid;
 }
-.resume .job-title { color: #0e4a52; font-size: 10pt; font-weight: 700; }
-.resume .job-company { color: #182534; font-weight: 700; }
-.resume .job-date { color: #3d4f5c; font-size: 9pt; white-space: nowrap; }
-.resume .subrole { color: #3d4f5c; font-size: 9pt; margin-bottom: 2px; }
-.resume li { break-inside: avoid; }
+.resume .job-title { color: #0f1b28; font-size: 10.8pt; font-weight: 800; }
+.resume .job-company { color: #0f1b28; font-weight: 800; }
+.resume .job-date { color: #4a5a6b; font-size: 8.6pt; font-style: italic; white-space: nowrap; }
+.resume .subrole { color: #4a5a6b; font-size: 8.9pt; font-style: italic; margin-bottom: 3.5pt; }
+.resume .environment { margin-top: 3.5pt; padding-top: 2.5pt; border-top: 0.4pt dotted #c9d6e3; color: #4a5a6b; font-size: 8.4pt; }
+.resume .environment strong { color: #0b4f8a; }
+.resume .education { font-size: 9.2pt; text-align: left; }
 body { margin: 0; background: #f4f1ec; }
 @media screen and (max-width: 800px) {
   body { background: #fff; }
@@ -85,7 +96,7 @@ body { margin: 0; background: #f4f1ec; }
   .resume .job-date { white-space: normal; }
 }
 @media print {
-  @page { size: A4; margin: 11mm 14mm 12mm; }
+  @page { size: A4; margin: 12mm 13mm; }
   body { background: #fff; }
   .resume { box-shadow: none; margin: 0; padding: 0; width: auto; min-height: auto; }
 }`;
@@ -121,8 +132,22 @@ export function renderResumeHtml(resume: TailoredResume): string {
   if (resume.summary) {
     chunks.push("<section>", "<h2>Profile</h2>", `<p>${escapeHtml(resume.summary)}</p>`, "</section>");
   }
-  if (resume.coreStrengths.length > 0) {
+  if ((resume.selectedImpact?.length ?? 0) > 0) {
+    chunks.push("<section>", "<h2>Selected Impact</h2>", '<ul class="impact">');
+    for (const line of resume.selectedImpact ?? []) chunks.push(`<li>${escapeHtml(line)}</li>`);
+    chunks.push("</ul>", "</section>");
+  }
+  if ((resume.capabilityGroups?.length ?? 0) > 0) {
+    chunks.push("<section>", "<h2>Core Capabilities</h2>");
+    for (const group of resume.capabilityGroups ?? []) {
+      chunks.push(`<p class="cap"><strong>${escapeHtml(group.name)}:</strong> ${escapeHtml(group.items.join(", "))}</p>`);
+    }
+    chunks.push("</section>");
+  } else if (resume.coreStrengths.length > 0) {
     chunks.push("<section>", "<h2>Core Strengths</h2>", `<p>${escapeHtml(resume.coreStrengths.join("  •  "))}</p>`, "</section>");
+  }
+  if (resume.aiAssistedDelivery) {
+    chunks.push("<section>", "<h2>AI-Assisted Delivery</h2>", `<p>${escapeHtml(resume.aiAssistedDelivery)}</p>`, "</section>");
   }
   if (resume.roles.length > 0) {
     chunks.push("<section>", "<h2>Professional Experience</h2>");
@@ -133,30 +158,31 @@ export function renderResumeHtml(resume: TailoredResume): string {
       if (role.location) chunks.push(`<div class="subrole">${escapeHtml(role.location)}</div>`);
       chunks.push("<ul>");
       for (const bullet of role.bullets) chunks.push(`<li>${escapeHtml(bullet.text)}</li>`);
-      chunks.push("</ul>", "</div>");
+      chunks.push("</ul>");
+      if ((role.environment?.length ?? 0) > 0) {
+        chunks.push(`<div class="environment"><strong>Environment:</strong> ${escapeHtml(role.environment?.join(", ") ?? "")}</div>`);
+      }
+      chunks.push("</div>");
     }
     chunks.push("</section>");
   }
-  if (resume.skills.length > 0) {
+  if ((resume.capabilityGroups?.length ?? 0) === 0 && resume.skills.length > 0) {
     chunks.push("<section>", "<h2>Skills</h2>", `<p>${escapeHtml(resume.skills.join(", "))}</p>`, "</section>");
   }
-  if (resume.education.length > 0) {
-    chunks.push("<section>", "<h2>Education</h2>");
+  if (resume.education.length > 0 || resume.certifications.length > 0) {
+    chunks.push("<section>", "<h2>Education &amp; Certifications</h2>");
     for (const item of resume.education) {
       chunks.push(
-        `<p><strong>${escapeHtml(item.degree)}</strong>${item.institution ? `, ${escapeHtml(item.institution)}` : ""}${item.year ? ` (${escapeHtml(item.year)})` : ""}</p>`,
+        `<p class="education"><strong>${escapeHtml(item.degree)}</strong>${item.institution ? `, ${escapeHtml(item.institution)}` : ""}${item.year ? ` (${escapeHtml(item.year)})` : ""}</p>`,
       );
+    }
+    if (resume.certifications.length > 0) {
+      const certifications = resume.certifications.map((item) =>
+        `${item.name}${item.issuer ? `, ${item.issuer}` : ""}${item.year ? ` (${item.year})` : ""}`,
+      ).join("  |  ");
+      chunks.push(`<p class="education">${escapeHtml(certifications)}</p>`);
     }
     chunks.push("</section>");
-  }
-  if (resume.certifications.length > 0) {
-    chunks.push("<section>", "<h2>Certifications</h2>", "<ul>");
-    for (const item of resume.certifications) {
-      chunks.push(
-        `<li>${escapeHtml(item.name)}${item.issuer ? `, ${escapeHtml(item.issuer)}` : ""}${item.year ? ` (${escapeHtml(item.year)})` : ""}</li>`,
-      );
-    }
-    chunks.push("</ul>", "</section>");
   }
   chunks.push("</article>");
   return documentShell(resume.fullName || "Resume", chunks.join(""));

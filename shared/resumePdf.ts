@@ -25,14 +25,14 @@ export const PDF_REFUSAL_PREFIX = "CJS-PDF-UNSUPPORTED\n";
 export const PDF_A4 = { width: 595.28, height: 841.89 } as const;
 
 const A4: [number, number] = [PDF_A4.width, PDF_A4.height];
-const MARGIN_X = 39.69;
-const MARGIN_TOP = 31.18;
+const MARGIN_X = 36.85;
+const MARGIN_TOP = 34.02;
 const MARGIN_BOTTOM = 34.02;
 const CONTENT_WIDTH = PDF_A4.width - MARGIN_X * 2;
 
-const TEAL = rgb(14 / 255, 74 / 255, 82 / 255);
-const INK = rgb(24 / 255, 37 / 255, 52 / 255);
-const MUTED = rgb(61 / 255, 79 / 255, 92 / 255);
+const TEAL = rgb(11 / 255, 79 / 255, 138 / 255);
+const INK = rgb(15 / 255, 27 / 255, 40 / 255);
+const MUTED = rgb(74 / 255, 90 / 255, 107 / 255);
 
 /** Format characters with no visible glyph. They are omitted from the PDF, not replaced. */
 const IGNORABLE = new Set<number>([0x00ad, 0x200b, 0x200c, 0x200d, 0x200e, 0x200f, 0x2060, 0xfeff]);
@@ -225,15 +225,24 @@ function finishPdf(pen: Pen): Promise<Uint8Array> {
 }
 
 function drawName(pen: Pen, name: string): void {
-  const size = 18;
+  const size = 23;
   const shown = clean((name || "Resume").toUpperCase());
   room(pen, size + 4);
-  pen.page.drawText(shown, { x: MARGIN_X, y: pen.y - size, size, font: pen.bold, color: TEAL });
+  pen.page.drawText(shown, { x: MARGIN_X, y: pen.y - size, size, font: pen.bold, color: INK });
   pen.y -= size + 4;
 }
 
-function drawRole(pen: Pen, title: string, company: string, start: string, end: string, location: string, bullets: string[]): void {
-  const leftRaw = company ? `${title}, ${company}` : title;
+function drawRole(
+  pen: Pen,
+  title: string,
+  company: string,
+  start: string,
+  end: string,
+  location: string,
+  bullets: string[],
+  environment: string[],
+): void {
+  const leftRaw = company ? `${company}, ${title}` : title;
   const dateRaw = [start, end].filter(Boolean).join(" – ");
   const left = clean(leftRaw);
   const date = clean(dateRaw);
@@ -242,11 +251,11 @@ function drawRole(pen: Pen, title: string, company: string, start: string, end: 
   if (sharesLine && date) {
     room(pen, 14);
     const baseline = pen.y - 10;
-    pen.page.drawText(left, { x: MARGIN_X, y: baseline, size: 10, font: pen.bold, color: TEAL });
+    pen.page.drawText(left, { x: MARGIN_X, y: baseline, size: 10, font: pen.bold, color: INK });
     pen.page.drawText(date, { x: PDF_A4.width - MARGIN_X - dateWidth, y: baseline, size: 9, font: pen.font, color: MUTED });
     pen.y = baseline - 4;
   } else {
-    drawParagraph(pen, leftRaw, pen.bold, 10, TEAL);
+    drawParagraph(pen, leftRaw, pen.bold, 10, INK);
     if (dateRaw) {
       const shown = clean(dateRaw);
       const width = pen.font.widthOfTextAtSize(shown, 9);
@@ -271,6 +280,10 @@ function drawRole(pen: Pen, title: string, company: string, start: string, end: 
       pen.y -= 13;
     });
   }
+  if (environment.length > 0) {
+    pen.y -= 2;
+    drawParagraph(pen, `Environment: ${environment.join(", ")}`, pen.font, 8.4, MUTED);
+  }
   pen.y -= 6;
 }
 
@@ -282,19 +295,26 @@ function resumeParts(resume: TailoredResume): string[] {
     resume.contact.join("  |  "),
     resume.summary,
     resume.coreStrengths.join("  •  "),
+    ...(resume.selectedImpact ?? []),
+    ...(resume.capabilityGroups ?? []).flatMap((group) => [group.name, ...group.items]),
+    resume.aiAssistedDelivery ?? "",
     resume.skills.join(", "),
     "Profile",
+    "Selected Impact",
+    "Core Capabilities",
+    "AI-Assisted Delivery",
     "Core Strengths",
     "Professional Experience",
     "Skills",
-    "Education",
-    "Certifications",
+    "Education & Certifications",
+    "Environment",
     "•",
   ];
   for (const role of resume.roles) {
     const date = [role.start, role.end].filter(Boolean).join(" – ");
     parts.push(role.title, role.company, role.location, role.start, role.end, date, role.company ? `${role.title}, ${role.company}` : role.title);
     for (const bullet of role.bullets) parts.push(bullet.text);
+    parts.push(...(role.environment ?? []));
   }
   for (const item of resume.education) parts.push(item.degree, item.institution, item.year, item.year ? `${item.degree} (${item.year})` : item.degree);
   for (const item of resume.certifications) parts.push(item.name, item.issuer, item.year);
@@ -312,32 +332,68 @@ export async function renderResumePdf(resume: TailoredResume): Promise<Uint8Arra
     drawHeading(pen, "Profile");
     drawParagraph(pen, resume.summary, pen.font, 10, INK);
   }
-  if (resume.coreStrengths.length > 0) {
+  if ((resume.selectedImpact?.length ?? 0) > 0) {
+    drawHeading(pen, "Selected Impact");
+    for (const line of resume.selectedImpact ?? []) {
+      const lines = wrap(pen.font, line, 9.2, CONTENT_WIDTH - 14);
+      lines.forEach((wrapped, index) => {
+        room(pen, 12);
+        pen.page.drawText(`${index === 0 ? "• " : "  "}${wrapped}`, {
+          x: MARGIN_X + 2,
+          y: pen.y - 9.2,
+          size: 9.2,
+          font: pen.font,
+          color: INK,
+        });
+        pen.y -= 12;
+      });
+    }
+  }
+  if ((resume.capabilityGroups?.length ?? 0) > 0) {
+    drawHeading(pen, "Core Capabilities");
+    for (const group of resume.capabilityGroups ?? []) {
+      drawParagraph(pen, `${group.name}: ${group.items.join(", ")}`, pen.font, 9.2, INK);
+      pen.y -= 2;
+    }
+  } else if (resume.coreStrengths.length > 0) {
     drawHeading(pen, "Core Strengths");
     drawParagraph(pen, resume.coreStrengths.join("  •  "), pen.font, 10, INK);
+  }
+  if (resume.aiAssistedDelivery) {
+    drawHeading(pen, "AI-Assisted Delivery");
+    drawParagraph(pen, resume.aiAssistedDelivery, pen.font, 9.2, INK);
   }
   if (resume.roles.length > 0) {
     drawHeading(pen, "Professional Experience");
     for (const role of resume.roles) {
-      drawRole(pen, role.title, role.company, role.start, role.end, role.location, role.bullets.map((bullet) => bullet.text));
+      drawRole(
+        pen,
+        role.title,
+        role.company,
+        role.start,
+        role.end,
+        role.location,
+        role.bullets.map((bullet) => bullet.text),
+        role.environment ?? [],
+      );
     }
   }
-  if (resume.skills.length > 0) {
+  if ((resume.capabilityGroups?.length ?? 0) === 0 && resume.skills.length > 0) {
     drawHeading(pen, "Skills");
     drawParagraph(pen, resume.skills.join(", "), pen.font, 10, INK);
   }
-  if (resume.education.length > 0) {
-    drawHeading(pen, "Education");
+  if (resume.education.length > 0 || resume.certifications.length > 0) {
+    drawHeading(pen, "Education & Certifications");
     for (const item of resume.education) {
       const line = [item.degree, item.institution].filter(Boolean).join(", ");
-      drawParagraph(pen, item.year ? `${line} (${item.year})` : line, pen.font, 10, INK);
+      drawParagraph(pen, item.year ? `${line} (${item.year})` : line, pen.font, 9.2, INK);
     }
-  }
-  if (resume.certifications.length > 0) {
-    drawHeading(pen, "Certifications");
-    for (const item of resume.certifications) {
+    const certifications = resume.certifications.map((item) => {
       const line = [item.name, item.issuer].filter(Boolean).join(", ");
-      drawParagraph(pen, item.year ? `${line} (${item.year})` : line, pen.font, 10, INK);
+      return item.year ? `${line} (${item.year})` : line;
+    });
+    if (certifications.length > 0) {
+      drawParagraph(pen, certifications.join("  |  "), pen.font, 9.2, INK);
     }
   }
   return finishPdf(pen);

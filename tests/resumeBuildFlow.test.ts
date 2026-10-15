@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { D1Database } from "@cloudflare/workers-types";
+import { extractText, getDocumentProxy } from "unpdf";
 import { freshPlatformProxy } from "./localDb";
 import { resumeFileLinks } from "../shared/resumeFile";
 import { emptyProfile, type Profile } from "../shared/types";
@@ -66,7 +67,7 @@ describe("build from profile for an imported job", () => {
         .bind(userId, await encryptJson(dataKey, profile(email))).run();
       for (const id of jobIds) {
         await db.prepare("INSERT INTO jobs (id, user_id, title, company, location, description, fit_json) VALUES (?, ?, ?, 'Citi', 'Pune', ?, '{}')")
-          .bind(id, userId, "Analytics and Insights Lead - Vice President", DESCRIPTION).run();
+          .bind(id, userId, "Senior Data Engineer", DESCRIPTION).run();
       }
       const headers = { cookie: `cjs_session=${token}` };
       const call = (path: string, init: RequestInit = {}) =>
@@ -79,14 +80,33 @@ describe("build from profile for an imported job", () => {
           body: "{}",
         });
         expect(built.status, await built.clone().text()).toBe(200);
-        const body = (await built.json()) as { resume: { fullName: string } };
+        const body = (await built.json()) as {
+          resume: {
+            fullName: string;
+            headline: string;
+            coreStrengths: string[];
+            selectedImpact: string[];
+            capabilityGroups: { name: string; items: string[] }[];
+          };
+        };
         expect(body.resume.fullName).toBe("Asha Rao");
+        expect(body.resume.headline).toContain("DATA ENGINEER");
+        expect(body.resume.coreStrengths).toEqual(expect.arrayContaining(["SQL", "Python"]));
+        expect(body.resume.selectedImpact.length).toBeGreaterThan(0);
+        expect(body.resume.capabilityGroups.map((group) => group.name)).toContain("Warehousing & Transformation");
 
         const links = resumeFileLinks("job", id);
         const pdf = await call(links.pdf);
         expect(pdf.status).toBe(200);
         expect(pdf.headers.get("content-type")).toBe("application/pdf");
-        expect(new TextDecoder("latin1").decode(new Uint8Array(await pdf.arrayBuffer()).subarray(0, 8))).toContain("%PDF-");
+        const pdfBytes = new Uint8Array(await pdf.arrayBuffer());
+        expect(new TextDecoder("latin1").decode(pdfBytes.subarray(0, 8))).toContain("%PDF-");
+        const pdfDoc = await getDocumentProxy(pdfBytes);
+        const extracted = await extractText(pdfDoc, { mergePages: true });
+        const pdfText = Array.isArray(extracted.text) ? extracted.text.join("\n") : extracted.text;
+        expect(pdfText).toContain("SELECTED IMPACT");
+        expect(pdfText).toContain("CORE CAPABILITIES");
+        expect(pdfText).toContain("PROFESSIONAL EXPERIENCE");
 
         const download = await call(links.download);
         expect(download.status).toBe(200);
