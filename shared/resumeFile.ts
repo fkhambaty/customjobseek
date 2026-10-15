@@ -18,14 +18,18 @@ export interface ResumeArtifactIdentity {
   uploadId: string | null;
 }
 
-const SAFE_ID = /^[A-Za-z0-9-]{1,80}$/;
+// Imported job ids look like `cc:Company (Name)|req-1|Title_Words` and can reach 170 characters.
+// Ids are only ever bound as SQL parameters next to the owner's user id, never used as file paths.
+const MAX_ID_LENGTH = 200;
+const CONTROL_CHAR = /[\u0000-\u001f\u007f]/;
+const DOT_SEGMENT = /(^|\/)\.{1,2}(\/|$)/;
 
 export function isResumeArtifactKind(value: string): value is ResumeArtifactKind {
   return (RESUME_ARTIFACT_KINDS as readonly string[]).includes(value);
 }
 
 export function isSafeResumeId(id: string): boolean {
-  return SAFE_ID.test(id);
+  return id.length > 0 && id.length <= MAX_ID_LENGTH && id.trim() === id && !CONTROL_CHAR.test(id) && !DOT_SEGMENT.test(id);
 }
 
 /** True only when the row belongs to the signed-in account. Anyone else is treated as absent. */
@@ -55,15 +59,10 @@ export function artifactIdentity(kind: ResumeArtifactKind, id: string): ResumeAr
   }
 }
 
-export function parseResumeFileRoute(kindRaw: string, idRaw: string, formatRaw: string, download: string | null): ResumeFileRoute | null {
+/** Router params arrive decoded. Decoding again would corrupt ids that contain `%`. */
+export function parseResumeFileRoute(kindRaw: string, id: string, formatRaw: string, download: string | null): ResumeFileRoute | null {
   if (!isResumeArtifactKind(kindRaw)) return null;
   if (formatRaw !== "pdf" && formatRaw !== "html") return null;
-  let id = idRaw;
-  try {
-    id = decodeURIComponent(idRaw);
-  } catch {
-    return null;
-  }
   if (!isSafeResumeId(id)) return null;
   if (kindRaw === "master" && id !== "master") return null;
   const disposition: ResumeFileDisposition = formatRaw === "pdf" && (download === "1" || download === "true") ? "attachment" : "inline";

@@ -73,12 +73,38 @@ describe("resume file names and routes", () => {
     expect(parseResumeFileRoute("upload", jobId, "pdf", "true")?.disposition).toBe("attachment");
     expect(parseResumeFileRoute("master", "other", "pdf", null)).toBeNull();
     expect(parseResumeFileRoute("job", "../secret", "pdf", null)).toBeNull();
-    expect(parseResumeFileRoute("job", "%2e%2e", "pdf", null)).toBeNull();
+    expect(parseResumeFileRoute("job", "..", "pdf", null)).toBeNull();
+    expect(parseResumeFileRoute("job", "a\nb", "pdf", null)).toBeNull();
+    expect(parseResumeFileRoute("job", "x".repeat(201), "pdf", null)).toBeNull();
     expect(parseResumeFileRoute("note", jobId, "pdf", null)).toBeNull();
     expect(artifactIdentity("job", jobId)).toEqual({ kind: "job", artifactKey: `job:${jobId}`, jobId, uploadId: null });
     expect(artifactIdentity("upload", jobId).artifactKey).toBe(`upload:${jobId}`);
     expect(artifactIdentity("master", "master")).toEqual({ kind: "master", artifactKey: "master", jobId: null, uploadId: null });
     expect(() => artifactIdentity("job", "../x")).toThrow(/Invalid job id/);
+  });
+
+  it("accepts the ids that imported and scanned jobs really use", async () => {
+    const ids = [
+      "cc:Citi|26995386|Citi_Analytics_and_Insights_Lead_Vice_President",
+      "cc:Morgan Stanley|PT-JR041807|MorganStanley_Business_Analyst_Director_Change_Analytics_Strategy_PT-JR041807",
+      "cc:Jobgether (partner company undisclosed)|44fb299f|Jobgether_partner_company_undisclosed_Business_I",
+      "cc:A/B Testing Co|req.1|Lead_Analyst",
+      "cc:100% Remote Ltd|7|Analyst",
+      `cc:${"x".repeat(167)}`,
+    ];
+    const app = new Hono().get("/api/resumes/files/:kind/:id/:format", (c) => {
+      const route = parseResumeFileRoute(c.req.param("kind"), c.req.param("id"), c.req.param("format"), c.req.query("download") ?? null);
+      return route ? c.json(route) : c.text("missing", 404);
+    });
+    for (const id of ids) {
+      expect(artifactIdentity("job", id)).toEqual({ kind: "job", artifactKey: `job:${id}`, jobId: id, uploadId: null });
+      const links = resumeFileLinks("job", id);
+      for (const path of [links.pdf, links.download, links.html]) {
+        const res = await app.request(path);
+        expect(res.status, `${id} via ${path}`).toBe(200);
+        expect(((await res.json()) as { id: string }).id).toBe(id);
+      }
+    }
   });
 
   it("shows an artifact only to its owner", () => {

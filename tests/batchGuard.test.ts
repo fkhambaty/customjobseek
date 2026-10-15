@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { D1Database } from "@cloudflare/workers-types";
-import { getPlatformProxy } from "wrangler";
+import { freshPlatformProxy } from "./localDb";
 import { abortBatchWhen } from "../worker/batchGuard";
 
 describe("atomic batch guard", () => {
@@ -9,7 +9,7 @@ describe("atomic batch guard", () => {
   });
 
   it("rolls back a claimed debit when the guard fires and does not debit twice", async () => {
-    const proxy = await getPlatformProxy();
+    const proxy = await freshPlatformProxy();
     const db = proxy.env.DB as D1Database;
     try {
       await db.prepare("DROP TABLE IF EXISTS _batch_probe").run();

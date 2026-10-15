@@ -1,13 +1,13 @@
 import { describe, expect, it, vi } from "vitest";
 import type { D1Database } from "@cloudflare/workers-types";
-import { getPlatformProxy } from "wrangler";
+import { freshPlatformProxy } from "./localDb";
 import { PIPELINE_CHECKS_PER_SCAN, PIPELINE_RECHECK_MS } from "../shared/engine/liveness";
 import type { Env } from "../worker/env";
 import { processScan } from "../worker/autoScan";
 import { applyPipelineOutcome, checkDuePipeline } from "../worker/pipelineLiveness";
 
 async function withUser(run: (userId: string, db: D1Database, env: Env) => Promise<void>): Promise<void> {
-  const proxy = await getPlatformProxy();
+  const proxy = await freshPlatformProxy();
   const db = proxy.env.DB as D1Database;
   const env = proxy.env as unknown as Env;
   const userId = crypto.randomUUID();

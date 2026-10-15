@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { D1Database } from "@cloudflare/workers-types";
-import { getPlatformProxy } from "wrangler";
+import { freshPlatformProxy } from "./localDb";
 import { storeEvaluatedJob, type EvaluatedJobRow } from "../worker/jobCharge";
 
 function row(userId: string, id: string): EvaluatedJobRow {
@@ -24,7 +24,7 @@ function row(userId: string, id: string): EvaluatedJobRow {
 
 describe("fit check charge", () => {
   it("keeps the credit when the job insert fails, and does not charge twice", async () => {
-    const proxy = await getPlatformProxy();
+    const proxy = await freshPlatformProxy();
     const db = proxy.env.DB as D1Database;
     const userId = crypto.randomUUID();
     const failId = crypto.randomUUID();

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { D1Database } from "@cloudflare/workers-types";
-import { getPlatformProxy } from "wrangler";
+import { freshPlatformProxy } from "./localDb";
 import { commitTailoredResume, type TailoredResumeStore } from "../worker/resumeCharge";
 
 function store(userId: string, jobId: string, charge: boolean, marker: string): TailoredResumeStore {
@@ -20,7 +20,7 @@ function store(userId: string, jobId: string, charge: boolean, marker: string): 
 
 describe("tailored resume charge", () => {
   it("spends once inside the batch, rebuilds for free, and rolls back when the file cannot be stored", async () => {
-    const proxy = await getPlatformProxy();
+    const proxy = await freshPlatformProxy();
     const db = proxy.env.DB as D1Database;
     const userId = crypto.randomUUID();
     const jobId = crypto.randomUUID();

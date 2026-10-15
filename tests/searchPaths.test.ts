@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { D1Database } from "@cloudflare/workers-types";
-import { getPlatformProxy } from "wrangler";
+import { freshPlatformProxy } from "./localDb";
 import { laneFor } from "../shared/engine/classify";
 import { todayQueues } from "../shared/engine/insights";
 import { shouldPersistSearchPaths } from "../shared/onboardingWizard";
@@ -347,7 +347,7 @@ describe("job disposition", () => {
 
 describe("search path storage", () => {
   it("enforces six paths, ownership, and archive, move, and reclassify", async () => {
-    const proxy = await getPlatformProxy();
+    const proxy = await freshPlatformProxy();
     const db = proxy.env.DB as D1Database;
     const userId = crypto.randomUUID();
     const otherId = crypto.randomUUID();
