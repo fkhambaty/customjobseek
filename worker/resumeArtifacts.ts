@@ -1,5 +1,5 @@
-import { htmlToVisibleText, renderPlainTextHtml, renderResumeHtml } from "../shared/resumeHtml";
-import { PdfGlyphError, pdfRefusalBytes, pdfRefusalMessage, renderResumePdf, renderTextPdf } from "../shared/resumePdf";
+import { renderPlainTextHtml, renderResumeHtml } from "../shared/resumeHtml";
+import { PdfGlyphError, pdfRefusalBytes, pdfRefusalMessage, renderHtmlResumePdf, renderResumePdf, renderTextPdf } from "../shared/resumePdf";
 import {
   artifactIdentity,
   isPdf,
@@ -181,7 +181,7 @@ export async function ensureJobResumeFile(env: Env, userId: string, jobId: strin
   if (saved?.ciphertext) {
     const html = await decryptJson<string>(env.DATA_KEY, saved.ciphertext);
     const page = typeof html === "string" ? html : "";
-    const { pdf } = await pdfOrRefusal(() => renderTextPdf("Resume", htmlToVisibleText(page)));
+    const { pdf } = await pdfOrRefusal(() => renderHtmlResumePdf("Resume", page));
     return writeResumeBytes(env, userId, "job", jobId, "Resume.pdf", page, pdf);
   }
   throw new HttpError(404, "No resume has been made for this job yet.");
@@ -202,6 +202,6 @@ export async function ensureUploadResumeFile(env: Env, userId: string, uploadId:
   const label = visible.label || visible.filename || "Resume";
   const filename = safeResumeFilename(visible.filename || label, "pdf");
   const html = visible.format === "html" ? text : renderPlainTextHtml(label, text);
-  const { pdf } = await pdfOrRefusal(() => renderTextPdf(label, visible.format === "html" ? htmlToVisibleText(text) : text));
+  const { pdf } = await pdfOrRefusal(() => (visible.format === "html" ? renderHtmlResumePdf(label, text) : renderTextPdf(label, text)));
   return writeResumeBytes(env, userId, "upload", uploadId, filename, html, pdf);
 }

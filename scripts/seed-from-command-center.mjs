@@ -11,6 +11,7 @@
 
 import { readdirSync, readFileSync } from "node:fs";
 import { webcrypto as crypto } from "node:crypto";
+import { plannedJobs, standardBases, syncResumeFiles } from "./cc-resume-files.mjs";
 import { ROOT, d1, envFile } from "./cloud.mjs";
 
 const CC = process.env.COMMAND_CENTER ?? "/Users/fakhruddinkhambaty/Desktop/FK";
@@ -201,13 +202,7 @@ async function pool(items, size, fn) {
   );
 }
 
-const usedIds = new Set();
-const planned = jobs.map((job) => {
-  let id = `cc:${job.id}`.slice(0, 170);
-  while (usedIds.has(id)) id = `${id}-${usedIds.size}`.slice(0, 180);
-  usedIds.add(id);
-  return { job, id };
-});
+const planned = plannedJobs(jobs, CC);
 
 let packs = 0;
 await pool(planned, 6, async ({ job, id }) => {
@@ -217,7 +212,7 @@ await pool(planned, 6, async ({ job, id }) => {
     flagDate(job.flag, "Applied") ?? (["applied", "rejected", "interview"].includes(status) || job.closed_after_apply ? job.added : null);
   const rejectedOn = status === "rejected" ? flagDate(job.flag, "Rejected") : null;
   const closedOn = status === "closed" ? flagDate(job.flag, "Closed") : null;
-  const folder = `${CC}/${job.folder.replace(/^\.\//, "")}`;
+  const folder = `${CC}/${String(job.folder ?? "").replace(/^\.\//, "")}`;
   const jd = readIf(`${folder}JOB_DESCRIPTION.md`);
   const low = job.salary_low ?? job.band_low;
   const high = job.salary_high ?? job.band_high;
@@ -333,25 +328,23 @@ await pool(planned, 6, async ({ job, id }) => {
   }
 });
 
-const bases = [["Generic resume", `${CC}/Generic_Resume_Platinum/FakhruddinKhambaty_Generic_Resume_Platinum.html`]];
-for (const dir of readdirSync(`${CC}/Resumes_Standard`, { withFileTypes: true })) {
-  if (!dir.isDirectory()) continue;
-  const label = dir.name.replace(/^\d+_/, "").replace(/_/g, " ");
-  bases.push([label, `${CC}/Resumes_Standard/${dir.name}/FakhruddinKhambaty_Resume.html`]);
-}
+const bases = standardBases(CC, userId);
 let baseCount = 0;
-for (const [i, [label, path]] of bases.entries()) {
+for (const { id, label, html: path } of bases) {
   const html = readIf(path);
   if (!html) continue;
   await d1(
     `INSERT INTO resume_uploads (id, user_id, filename, label, format, text_ciphertext) VALUES (?, ?, ?, ?, 'html', ?)
      ON CONFLICT(id) DO UPDATE SET label = excluded.label, text_ciphertext = excluded.text_ciphertext`,
-    [`cc-base-${i}-${userId}`, userId, path.split("/").pop(), label, await encryptJson({ text: html })],
+    [id, userId, path.split("/").pop(), label, await encryptJson({ text: html })],
   );
   baseCount++;
 }
 const n = planned.length;
 console.log(`${packs} job files and ${baseCount} base resumes stored.`);
+
+const printed = await syncResumeFiles({ dataKey: dev.DATA_KEY, userId, planned, bases });
+console.log(`Command Center PDFs stored: ${printed.jobs} jobs, ${printed.standard} standard resumes.`);
 
 if (process.env.SITE_URL) {
   const res = await fetch(`${process.env.SITE_URL}/api/auth/forgot`, {

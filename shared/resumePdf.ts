@@ -2,6 +2,7 @@ import regeneratorRuntime from "regenerator-runtime";
 import fontkit from "@pdf-lib/fontkit/dist/fontkit.es.min.js";
 import { PDFDocument, rgb, type PDFFont, type PDFPage } from "pdf-lib";
 import { isPdf } from "./resumeFile";
+import { htmlToResumeBlocks, type HtmlResumeBlock } from "./resumeHtml";
 import { certificationLine, educationLine, profileParagraphs, roleDates, roleHeading } from "./resumeLayout";
 import type { TailoredResume } from "./types";
 import boldBytes from "./fonts/NotoSansDevanagari-Bold.ttf";
@@ -266,15 +267,8 @@ function drawBullet(pen: Pen, text: string, size: number, x: number, width: numb
   });
 }
 
-function drawRole(
-  pen: Pen,
-  title: string,
-  company: string,
-  dateRaw: string,
-  bullets: string[],
-  environment: string[],
-): void {
-  const leftRaw = roleHeading(company, title);
+/** Bold "Company, Title" on the left with dates right-aligned on the same line when they fit. */
+function drawRoleHeader(pen: Pen, leftRaw: string, dateRaw: string): void {
   const left = clean(leftRaw);
   const date = clean(dateRaw);
   const dateWidth = date ? pen.font.widthOfTextAtSize(date, 8.6) : 0;
@@ -289,6 +283,17 @@ function drawRole(
     drawParagraph(pen, leftRaw, pen.bold, 10.4, INK);
     if (date) drawParagraph(pen, dateRaw, pen.font, 8.6, MUTED);
   }
+}
+
+function drawRole(
+  pen: Pen,
+  title: string,
+  company: string,
+  dateRaw: string,
+  bullets: string[],
+  environment: string[],
+): void {
+  drawRoleHeader(pen, roleHeading(company, title), dateRaw);
   for (const bullet of bullets) drawBullet(pen, bullet, 10, MARGIN_X + 4, CONTENT_WIDTH - 4, 4.2);
   if (environment.length > 0) {
     pen.y -= 1;
@@ -423,6 +428,107 @@ async function layoutResume(resume: TailoredResume): Promise<Pen> {
     if (certifications) drawParagraph(pen, certifications, pen.font, 9.2, INK);
   }
   return pen;
+}
+
+function blockParts(block: HtmlResumeBlock): string[] {
+  switch (block.kind) {
+    case "role":
+      return [block.text, block.right];
+    case "labelled":
+      return [block.label, `${block.label}:`, block.text];
+    case "name":
+      return [block.text, block.text.toUpperCase()];
+    case "heading":
+      return [block.text, block.text.toUpperCase()];
+    case "headline":
+    case "contact":
+    case "sub":
+    case "bullet":
+    case "impact":
+    case "text":
+      return [block.text];
+    default: {
+      const unreachable: never = block;
+      return unreachable;
+    }
+  }
+}
+
+/**
+ * Draws a stored HTML resume with the same type scale as generated resumes:
+ * name, headline and contact over a rule, section headings, role lines with
+ * right-aligned dates, and bullets. Used only when no exact PDF was stored.
+ */
+export async function renderHtmlResumePdf(title: string, html: string): Promise<Uint8Array> {
+  const blocks = htmlToResumeBlocks(html);
+  const fallbackName = title || "Resume";
+  assertCovered([fallbackName, fallbackName.toUpperCase(), "•", ...blocks.flatMap(blockParts)]);
+  const named = blocks.find((block) => block.kind === "name");
+  const pen = await startPdf(named?.text || fallbackName);
+  if (!named) drawName(pen, fallbackName);
+  let ruled = false;
+  const ruleOnce = () => {
+    if (ruled) return;
+    ruled = true;
+    drawRule(pen);
+  };
+  const impactRun: string[] = [];
+  const flushImpact = () => {
+    if (impactRun.length === 0) return;
+    ruleOnce();
+    drawImpactGrid(pen, impactRun.splice(0));
+  };
+  for (const block of blocks) {
+    if (block.kind !== "impact") flushImpact();
+    switch (block.kind) {
+      case "impact":
+        impactRun.push(block.text);
+        break;
+      case "name":
+        if (block === named) drawName(pen, block.text);
+        else drawParagraph(pen, block.text, pen.bold, 12, INK);
+        break;
+      case "headline":
+        drawParagraph(pen, block.text.toUpperCase(), pen.bold, 9.6, TEAL);
+        break;
+      case "contact":
+        drawParagraph(pen, block.text, pen.font, 8.9, MUTED);
+        break;
+      case "heading":
+        ruleOnce();
+        drawHeading(pen, block.text);
+        break;
+      case "role":
+        ruleOnce();
+        pen.y -= 2;
+        drawRoleHeader(pen, block.text, block.right);
+        break;
+      case "sub":
+        drawParagraph(pen, block.text, pen.font, 8.6, MUTED);
+        pen.y -= 1;
+        break;
+      case "bullet":
+        ruleOnce();
+        drawBullet(pen, block.text, 10, MARGIN_X + 4, CONTENT_WIDTH - 4, 4.2);
+        break;
+      case "labelled":
+        ruleOnce();
+        drawLabelled(pen, block.label, block.text, 9.2);
+        pen.y -= 1.5;
+        break;
+      case "text":
+        ruleOnce();
+        drawParagraph(pen, block.text, pen.font, 10, INK);
+        pen.y -= 2;
+        break;
+      default: {
+        const unreachable: never = block;
+        throw new Error(`Unhandled block ${String(unreachable)}`);
+      }
+    }
+  }
+  flushImpact();
+  return finishPdf(pen);
 }
 
 export async function renderTextPdf(title: string, text: string): Promise<Uint8Array> {

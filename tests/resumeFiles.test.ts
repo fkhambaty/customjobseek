@@ -3,9 +3,20 @@ import { extractText, getDocumentProxy } from "unpdf";
 import { Hono } from "hono";
 import { secureHeaders } from "hono/secure-headers";
 import { describe, expect, it } from "vitest";
-import { htmlToVisibleText, renderPlainTextHtml, renderResumeHtml } from "../shared/resumeHtml";
+import { decodeEntities, htmlToResumeBlocks, htmlToVisibleText, renderPlainTextHtml, renderResumeHtml } from "../shared/resumeHtml";
 import { fitResumeToPages } from "../shared/resumeFit";
-import { PDF_A4, PDF_FONT_BYTES, PDF_FONT_LIMIT, PdfGlyphError, pdfRefusalBytes, pdfRefusalMessage, renderResumePdf, renderTextPdf, resumePageCount } from "../shared/resumePdf";
+import {
+  PDF_A4,
+  PDF_FONT_BYTES,
+  PDF_FONT_LIMIT,
+  PdfGlyphError,
+  pdfRefusalBytes,
+  pdfRefusalMessage,
+  renderHtmlResumePdf,
+  renderResumePdf,
+  renderTextPdf,
+  resumePageCount,
+} from "../shared/resumePdf";
 import {
   artifactIdentity,
   contentDisposition,
@@ -185,6 +196,53 @@ describe("resume HTML", () => {
     expect(plain).toContain("&#60;b&#62;");
     expect(htmlToVisibleText("<style>h1{}</style><script>alert(1)</script><p>Hello &amp; welcome</p>")).toContain("Hello & welcome");
     expect(htmlToVisibleText("<script>alert(1)</script><p>Hello</p>")).not.toContain("alert");
+  });
+
+  it("reads a stored CommandCenter HTML resume as structured blocks, never a text dump", async () => {
+    const stored = [
+      "<!doctype html><html><head><meta charset='utf-8'><title>Fakhruddin Khambaty - Resume</title><style>h1{color:red}</style></head><body>",
+      "<header><h1>Fakhruddin Khambaty</h1><div class=\"headline\">Snowflake Data Engineer | SQL, dbt</div>",
+      "<div class=\"contact\">+91 98335 65272&nbsp;&nbsp;|&nbsp;&nbsp;fk@example.com</div></header>",
+      "<h2>Profile</h2><p>Snowflake engineer&nbsp;with <strong>about six years</strong> on the platform &amp; dbt.</p>",
+      "<h2>Selected Impact</h2><ul class=\"impact\"><li>Built <strong>10</strong> models</li><li>Cut cost</li></ul>",
+      "<h2>Core Capabilities</h2><p class=\"cap\"><strong>Warehousing:</strong> Snowflake, dbt</p>",
+      "<h2>Experience</h2><div class=\"role\"><div class=\"rh\"><span class=\"rc\">OpenGov Inc., Senior Engineer</span><span class=\"rd\">Aug 2025 to Present</span></div>",
+      "<div class=\"sub\">Functional Lead &middot; Pune</div><ul><li>Own <strong>dbt</strong> layers&nbsp;on Snowflake.</li></ul>",
+      "<div class=\"env\"><strong>Environment:</strong> Snowflake, dbt</div></div>",
+      "<h2>Education</h2><p class=\"edu\">B.Sc. Computer Science&nbsp;&nbsp;|&nbsp;&nbsp;University of Mumbai</p>",
+      "</body></html>",
+    ].join("");
+    const blocks = htmlToResumeBlocks(stored);
+    expect(blocks).toEqual([
+      { kind: "name", text: "Fakhruddin Khambaty" },
+      { kind: "headline", text: "Snowflake Data Engineer | SQL, dbt" },
+      { kind: "contact", text: "+91 98335 65272 | fk@example.com" },
+      { kind: "heading", text: "Profile" },
+      { kind: "text", text: "Snowflake engineer with about six years on the platform & dbt." },
+      { kind: "heading", text: "Selected Impact" },
+      { kind: "impact", text: "Built 10 models" },
+      { kind: "impact", text: "Cut cost" },
+      { kind: "heading", text: "Core Capabilities" },
+      { kind: "labelled", label: "Warehousing", text: "Snowflake, dbt" },
+      { kind: "heading", text: "Experience" },
+      { kind: "role", text: "OpenGov Inc., Senior Engineer", right: "Aug 2025 to Present" },
+      { kind: "sub", text: "Functional Lead · Pune" },
+      { kind: "bullet", text: "Own dbt layers on Snowflake." },
+      { kind: "labelled", label: "Environment", text: "Snowflake, dbt" },
+      { kind: "heading", text: "Education" },
+      { kind: "text", text: "B.Sc. Computer Science | University of Mumbai" },
+    ]);
+    const visible = htmlToVisibleText(stored);
+    expect(visible).not.toMatch(/&nbsp;|&amp;|&middot;|<|Resume<\/title>|color:red/);
+    expect(visible.startsWith("Fakhruddin Khambaty\n")).toBe(true);
+    expect(decodeEntities("a&nbsp;b &#x2013; &#8212; &rsquo;")).toBe("a b – — ’");
+
+    const pdf = await renderHtmlResumePdf("Resume", stored);
+    const text = (await extractText(await getDocumentProxy(pdf), { mergePages: true })).text;
+    expect(text).toContain("FAKHRUDDIN KHAMBATY");
+    expect(text).toContain("SELECTED IMPACT");
+    expect(text).toContain("Aug 2025 to Present");
+    expect(text).not.toMatch(/&nbsp;|RESUME|Fakhruddin Khambaty - Resume/);
   });
 
   it("renders the CommandCenter section order and role environment", () => {

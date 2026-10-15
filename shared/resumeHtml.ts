@@ -189,25 +189,207 @@ export function renderPlainTextHtml(title: string, text: string): string {
   return documentShell(title, body, "pre.resume-text{margin:0;font:inherit;white-space:pre-wrap;}");
 }
 
-/** Visible words from a stored HTML resume, used when an older file has no PDF yet. */
+const NAMED_ENTITIES: Record<string, string> = {
+  nbsp: " ",
+  ensp: " ",
+  emsp: " ",
+  thinsp: " ",
+  amp: "&",
+  lt: "<",
+  gt: ">",
+  quot: '"',
+  apos: "'",
+  middot: "·",
+  bull: "•",
+  ndash: "–",
+  mdash: "—",
+  hellip: "…",
+  lsquo: "‘",
+  rsquo: "’",
+  ldquo: "“",
+  rdquo: "”",
+  copy: "©",
+  reg: "®",
+  trade: "™",
+  rupee: "₹",
+};
+
+export function decodeEntities(text: string): string {
+  return text.replace(/&(#x[0-9a-f]+|#\d+|[a-z]+);/gi, (match, body: string) => {
+    if (body[0] === "#") {
+      const hex = body[1] === "x" || body[1] === "X";
+      const code = Number.parseInt(body.slice(hex ? 2 : 1), hex ? 16 : 10);
+      if (!Number.isFinite(code) || code <= 0 || code > 0x10ffff) return "";
+      return code === 0xa0 ? " " : String.fromCodePoint(code);
+    }
+    return NAMED_ENTITIES[body.toLowerCase()] ?? match;
+  });
+}
+
+export type HtmlResumeBlock =
+  | { kind: "name" | "headline" | "contact" | "heading" | "sub" | "bullet" | "impact" | "text"; text: string }
+  | { kind: "role"; text: string; right: string }
+  | { kind: "labelled"; label: string; text: string };
+
+const BLOCK_TAGS = new Set(["article", "header", "section", "div", "p", "h1", "h2", "h3", "h4", "h5", "h6", "li", "ul", "ol", "tr", "td", "th", "table", "pre", "blockquote", "footer", "main"]);
+const ROLE_CLASSES = ["rh", "job-header"];
+const ROLE_RIGHT_CLASSES = ["rd", "job-date"];
+const SUB_CLASSES = ["sub", "subrole"];
+const LABELLED_CLASSES = ["cap", "env", "environment"];
+
+interface OpenBlock {
+  tag: string;
+  classes: string[];
+  text: string;
+  right: string;
+  strong: string;
+  impact: boolean;
+}
+
+function squash(text: string): string {
+  return text.replace(/\s+/g, " ").trim();
+}
+
+function classesOf(attributes: string): string[] {
+  const match = /\bclass\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/i.exec(attributes);
+  return (match?.[1] ?? match?.[2] ?? match?.[3] ?? "").split(/\s+/).filter(Boolean);
+}
+
+function hasClass(classes: readonly string[], wanted: readonly string[]): boolean {
+  return classes.some((name) => wanted.includes(name));
+}
+
+function toBlocks(open: OpenBlock): HtmlResumeBlock[] {
+  if (open.tag === "pre") {
+    return decodeEntities(open.text)
+      .split(/\r?\n/)
+      .map((line) => line.replace(/[ \t]+/g, " ").trim())
+      .filter(Boolean)
+      .map((text) => ({ kind: "text", text }));
+  }
+  const text = squash(decodeEntities(open.text));
+  const right = squash(decodeEntities(open.right));
+  if (!text && !right) return [];
+  if (hasClass(open.classes, ROLE_CLASSES)) return [{ kind: "role", text, right }];
+  const merged = right ? `${text} ${right}`.trim() : text;
+  if (open.tag === "h1") return [{ kind: "name", text: merged }];
+  if (/^h[2-6]$/.test(open.tag)) return [{ kind: "heading", text: merged }];
+  if (open.classes.includes("headline")) return [{ kind: "headline", text: merged }];
+  if (open.classes.includes("contact")) return [{ kind: "contact", text: merged }];
+  if (hasClass(open.classes, SUB_CLASSES)) return [{ kind: "sub", text: merged }];
+  if (open.tag === "li") return [{ kind: open.impact ? "impact" : "bullet", text: merged }];
+  const label = squash(decodeEntities(open.strong)).replace(/:$/, "");
+  if (hasClass(open.classes, LABELLED_CLASSES) && label && merged.startsWith(label)) {
+    return [{ kind: "labelled", label, text: merged.slice(label.length).replace(/^\s*:\s*/, "") }];
+  }
+  return [{ kind: "text", text: merged }];
+}
+
+/**
+ * Reads a stored HTML resume into ordered blocks (name, headings, roles,
+ * bullets) so a missing PDF can be redrawn with structure instead of as
+ * a wall of text. Head, script, style and comments are never shown.
+ */
+export function htmlToResumeBlocks(html: string): HtmlResumeBlock[] {
+  const source = html
+    .replace(/<!--[\s\S]*?-->/g, " ")
+    .replace(/<[!?][^>]*>/g, " ")
+    .replace(/<head\b[\s\S]*?<\/head>/gi, " ")
+    .replace(/<(script|style|title|template|noscript)\b[^>]*>[\s\S]*?<\/\1>/gi, " ");
+  const blocks: HtmlResumeBlock[] = [];
+  const root: OpenBlock = { tag: "root", classes: [], text: "", right: "", strong: "", impact: false };
+  const stack: OpenBlock[] = [root];
+  let inRight = 0;
+  let inStrong = 0;
+  const flush = (open: OpenBlock) => {
+    blocks.push(...toBlocks(open));
+    open.text = "";
+    open.right = "";
+    open.strong = "";
+  };
+  const pattern = /<(\/?)([a-zA-Z][a-zA-Z0-9]*)([^>]*)>|([^<]+)|(<)/g;
+  for (let match = pattern.exec(source); match; match = pattern.exec(source)) {
+    const current = stack[stack.length - 1] ?? root;
+    const words = match[4] ?? match[5];
+    if (words !== undefined) {
+      if (inRight > 0) current.right += words;
+      else current.text += words;
+      if (inStrong > 0) current.strong += words;
+      continue;
+    }
+    const closing = match[1] === "/";
+    const tag = (match[2] ?? "").toLowerCase();
+    const classes = classesOf(match[3] ?? "");
+    if (tag === "br") {
+      if (current.tag === "pre") current.text += "\n";
+      else flush(current);
+      continue;
+    }
+    if (tag === "span" && !closing && hasClass(classes, ROLE_RIGHT_CLASSES)) {
+      inRight++;
+      continue;
+    }
+    if (tag === "span" && closing && inRight > 0) {
+      inRight--;
+      continue;
+    }
+    if (tag === "strong" || tag === "b") {
+      if (!closing && !current.text.trim() && !current.strong) inStrong++;
+      else if (closing && inStrong > 0) inStrong--;
+      continue;
+    }
+    if (!BLOCK_TAGS.has(tag)) {
+      if (!closing) current.text += " ";
+      continue;
+    }
+    if (!closing) {
+      flush(current);
+      const impact = (tag === "li" && stack.some((open) => open.impact)) || (tag !== "li" && classes.includes("impact"));
+      stack.push({ tag, classes, text: "", right: "", strong: "", impact });
+      inRight = 0;
+      inStrong = 0;
+      continue;
+    }
+    const index = stack.map((open) => open.tag).lastIndexOf(tag);
+    if (index <= 0) continue;
+    while (stack.length > index) {
+      const open = stack.pop();
+      if (open) flush(open);
+    }
+    inRight = 0;
+    inStrong = 0;
+  }
+  while (stack.length > 0) {
+    const open = stack.pop();
+    if (open) flush(open);
+  }
+  return blocks;
+}
+
+/** Visible words from a stored HTML resume, one block per line. */
 export function htmlToVisibleText(html: string): string {
-  return html
-    .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, " ")
-    .replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, " ")
-    .replace(/<br\s*\/?>/gi, "\n")
-    .replace(/<\/(p|div|h1|h2|li|tr|section|header)>/gi, "\n")
-    .replace(/<[^>]+>/g, " ")
-    .replace(/&#(\d+);/g, (_, digits: string) => {
-      const code = Number(digits);
-      return Number.isFinite(code) ? String.fromCodePoint(code) : "";
+  return htmlToResumeBlocks(html)
+    .map((block) => {
+      switch (block.kind) {
+        case "role":
+          return block.right ? `${block.text} | ${block.right}` : block.text;
+        case "labelled":
+          return `${block.label}: ${block.text}`;
+        case "bullet":
+        case "impact":
+          return `• ${block.text}`;
+        case "name":
+        case "headline":
+        case "contact":
+        case "heading":
+        case "sub":
+        case "text":
+          return block.text;
+        default: {
+          const unreachable: never = block;
+          return unreachable;
+        }
+      }
     })
-    .replace(/&amp;/g, "&")
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">")
-    .replace(/&quot;/g, '"')
-    .replace(/&#39;|&apos;/g, "'")
-    .replace(/[ \t]+\n/g, "\n")
-    .replace(/[ \t]{2,}/g, " ")
-    .replace(/\n{3,}/g, "\n\n")
-    .trim();
+    .join("\n");
 }
