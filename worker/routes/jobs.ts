@@ -21,6 +21,7 @@ import {
   type TailoredResume,
 } from "../../shared/types";
 import { resumeFileHeaders } from "../../shared/resumeFile";
+import { fitResumeToPages } from "../../shared/resumeFit";
 import { profileReadiness } from "../../shared/validate";
 import { decryptJson, encryptJson } from "../crypto";
 import { commitTailoredResume } from "../resumeCharge";
@@ -464,7 +465,9 @@ export const jobs = new Hono<AppEnv>()
       { title: job.title, company: job.company, location: job.location, salaryText: job.salary_text, description: job.description },
       profile,
     );
-    const resume = tailorResume(profile, fit, { id: job.id, title: job.title, company: job.company });
+    const resume = await fitResumeToPages(
+      tailorResume(profile, fit, { id: job.id, title: job.title, company: job.company, description: job.description }),
+    );
     // The PDF is built before the batch. If it fails, the credit below is never touched.
     const resumeFile = await tailoredArtifactValues(c.env.DATA_KEY, resume);
     if (resumeFile.refusal) {

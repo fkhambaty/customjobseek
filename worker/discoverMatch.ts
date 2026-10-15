@@ -14,6 +14,7 @@ import {
 import { occupationSearchWords, resolveRole } from "../shared/engine/occupations";
 import { tailorResume } from "../shared/engine/tailor";
 import { artifactIdentity } from "../shared/resumeFile";
+import { fitResumeToPages } from "../shared/resumeFit";
 import { emptyDetails, type Contact, type Profile } from "../shared/types";
 import { encryptJson } from "./crypto";
 import { INSERT_RESUME_ARTIFACT, tailoredArtifactValues } from "./resumeArtifacts";
@@ -202,7 +203,9 @@ export async function packStatements(
 ): Promise<{ id: string; statements: D1PreparedStatement[] }> {
   const { input, fit } = checked;
   const id = gate?.jobId ?? crypto.randomUUID();
-  const resume = tailorResume(profile, fit, { id, title: input.title, company: input.company });
+  const resume = await fitResumeToPages(
+    tailorResume(profile, fit, { id, title: input.title, company: input.company, description: input.description }),
+  );
   const application = buildApplication(profile, fit, resume);
   const jobFile = buildJobFile(input, fit);
   const contacts = contactsFrom(input.description);

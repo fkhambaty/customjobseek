@@ -121,6 +121,8 @@ export interface TailoredResume {
   headline: string;
   contact: string[];
   summary: string;
+  /** Profile section paragraphs: the candidate's summary, then a career line built from their own roles. */
+  profileParagraphs?: string[];
   coreStrengths: string[];
   selectedImpact?: string[];
   capabilityGroups?: ResumeCapabilityGroup[];

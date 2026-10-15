@@ -3,6 +3,7 @@ import { parseLiveStatus } from "../../shared/agency";
 import { tailorResume } from "../../shared/engine/tailor";
 import { renderPlainTextHtml } from "../../shared/resumeHtml";
 import { parseResumeFileRoute, resumeFileHeaders, toPublicResumeUpload } from "../../shared/resumeFile";
+import { fitResumeToPages } from "../../shared/resumeFit";
 import type { FitResult, TailoredResume } from "../../shared/types";
 import { profileReadiness } from "../../shared/validate";
 import { decryptJson } from "../crypto";
@@ -29,7 +30,7 @@ async function prepareMaster(c: Context<AppEnv>): Promise<{ resume: TailoredResu
   const profile = await loadProfile(c.env, user.id, user.email);
   const missing = profileReadiness(profile);
   if (missing.length) throw new HttpError(400, `Finish your profile first: add ${missing.join(", ")}.`);
-  const resume = tailorResume(profile, NO_JOB, { id: "master", title: "", company: "" });
+  const resume = await fitResumeToPages(tailorResume(profile, NO_JOB, { id: "master", title: "", company: "" }));
   const stamp = await c.env.DB.prepare("SELECT updated_at FROM profiles WHERE user_id = ?")
     .bind(user.id)
     .first<{ updated_at: string }>();

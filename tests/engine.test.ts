@@ -5,7 +5,7 @@ import { classifyTerms, evaluateFit, parseSalary, parseYearsRequired, titleAlign
 import { profileFromResumeText } from "../shared/engine/importResume";
 import { resumeTextInReadingOrder } from "../shared/engine/resumeLayout";
 import { SKILL_CATALOGUE, mentions, normalise, termForName } from "../shared/engine/text";
-import { tailorResume } from "../shared/engine/tailor";
+import { MIN_BULLETS_PER_ROLE, MIN_IMPACT, dropWeakestLine, roleShape, tailorResume } from "../shared/engine/tailor";
 import { emptyProfile, type Profile } from "../shared/types";
 import { sanitiseProfile } from "../shared/validate";
 import { parseJobHtml } from "../worker/jobFetch";
@@ -178,8 +178,7 @@ describe("tailorResume", () => {
     const source = new Set(p.experience.flatMap((e) => e.bullets.map((b) => b.text)));
     for (const role of r.roles) for (const b of role.bullets) expect(source.has(b.text)).toBe(true);
 
-    expect(r.roles[0]!.bullets.map((b) => b.id)).toEqual(["b2", "b3"]);
-    expect(r.roles[0]!.omittedBulletCount).toBe(1);
+    expect(r.roles[0]!.bullets.map((b) => b.id).slice(0, 2)).toEqual(["b2", "b3"]);
     expect(r.coreStrengths).toEqual(expect.arrayContaining(["SQL", "dbt", "Snowflake"]));
     expect(r.provenance).toEqual({ untraceableLines: [], neverClaimHits: [] });
   });
@@ -212,7 +211,7 @@ describe("tailorResume", () => {
       matchedOther: ["S3"],
     };
     const r = tailorResume(p, fit, { id: "j1", title: "Senior Data Engineer", company: "Siemens" });
-    expect(r.headline).toBe("DATA ENGINEER | SNOWFLAKE, DBT, SQL, APACHE AIRFLOW & WAREHOUSE PLATFORMS");
+    expect(r.headline).toBe("DATA ENGINEER | SNOWFLAKE, DBT, SQL, AIRFLOW & WAREHOUSE PLATFORMS");
     expect(r.coreStrengths).toEqual([
       "Snowflake",
       "dbt",
@@ -228,7 +227,109 @@ describe("tailorResume", () => {
       "Data Architecture & Modelling",
       "Governance & Regulated Delivery",
     ]));
-    expect(r.selectedImpact).toContain("Built 120 dbt models on Snowflake with tests that fail the build on bad numbers");
+    expect(r.selectedImpact).toContain("Built 120 dbt models on Snowflake with tests that fail the build on bad numbers.");
+  });
+});
+
+describe("CommandCenter role shaping", () => {
+  const leadProfile = (): Profile => {
+    const p = profile({
+      skills: [
+        ...profile().skills,
+        { name: "Tableau", level: "working" },
+        { name: "Hiring and Team Building", level: "expert" },
+        { name: "Semantic and Governed Metric Layers", level: "expert" },
+        { name: "dbt-Test Data-Quality Frameworks", level: "expert" },
+        { name: "Executive Reporting Layers", level: "working" },
+        { name: "Executive Reporting", level: "working" },
+        { name: "Traceability and Lineage", level: "working" },
+      ],
+    });
+    p.experience[0]!.bullets.push(
+      { id: "lead1", text: "Built and managed a team of six engineers — hiring, coaching and delivery standards" },
+      { id: "lead2", text: "Own the operating model for the BI function: intake, prioritisation and code review" },
+    );
+    return p;
+  };
+  const build = (title: string, description = "") => {
+    const p = leadProfile();
+    return tailorResume(p, evaluateFit(job({ title, description: description || JD }), p), { id: "j", title, company: "Co", description: description || JD });
+  };
+
+  it("reads track and seniority from the title the way CommandCenter does", () => {
+    expect(roleShape("Senior Data Engineer")).toEqual({ track: "data_eng", seniority: "ic" });
+    expect(roleShape("Data Engineering Manager")).toEqual({ track: "data_eng", seniority: "lead" });
+    expect(roleShape("Analytics & BI Manager")).toEqual({ track: "bi", seniority: "lead" });
+    expect(roleShape("Technical Product Manager")).toEqual({ track: "product", seniority: "lead" });
+    expect(roleShape("Sr. Manager, Data Cloud Applications", "Write the PRD, own the product vision and the MVP backlog")).toEqual({ track: "product", seniority: "lead" });
+  });
+
+  it("gives every role family its own headline, using only tools the candidate holds", () => {
+    const headlines = [
+      build("Senior Data Engineer").headline,
+      build("Senior Analytics Engineer").headline,
+      build("Data Architect").headline,
+      build("Data Engineering Manager").headline,
+      build("Analytics & BI Manager").headline,
+      build("Technical Product Manager").headline,
+    ];
+    expect(new Set(headlines).size).toBe(headlines.length);
+    expect(headlines[0]).toBe("DATA ENGINEER | SNOWFLAKE, DBT, SQL, AIRFLOW & WAREHOUSE PLATFORMS");
+    expect(headlines[3]).toBe("DATA ENGINEERING LEAD | DBT, AIRFLOW & WAREHOUSE PLATFORMS | TEAM BUILDING & DELIVERY STANDARDS");
+    expect(headlines[4]).toBe("ANALYTICS & BI MANAGER | PEOPLE LEADERSHIP, SEMANTIC LAYERS & KPI GOVERNANCE | TABLEAU, DBT");
+    for (const h of headlines) expect(h).not.toMatch(/POWER BI|DATABRICKS/);
+  });
+
+  it("keeps the candidate's own headline when the title has no known family", () => {
+    expect(build("Registered Nurse", "Ward nursing role").headline).toBe("Analytics Engineer");
+  });
+
+  it("leads a lead seat with leadership evidence and an IC seat with hands-on evidence", () => {
+    const lead = build("Data Engineering Manager");
+    const ic = build("Senior Data Engineer");
+    expect(["lead1", "lead2"]).toContain(lead.roles[0]!.bullets[0]!.id);
+    expect(["lead1", "lead2"]).not.toContain(ic.roles[0]!.bullets[0]!.id);
+    expect(lead.capabilityGroups?.[0]?.name).toBe("Technical Leadership");
+    const icGroups = (ic.capabilityGroups ?? []).map((g) => g.name).filter((n) => n !== "Additional Capabilities");
+    expect(icGroups.at(-1)).toBe("Technical Leadership");
+  });
+
+  it("groups capabilities the way CommandCenter does", () => {
+    const groups = Object.fromEntries((build("Senior Data Engineer").capabilityGroups ?? []).map((g) => [g.name, g.items]));
+    expect(groups["Data Architecture & Modelling"]).toContain("Semantic and Governed Metric Layers");
+    expect(groups["Orchestration & Quality"]).toContain("dbt-Test Data-Quality Frameworks");
+    expect(groups["Reporting & Enablement"]).toContain("Executive Reporting Layers");
+    expect(groups["Technical Leadership"]).toEqual(expect.arrayContaining(["Executive Reporting", "Hiring and Team Building"]));
+    expect(groups["Governance & Regulated Delivery"]).toContain("Traceability and Lineage");
+  });
+
+  it("uses resume punctuation, a career line, and at most three relevant certifications", () => {
+    const p = leadProfile();
+    p.certifications = [
+      { id: "c1", name: "Snowflake Data Engineering", issuer: "Snowflake", year: "2026" },
+      { id: "c2", name: "Apache Airflow", issuer: "Astronomer", year: "2025" },
+      { id: "c3", name: "Creating Declarative Data Pipelines with Dynamic Tables", issuer: "Snowflake", year: "2026" },
+      { id: "c4", name: "Ivalua P2P Certification", issuer: "Ivalua", year: "2019" },
+      { id: "c5", name: "Databricks Lakehouse Fundamentals", issuer: "Databricks", year: "2024" },
+    ];
+    const r = tailorResume(p, evaluateFit(job(), p), { id: "j", title: "Senior Data Engineer", company: "Co", description: `${JD} Snowflake and Airflow pipelines` });
+    expect(r.certifications.length).toBeLessThanOrEqual(3);
+    expect(r.certifications.map((c) => c.name)).not.toContain("Databricks Lakehouse Fundamentals");
+    expect(r.certifications.map((c) => c.name)).not.toContain("Ivalua P2P Certification");
+    expect(r.roles.flatMap((role) => role.bullets).find((b) => b.id === "lead1")?.text ?? "").not.toContain("—");
+    expect(r.profileParagraphs?.[1]).toMatch(/^Most recently /);
+    expect(r.profileParagraphs?.[1]).not.toContain("..");
+    expect(r.provenance).toEqual({ untraceableLines: [], neverClaimHits: [] });
+  });
+
+  it("trims the oldest role first, never below the floors", () => {
+    const r = build("Senior Data Engineer");
+    const before = r.roles.map((role) => role.bullets.length);
+    const impactBefore = r.selectedImpact?.length ?? 0;
+    expect(dropWeakestLine(r) || before.every((n) => n <= MIN_BULLETS_PER_ROLE)).toBe(true);
+    while (dropWeakestLine(r)) { /* drain */ }
+    for (const [i, role] of r.roles.entries()) expect(role.bullets.length).toBe(Math.min(before[i]!, MIN_BULLETS_PER_ROLE));
+    expect(r.selectedImpact?.length ?? 0).toBe(Math.min(impactBefore, MIN_IMPACT));
   });
 });
 

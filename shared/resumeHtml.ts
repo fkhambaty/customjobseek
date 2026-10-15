@@ -1,5 +1,6 @@
 import type { TailoredResume } from "./types";
 import { escapeHtml } from "./resumeFile";
+import { certificationLine, educationLine, profileParagraphs, roleDates, roleHeading } from "./resumeLayout";
 
 /** Mirrors src/components/resume.css so a stored HTML file matches the on-screen resume. */
 export const RESUME_CSS = `.resume {
@@ -101,10 +102,6 @@ body { margin: 0; background: #f4f1ec; }
   .resume { box-shadow: none; margin: 0; padding: 0; width: auto; min-height: auto; }
 }`;
 
-function dates(start: string, end: string): string {
-  return [start, end].filter(Boolean).join(" – ");
-}
-
 function documentShell(title: string, body: string, extraCss = ""): string {
   return [
     "<!doctype html>",
@@ -129,8 +126,9 @@ export function renderResumeHtml(resume: TailoredResume): string {
   if (resume.contact.length > 0) chunks.push(`<div class="contact">${escapeHtml(resume.contact.join("  |  "))}</div>`);
   chunks.push("</header>");
 
-  if (resume.summary) {
-    chunks.push("<section>", "<h2>Profile</h2>", `<p>${escapeHtml(resume.summary)}</p>`, "</section>");
+  const paragraphs = profileParagraphs(resume);
+  if (paragraphs.length > 0) {
+    chunks.push("<section>", "<h2>Profile</h2>", ...paragraphs.map((p) => `<p>${escapeHtml(p)}</p>`), "</section>");
   }
   if ((resume.selectedImpact?.length ?? 0) > 0) {
     chunks.push("<section>", "<h2>Selected Impact</h2>", '<ul class="impact">');
@@ -152,11 +150,15 @@ export function renderResumeHtml(resume: TailoredResume): string {
   if (resume.roles.length > 0) {
     chunks.push("<section>", "<h2>Professional Experience</h2>");
     for (const role of resume.roles) {
-      chunks.push('<div class="job">', '<div class="job-header">', '<span class="job-title">', escapeHtml(role.title));
-      if (role.company) chunks.push(`<span class="job-company">, ${escapeHtml(role.company)}</span>`);
-      chunks.push("</span>", `<span class="job-date">${escapeHtml(dates(role.start, role.end))}</span>`, "</div>");
-      if (role.location) chunks.push(`<div class="subrole">${escapeHtml(role.location)}</div>`);
-      chunks.push("<ul>");
+      const heading = roleHeading(role.company, role.title);
+      chunks.push(
+        '<div class="job">',
+        '<div class="job-header">',
+        `<span class="job-title">${escapeHtml(heading)}</span>`,
+        `<span class="job-date">${escapeHtml(roleDates(role.start, role.end, role.location))}</span>`,
+        "</div>",
+        "<ul>",
+      );
       for (const bullet of role.bullets) chunks.push(`<li>${escapeHtml(bullet.text)}</li>`);
       chunks.push("</ul>");
       if ((role.environment?.length ?? 0) > 0) {
@@ -171,17 +173,10 @@ export function renderResumeHtml(resume: TailoredResume): string {
   }
   if (resume.education.length > 0 || resume.certifications.length > 0) {
     chunks.push("<section>", "<h2>Education &amp; Certifications</h2>");
-    for (const item of resume.education) {
-      chunks.push(
-        `<p class="education"><strong>${escapeHtml(item.degree)}</strong>${item.institution ? `, ${escapeHtml(item.institution)}` : ""}${item.year ? ` (${escapeHtml(item.year)})` : ""}</p>`,
-      );
-    }
-    if (resume.certifications.length > 0) {
-      const certifications = resume.certifications.map((item) =>
-        `${item.name}${item.issuer ? `, ${item.issuer}` : ""}${item.year ? ` (${item.year})` : ""}`,
-      ).join("  |  ");
-      chunks.push(`<p class="education">${escapeHtml(certifications)}</p>`);
-    }
+    const education = educationLine(resume);
+    if (education) chunks.push(`<p class="education">${escapeHtml(education)}</p>`);
+    const certifications = certificationLine(resume);
+    if (certifications) chunks.push(`<p class="education">${escapeHtml(certifications)}</p>`);
     chunks.push("</section>");
   }
   chunks.push("</article>");

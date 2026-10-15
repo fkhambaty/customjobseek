@@ -1,11 +1,11 @@
+import { certificationLine, educationLine, profileParagraphs, roleDates, roleHeading } from "../../shared/resumeLayout";
 import type { TailoredResume } from "../../shared/types";
 import "./resume.css";
 
-function dates(start: string, end: string): string {
-  return [start, end].filter(Boolean).join(" – ");
-}
-
 export function Resume({ resume }: { resume: TailoredResume }) {
+  const paragraphs = profileParagraphs(resume);
+  const education = educationLine(resume);
+  const certifications = certificationLine(resume);
   return (
     <article className="resume">
       <header>
@@ -14,10 +14,10 @@ export function Resume({ resume }: { resume: TailoredResume }) {
         {resume.contact.length > 0 && <div className="contact">{resume.contact.join("  |  ")}</div>}
       </header>
 
-      {resume.summary && (
+      {paragraphs.length > 0 && (
         <section>
           <h2>Profile</h2>
-          <p>{resume.summary}</p>
+          {paragraphs.map((p) => <p key={p}>{p}</p>)}
         </section>
       )}
 
@@ -59,13 +59,9 @@ export function Resume({ resume }: { resume: TailoredResume }) {
           {resume.roles.map((r) => (
             <div className="job" key={r.experienceId}>
               <div className="job-header">
-                <span className="job-title">
-                  {r.title}
-                  {r.company && <span className="job-company">, {r.company}</span>}
-                </span>
-                <span className="job-date">{dates(r.start, r.end)}</span>
+                <span className="job-title">{roleHeading(r.company, r.title)}</span>
+                <span className="job-date">{roleDates(r.start, r.end, r.location)}</span>
               </div>
-              {r.location && <div className="subrole">{r.location}</div>}
               <ul>
                 {r.bullets.map((b) => (
                   <li key={b.id}>{b.text}</li>
@@ -86,23 +82,11 @@ export function Resume({ resume }: { resume: TailoredResume }) {
         </section>
       )}
 
-      {(resume.education.length > 0 || resume.certifications.length > 0) && (
+      {(education || certifications) && (
         <section>
           <h2>Education &amp; Certifications</h2>
-          {resume.education.map((e) => (
-            <p className="education" key={e.id}>
-              <strong>{e.degree}</strong>
-              {e.institution && `, ${e.institution}`}
-              {e.year && ` (${e.year})`}
-            </p>
-          ))}
-          {resume.certifications.length > 0 && (
-            <p className="education">
-              {resume.certifications.map((c) =>
-                `${c.name}${c.issuer ? `, ${c.issuer}` : ""}${c.year ? ` (${c.year})` : ""}`,
-              ).join("  |  ")}
-            </p>
-          )}
+          {education && <p className="education">{education}</p>}
+          {certifications && <p className="education">{certifications}</p>}
         </section>
       )}
     </article>

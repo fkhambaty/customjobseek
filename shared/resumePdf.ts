@@ -2,6 +2,7 @@ import regeneratorRuntime from "regenerator-runtime";
 import fontkit from "@pdf-lib/fontkit/dist/fontkit.es.min.js";
 import { PDFDocument, rgb, type PDFFont, type PDFPage } from "pdf-lib";
 import { isPdf } from "./resumeFile";
+import { certificationLine, educationLine, profileParagraphs, roleDates, roleHeading } from "./resumeLayout";
 import type { TailoredResume } from "./types";
 import boldBytes from "./fonts/NotoSansDevanagari-Bold.ttf";
 import regularBytes from "./fonts/NotoSansDevanagari-Regular.ttf";
@@ -29,10 +30,12 @@ const MARGIN_X = 36.85;
 const MARGIN_TOP = 34.02;
 const MARGIN_BOTTOM = 34.02;
 const CONTENT_WIDTH = PDF_A4.width - MARGIN_X * 2;
+const LINE_HEIGHT = 1.42;
 
 const TEAL = rgb(11 / 255, 79 / 255, 138 / 255);
 const INK = rgb(15 / 255, 27 / 255, 40 / 255);
 const MUTED = rgb(74 / 255, 90 / 255, 107 / 255);
+const RULE = rgb(201 / 255, 214 / 255, 227 / 255);
 
 /** Format characters with no visible glyph. They are omitted from the PDF, not replaced. */
 const IGNORABLE = new Set<number>([0x00ad, 0x200b, 0x200c, 0x200d, 0x200e, 0x200f, 0x2060, 0xfeff]);
@@ -166,15 +169,36 @@ function wrap(font: PDFFont, text: string, size: number, width: number): string[
 }
 
 function drawLines(pen: Pen, lines: string[], font: PDFFont, size: number, color: ReturnType<typeof rgb>, x: number): void {
+  const lineHeight = size * LINE_HEIGHT;
   for (const line of lines) {
-    room(pen, size + 3);
+    room(pen, lineHeight);
     pen.page.drawText(line, { x, y: pen.y - size, size, font, color });
-    pen.y -= size + 3;
+    pen.y -= lineHeight;
   }
 }
 
 function drawParagraph(pen: Pen, text: string, font: PDFFont, size: number, color: ReturnType<typeof rgb>, x = MARGIN_X, width = CONTENT_WIDTH): void {
   drawLines(pen, wrap(font, text, size, width), font, size, color, x);
+}
+
+/** "Label: items" with the label in bold, wrapped as one paragraph. */
+function drawLabelled(pen: Pen, label: string, text: string, size: number): void {
+  const head = clean(`${label}:`);
+  const headWidth = pen.bold.widthOfTextAtSize(head, size);
+  const slack = headWidth - pen.font.widthOfTextAtSize(head, size);
+  const lines = wrap(pen.font, `${head} ${text}`, size, CONTENT_WIDTH - Math.max(0, slack));
+  const lineHeight = size * LINE_HEIGHT;
+  lines.forEach((line, index) => {
+    room(pen, lineHeight);
+    const y = pen.y - size;
+    if (index === 0 && line.startsWith(head)) {
+      pen.page.drawText(head, { x: MARGIN_X, y, size, font: pen.bold, color: INK });
+      pen.page.drawText(line.slice(head.length), { x: MARGIN_X + headWidth, y, size, font: pen.font, color: INK });
+    } else {
+      pen.page.drawText(line, { x: MARGIN_X, y, size, font: pen.font, color: INK });
+    }
+    pen.y -= lineHeight;
+  });
 }
 
 function drawRule(pen: Pen): void {
@@ -183,7 +207,7 @@ function drawRule(pen: Pen): void {
   pen.page.drawLine({
     start: { x: MARGIN_X, y: pen.y },
     end: { x: PDF_A4.width - MARGIN_X, y: pen.y },
-    thickness: 1.2,
+    thickness: 2,
     color: TEAL,
   });
   pen.y -= 8;
@@ -192,17 +216,17 @@ function drawRule(pen: Pen): void {
 function drawHeading(pen: Pen, title: string): void {
   if (pen.y - 28 < MARGIN_BOTTOM) addPage(pen);
   pen.y -= 8;
-  const size = 11;
+  const size = 9.8;
   const shown = clean(title.toUpperCase());
   pen.page.drawText(shown, { x: MARGIN_X, y: pen.y - size, size, font: pen.bold, color: TEAL });
-  pen.y -= size + 2;
+  pen.y -= size + 2.5;
   pen.page.drawLine({
     start: { x: MARGIN_X, y: pen.y },
     end: { x: PDF_A4.width - MARGIN_X, y: pen.y },
-    thickness: 1,
-    color: TEAL,
+    thickness: 0.8,
+    color: RULE,
   });
-  pen.y -= 6;
+  pen.y -= 5;
 }
 
 async function startPdf(title: string): Promise<Pen> {
@@ -232,59 +256,67 @@ function drawName(pen: Pen, name: string): void {
   pen.y -= size + 4;
 }
 
+function drawBullet(pen: Pen, text: string, size: number, x: number, width: number, lineGap: number): void {
+  const lines = wrap(pen.font, text, size, width - 10);
+  lines.forEach((line, index) => {
+    room(pen, size + lineGap);
+    if (index === 0) pen.page.drawText("•", { x, y: pen.y - size, size, font: pen.font, color: INK });
+    pen.page.drawText(line, { x: x + 10, y: pen.y - size, size, font: pen.font, color: INK });
+    pen.y -= size + lineGap;
+  });
+}
+
 function drawRole(
   pen: Pen,
   title: string,
   company: string,
-  start: string,
-  end: string,
-  location: string,
+  dateRaw: string,
   bullets: string[],
   environment: string[],
 ): void {
-  const leftRaw = company ? `${company}, ${title}` : title;
-  const dateRaw = [start, end].filter(Boolean).join(" – ");
+  const leftRaw = roleHeading(company, title);
   const left = clean(leftRaw);
   const date = clean(dateRaw);
-  const dateWidth = date ? pen.font.widthOfTextAtSize(date, 9) : 0;
-  const sharesLine = Boolean(date) && pen.bold.widthOfTextAtSize(left, 10) + dateWidth + 12 <= CONTENT_WIDTH;
+  const dateWidth = date ? pen.font.widthOfTextAtSize(date, 8.6) : 0;
+  const sharesLine = Boolean(date) && pen.bold.widthOfTextAtSize(left, 10.4) + dateWidth + 12 <= CONTENT_WIDTH;
+  room(pen, 30);
   if (sharesLine && date) {
-    room(pen, 14);
-    const baseline = pen.y - 10;
-    pen.page.drawText(left, { x: MARGIN_X, y: baseline, size: 10, font: pen.bold, color: INK });
-    pen.page.drawText(date, { x: PDF_A4.width - MARGIN_X - dateWidth, y: baseline, size: 9, font: pen.font, color: MUTED });
+    const baseline = pen.y - 10.4;
+    pen.page.drawText(left, { x: MARGIN_X, y: baseline, size: 10.4, font: pen.bold, color: INK });
+    pen.page.drawText(date, { x: PDF_A4.width - MARGIN_X - dateWidth, y: baseline, size: 8.6, font: pen.font, color: MUTED });
     pen.y = baseline - 4;
   } else {
-    drawParagraph(pen, leftRaw, pen.bold, 10, INK);
-    if (dateRaw) {
-      const shown = clean(dateRaw);
-      const width = pen.font.widthOfTextAtSize(shown, 9);
-      room(pen, 12);
-      pen.page.drawText(shown, {
-        x: PDF_A4.width - MARGIN_X - width,
-        y: pen.y - 9,
-        size: 9,
-        font: pen.font,
-        color: MUTED,
-      });
-      pen.y -= 12;
-    }
+    drawParagraph(pen, leftRaw, pen.bold, 10.4, INK);
+    if (date) drawParagraph(pen, dateRaw, pen.font, 8.6, MUTED);
   }
-  if (location) drawParagraph(pen, location, pen.font, 9, MUTED);
-  for (const bullet of bullets) {
-    const lines = wrap(pen.font, bullet, 10, CONTENT_WIDTH - 14);
-    lines.forEach((line, index) => {
-      room(pen, 13);
-      const prefix = index === 0 ? "• " : "  ";
-      pen.page.drawText(`${prefix}${line}`, { x: MARGIN_X + 2, y: pen.y - 10, size: 10, font: pen.font, color: INK });
-      pen.y -= 13;
-    });
-  }
+  for (const bullet of bullets) drawBullet(pen, bullet, 10, MARGIN_X + 4, CONTENT_WIDTH - 4, 4.2);
   if (environment.length > 0) {
-    pen.y -= 2;
-    drawParagraph(pen, `Environment: ${environment.join(", ")}`, pen.font, 8.4, MUTED);
+    pen.y -= 1;
+    drawParagraph(pen, `Environment: ${environment.join(", ")}`, pen.font, 8.2, MUTED);
   }
-  pen.y -= 6;
+  pen.y -= 5;
+}
+
+function drawImpactGrid(pen: Pen, lines: string[]): void {
+  const gap = 16;
+  const columnWidth = (CONTENT_WIDTH - 8 - gap) / 2;
+  const size = 9.2;
+  const lineHeight = size * 1.36;
+  for (let i = 0; i < lines.length; i += 2) {
+    const pair = [lines[i], lines[i + 1]].filter((line): line is string => Boolean(line));
+    const wrapped = pair.map((line) => wrap(pen.font, line, size, columnWidth - 10));
+    const rows = Math.max(...wrapped.map((w) => w.length));
+    room(pen, rows * lineHeight + 3);
+    wrapped.forEach((column, index) => {
+      const x = MARGIN_X + 4 + index * (columnWidth + gap);
+      column.forEach((text, row) => {
+        const y = pen.y - size - row * lineHeight;
+        if (row === 0) pen.page.drawText("•", { x, y, size, font: pen.font, color: INK });
+        pen.page.drawText(text, { x: x + 10, y, size, font: pen.font, color: INK });
+      });
+    });
+    pen.y -= rows * lineHeight + 3;
+  }
 }
 
 function resumeParts(resume: TailoredResume): string[] {
@@ -294,6 +326,9 @@ function resumeParts(resume: TailoredResume): string[] {
     resume.headline,
     resume.contact.join("  |  "),
     resume.summary,
+    ...(resume.profileParagraphs ?? []),
+    educationLine(resume),
+    certificationLine(resume),
     resume.coreStrengths.join("  •  "),
     ...(resume.selectedImpact ?? []),
     ...(resume.capabilityGroups ?? []).flatMap((group) => [group.name, ...group.items]),
@@ -311,8 +346,8 @@ function resumeParts(resume: TailoredResume): string[] {
     "•",
   ];
   for (const role of resume.roles) {
-    const date = [role.start, role.end].filter(Boolean).join(" – ");
-    parts.push(role.title, role.company, role.location, role.start, role.end, date, role.company ? `${role.title}, ${role.company}` : role.title);
+    const date = roleDates(role.start, role.end, role.location);
+    parts.push(role.title, role.company, role.location, role.start, role.end, date, role.company ? `${role.company}, ${role.title}` : role.title);
     for (const bullet of role.bullets) parts.push(bullet.text);
     parts.push(...(role.environment ?? []));
   }
@@ -322,38 +357,38 @@ function resumeParts(resume: TailoredResume): string[] {
 }
 
 export async function renderResumePdf(resume: TailoredResume): Promise<Uint8Array> {
+  return finishPdf(await layoutResume(resume));
+}
+
+/** Pages the PDF would have, without serialising it. Used to fit the resume to two pages. */
+export async function resumePageCount(resume: TailoredResume): Promise<number> {
+  return (await layoutResume(resume)).doc.getPageCount();
+}
+
+async function layoutResume(resume: TailoredResume): Promise<Pen> {
   assertCovered(resumeParts(resume));
   const pen = await startPdf(resume.fullName || "Resume");
   drawName(pen, resume.fullName || "Resume");
-  if (resume.headline) drawParagraph(pen, resume.headline, pen.bold, 10, TEAL);
-  if (resume.contact.length > 0) drawParagraph(pen, resume.contact.join("  |  "), pen.font, 9, INK);
+  if (resume.headline) drawParagraph(pen, resume.headline, pen.bold, 9.6, TEAL);
+  if (resume.contact.length > 0) drawParagraph(pen, resume.contact.join("  |  "), pen.font, 8.9, MUTED);
   drawRule(pen);
-  if (resume.summary) {
+  const paragraphs = profileParagraphs(resume);
+  if (paragraphs.length > 0) {
     drawHeading(pen, "Profile");
-    drawParagraph(pen, resume.summary, pen.font, 10, INK);
+    for (const paragraph of paragraphs) {
+      drawParagraph(pen, paragraph, pen.font, 10, INK);
+      pen.y -= 2;
+    }
   }
   if ((resume.selectedImpact?.length ?? 0) > 0) {
     drawHeading(pen, "Selected Impact");
-    for (const line of resume.selectedImpact ?? []) {
-      const lines = wrap(pen.font, line, 9.2, CONTENT_WIDTH - 14);
-      lines.forEach((wrapped, index) => {
-        room(pen, 12);
-        pen.page.drawText(`${index === 0 ? "• " : "  "}${wrapped}`, {
-          x: MARGIN_X + 2,
-          y: pen.y - 9.2,
-          size: 9.2,
-          font: pen.font,
-          color: INK,
-        });
-        pen.y -= 12;
-      });
-    }
+    drawImpactGrid(pen, resume.selectedImpact ?? []);
   }
   if ((resume.capabilityGroups?.length ?? 0) > 0) {
     drawHeading(pen, "Core Capabilities");
     for (const group of resume.capabilityGroups ?? []) {
-      drawParagraph(pen, `${group.name}: ${group.items.join(", ")}`, pen.font, 9.2, INK);
-      pen.y -= 2;
+      drawLabelled(pen, group.name, group.items.join(", "), 9.2);
+      pen.y -= 1.5;
     }
   } else if (resume.coreStrengths.length > 0) {
     drawHeading(pen, "Core Strengths");
@@ -370,9 +405,7 @@ export async function renderResumePdf(resume: TailoredResume): Promise<Uint8Arra
         pen,
         role.title,
         role.company,
-        role.start,
-        role.end,
-        role.location,
+        roleDates(role.start, role.end, role.location),
         role.bullets.map((bullet) => bullet.text),
         role.environment ?? [],
       );
@@ -384,19 +417,12 @@ export async function renderResumePdf(resume: TailoredResume): Promise<Uint8Arra
   }
   if (resume.education.length > 0 || resume.certifications.length > 0) {
     drawHeading(pen, "Education & Certifications");
-    for (const item of resume.education) {
-      const line = [item.degree, item.institution].filter(Boolean).join(", ");
-      drawParagraph(pen, item.year ? `${line} (${item.year})` : line, pen.font, 9.2, INK);
-    }
-    const certifications = resume.certifications.map((item) => {
-      const line = [item.name, item.issuer].filter(Boolean).join(", ");
-      return item.year ? `${line} (${item.year})` : line;
-    });
-    if (certifications.length > 0) {
-      drawParagraph(pen, certifications.join("  |  "), pen.font, 9.2, INK);
-    }
+    const education = educationLine(resume);
+    if (education) drawParagraph(pen, education, pen.font, 9.2, INK);
+    const certifications = certificationLine(resume);
+    if (certifications) drawParagraph(pen, certifications, pen.font, 9.2, INK);
   }
-  return finishPdf(pen);
+  return pen;
 }
 
 export async function renderTextPdf(title: string, text: string): Promise<Uint8Array> {

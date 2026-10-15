@@ -4,7 +4,8 @@ import { Hono } from "hono";
 import { secureHeaders } from "hono/secure-headers";
 import { describe, expect, it } from "vitest";
 import { htmlToVisibleText, renderPlainTextHtml, renderResumeHtml } from "../shared/resumeHtml";
-import { PDF_A4, PDF_FONT_BYTES, PDF_FONT_LIMIT, PdfGlyphError, pdfRefusalBytes, pdfRefusalMessage, renderResumePdf, renderTextPdf } from "../shared/resumePdf";
+import { fitResumeToPages } from "../shared/resumeFit";
+import { PDF_A4, PDF_FONT_BYTES, PDF_FONT_LIMIT, PdfGlyphError, pdfRefusalBytes, pdfRefusalMessage, renderResumePdf, renderTextPdf, resumePageCount } from "../shared/resumePdf";
 import {
   artifactIdentity,
   contentDisposition,
@@ -280,5 +281,34 @@ describe("resume PDF", () => {
     expect(JSON.stringify({ ok: true })).not.toContain(cipher);
     const back = await decryptBytes(secret, cipher);
     expect(back).toEqual(pdf);
+  });
+
+  it("fits a long resume to two pages by trimming lines, oldest role first", async () => {
+    const text = "Built warehouse models, reconciled finance numbers, and wrote tests that stop a bad build before the weekly review.";
+    const long = resume({
+      selectedImpact: Array.from({ length: 6 }, (_, i) => `Cut reporting time by ${i + 10}% across the finance estate.`),
+      roles: Array.from({ length: 6 }, (_, role) => ({
+        experienceId: `e${role}`,
+        company: `Company ${role}`,
+        title: "Senior Analytics Engineer",
+        location: "Pune",
+        start: "Jan 2018",
+        end: "Dec 2024",
+        omittedBulletCount: 0,
+        bullets: Array.from({ length: 9 }, (_, bullet) => ({ id: `b${role}-${bullet}`, text })),
+      })),
+    });
+    expect(await resumePageCount(long)).toBeGreaterThan(2);
+    const fitted = await fitResumeToPages(long);
+    expect(await resumePageCount(fitted)).toBeLessThanOrEqual(2);
+    expect(fitted.roles.every((role) => role.bullets.length >= 2)).toBe(true);
+    expect(fitted.roles[0]!.bullets.length).toBeGreaterThanOrEqual(fitted.roles[5]!.bullets.length);
+    expect(fitted.roles[5]!.bullets).toHaveLength(2);
+    expect(long.roles[5]!.bullets).toHaveLength(9);
+    const pdf = await renderResumePdf(fitted);
+    expect((await PDFDocument.load(pdf)).getPageCount()).toBeLessThanOrEqual(2);
+    const html = renderResumeHtml(fitted);
+    expect(html).toContain("Company 0, Senior Analytics Engineer");
+    expect(html).toContain("Jan 2018 to Dec 2024 | Pune");
   });
 });
