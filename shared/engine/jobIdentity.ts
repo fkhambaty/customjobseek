@@ -1,12 +1,16 @@
 import { canonicalJobUrl, normalizedTitle } from "./sources";
 
-/** Stable key so the same opening is not saved twice for one person. */
+/**
+ * Stable key so the same opening is not saved twice for one person.
+ * Same employer + same title wins over URL: ATS boards often republish one
+ * role under a new greenhouse/lever id, which must not appear twice.
+ */
 export function jobIdentityKey(input: { title: string; company: string; url: string }): string {
-  const url = canonicalJobUrl(input.url);
-  if (url) return `url:${url}`;
   const company = normalizedTitle(input.company);
   const title = normalizedTitle(input.title);
   if (company && title) return `role:${company}:${title}`;
+  const url = canonicalJobUrl(input.url);
+  if (url) return `url:${url}`;
   return "";
 }
 

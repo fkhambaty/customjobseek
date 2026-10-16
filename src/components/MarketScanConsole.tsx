@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
+import { collapseDuplicateJobs } from "../../shared/engine/jobIdentity";
 import { pipelineCountLabel } from "../../shared/engine/liveness";
 import { scanStageLabel, type ScanStage } from "../../shared/engine/scanRules";
 import { api, type MarketScan, type MarketStats, type ScanSchedule } from "../api";
@@ -95,6 +96,8 @@ export function MarketScanConsole({ compact = false }: { compact?: boolean }) {
     && !active;
   const countryName = quota?.countryName ?? "";
   const coverage = marketCoverage(stats, countryName);
+  const prepared = scan?.prepared?.length ? collapseDuplicateJobs(scan.prepared) : [];
+  const handpickedCount = prepared.length || scan?.handpickedCount || 0;
 
   return (
     <section className={`market-scan ${compact ? "market-scan-compact" : ""}`}>
@@ -105,7 +108,7 @@ export function MarketScanConsole({ compact = false }: { compact?: boolean }) {
             {active
               ? scanStageLabel(scan.stage, countryName)
               : complete
-                ? `${scan.handpickedCount} handpicked job${scan.handpickedCount === 1 ? "" : "s"}`
+                ? `${handpickedCount} handpicked job${handpickedCount === 1 ? "" : "s"}`
                 : "Find the work worth applying for"}
           </h2>
           <p>{coverage}</p>
@@ -165,9 +168,9 @@ export function MarketScanConsole({ compact = false }: { compact?: boolean }) {
 
       {complete && (
         <div className="market-complete">
-          {scan.prepared.length > 0 ? (
+          {prepared.length > 0 ? (
             <ul className="lines scan-ready">
-              {scan.prepared.map((job) => (
+              {prepared.map((job) => (
                 <li className="line" key={job.id}>
                   <span className={`score score-${job.fit.score >= 70 ? "hi" : job.fit.score >= 50 ? "mid" : "lo"}`}>{job.fit.score}</span>
                   <button className="line-main" onClick={() => open(job.id)}>
@@ -196,7 +199,7 @@ export function MarketScanConsole({ compact = false }: { compact?: boolean }) {
               <Link to="/discover">See the full market</Link>
             </span>
           </div>
-          {scan.prepared.length > 0 && !canStart && (
+          {prepared.length > 0 && !canStart && (
             <UpgradePrompt evidence blocked="scans" />
           )}
         </div>

@@ -11,7 +11,7 @@ import {
   scanProgress,
   type ScanStage,
 } from "../shared/engine/scanRules";
-import { jobIdentityKey } from "../shared/engine/jobIdentity";
+import { collapseDuplicateJobs, jobIdentityKey } from "../shared/engine/jobIdentity";
 import { jobPayPlace, scanCandidateDecision, scanOpeningAcceptance, withoutPlaceAndPayBlockers } from "../shared/engine/searchPaths";
 import type { JobRecord } from "../shared/types";
 import { profileReadiness } from "../shared/validate";
@@ -414,11 +414,12 @@ export async function marketScanView(env: Env, userId: string, scanId?: string):
     "SELECT id FROM market_scans WHERE status IN ('queued','processing') AND queued_at < ?",
   ).bind(row.queued_at).all<{ id: string }>();
   const ids = JSON.parse(row.result_job_ids || "[]") as string[];
-  const prepared: JobRecord[] = [];
+  const preparedRaw: JobRecord[] = [];
   for (const id of ids) {
     const job = await env.DB.prepare(`${JOB_SELECT} WHERE j.id = ? AND j.user_id = ?`).bind(id, userId).first<JobRow>();
-    if (job) prepared.push(toJob(job));
+    if (job) preparedRaw.push(toJob(job));
   }
+  const prepared = collapseDuplicateJobs(preparedRaw);
   const rawStarted = row.started_at ?? row.queued_at;
   const started = new Date(rawStarted.includes("T") ? rawStarted : `${rawStarted.replace(" ", "T")}Z`).getTime();
   return {
@@ -434,7 +435,7 @@ export async function marketScanView(env: Env, userId: string, scanId?: string):
     queueAhead: ahead.length,
     candidateCount: row.candidate_count,
     checkedCount: row.checked_count,
-    handpickedCount: row.handpicked_count,
+    handpickedCount: row.status === "complete" ? prepared.length : row.handpicked_count,
     charged: Boolean(row.charged),
     progress: scanProgress(row.stage, row.checked_count, row.candidate_count),
     error: row.error,

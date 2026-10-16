@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { Link } from "react-router-dom";
 import { packageAudit } from "../../shared/agency";
 import { computeAnalytics, todayQueues } from "../../shared/engine/insights";
+import { collapseDuplicateJobs } from "../../shared/engine/jobIdentity";
 import type { JobRecord, Profile } from "../../shared/types";
 import { profileReadiness } from "../../shared/validate";
 import { api } from "../api";
@@ -110,7 +111,7 @@ export function TodayPage() {
     api.currentMarketScan()
       .then(({ scan }) => {
         if (scan?.status === "complete" && scan.prepared?.length) {
-          setHandpickedIds(new Set(scan.prepared.map((job) => job.id)));
+          setHandpickedIds(new Set(collapseDuplicateJobs(scan.prepared).map((job) => job.id)));
         } else {
           setHandpickedIds(new Set());
         }
