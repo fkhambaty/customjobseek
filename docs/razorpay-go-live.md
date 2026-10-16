@@ -5,9 +5,8 @@
 > webhook is active at
 > `https://customjobseek.fkhambaty.workers.dev/api/billing/razorpay/webhook`
 > for `payment.captured`, `payment.failed`, `order.paid`, and `refund.processed`.
-> `wrangler.jsonc` has `PAYMENTS_ENABLED: "true"` and `LEGAL_NAME` set.
-> `LEGAL_ADDRESS` is still unset — add the real postal address when available.
-> Never commit key or webhook secrets.
+> `wrangler.jsonc` has `PAYMENTS_ENABLED: "true"`, `LEGAL_NAME`, and
+> `LEGAL_ADDRESS` set. Never commit key or webhook secrets.
 
 This is the canonical activation guide for a future engineer or AI working from
 another computer. Do not improvise a different payment flow.

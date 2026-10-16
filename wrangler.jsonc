@@ -20,6 +20,7 @@
     "MAIL_FROM": "CustomJobSeek <no-reply@funberrykids.in>",
     "OWNER_EMAIL": "fktiindia@gmail.com",
     "LEGAL_NAME": "Fakhruddin Khambaty",
+    "LEGAL_ADDRESS": "Undri, Pune, 411060",
     "PAYMENTS_ENABLED": "true"
   },
   "triggers": {
