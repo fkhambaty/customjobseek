@@ -228,6 +228,8 @@ export interface NewEvent {
   channel?: Channel | "";
   person?: string;
   note?: string;
+  /** Which draft was sent or replied to. */
+  template?: string;
   on?: string;
 }
 

@@ -86,7 +86,9 @@ async function loadEvents(env: Env, userId: string, jobId: string): Promise<JobE
     .all<EventRow>();
   return Promise.all(
     results.map(async (e) => {
-      const body = e.ciphertext ? await decryptJson<{ person: string; note: string }>(env.DATA_KEY, e.ciphertext) : { person: "", note: "" };
+      const body = e.ciphertext
+        ? await decryptJson<{ person: string; note: string; template?: string }>(env.DATA_KEY, e.ciphertext)
+        : { person: "", note: "", template: "" };
       return {
         id: e.id,
         jobId: e.job_id,
@@ -96,6 +98,7 @@ async function loadEvents(env: Env, userId: string, jobId: string): Promise<JobE
         at: e.at,
         person: body.person,
         note: body.note,
+        template: typeof body.template === "string" ? body.template : "",
       };
     }),
   );
@@ -361,12 +364,14 @@ export const jobs = new Hono<AppEnv>()
     const at = on && on !== new Date().toISOString().slice(0, 10) ? `${on}T12:00:00.000Z` : new Date().toISOString();
     const person = s(body.person, 120);
     const note = s(body.note, 2000);
-    const payload = await encryptJson(c.env.DATA_KEY, { person, note });
+    const template = s(body.template, 40);
+    const payload = await encryptJson(c.env.DATA_KEY, { person, note, template });
     const eventId = crypto.randomUUID();
     await c.env.DB.prepare("INSERT INTO job_events (id, job_id, user_id, kind, channel, at, ciphertext) VALUES (?, ?, ?, ?, ?, ?, ?)")
       .bind(eventId, job.id, user.id, kind, channel, at, payload)
       .run();
     if (kind === "message" || kind === "reply") {
+      const threadNote = template ? `${template}${note ? ` · ${note}` : ""}` : note;
       await logCompanyMessage(c.env, {
         userId: user.id,
         company: job.company,
@@ -376,7 +381,7 @@ export const jobs = new Hono<AppEnv>()
         channel,
         at,
         person,
-        note,
+        note: threadNote,
       }).catch((err: unknown) => console.error("company thread log failed", err));
     }
     return c.json(await full(c.env, user.id, job.id), 201);

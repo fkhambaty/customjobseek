@@ -5,6 +5,12 @@ import { postingClosedCopy } from "../../shared/engine/liveness";
 import { PAY_NOT_PUBLISHED, showPayNotPublished } from "../../shared/engine/searchPaths";
 import { formatSalary } from "../../shared/engine/fit";
 import type { MessageSet } from "../../shared/engine/outreach";
+import {
+  contactOutreachState,
+  isMessageTemplate,
+  templateLabel,
+  type MessageTemplate,
+} from "../../shared/engine/outreachIntel";
 import { resumeHtmlPath } from "../../shared/resumeFile";
 import { CHANNELS, type Channel, type Contact, type JobFull, type JobStatus } from "../../shared/types";
 import { api, ApiError, type Pack } from "../api";
@@ -397,13 +403,12 @@ function PeopleTab({ job, onChange }: { job: JobFull; onChange: (j: JobFull) => 
   const [messages, setMessages] = useState<MessageSet[] | null>(null);
   const [channel, setChannel] = useState<Channel>("linkedin");
   const [error, setError] = useState("");
+  const [busyKey, setBusyKey] = useState("");
+  const date = today();
 
   useEffect(() => {
     api.messages(job.id).then(setMessages, () => setMessages([]));
   }, [job.id, job.details.contacts.length]);
-
-  const sentTo = new Set(job.events.filter((e) => e.kind === "message").map((e) => e.person.toLowerCase()));
-  const replied = new Set(job.events.filter((e) => e.kind === "reply").map((e) => e.person.toLowerCase()));
 
   async function saveContacts() {
     if (!editing) return;
@@ -416,8 +421,18 @@ function PeopleTab({ job, onChange }: { job: JobFull; onChange: (j: JobFull) => 
     }
   }
 
-  async function log(kind: "message" | "reply", person: string) {
-    onChange(await api.logEvent(job.id, { kind, person, channel }));
+  async function logTouch(kind: "message" | "reply", person: string, template: MessageTemplate, label: string) {
+    const key = `${kind}:${person}:${template}`;
+    setBusyKey(key);
+    setError("");
+    try {
+      const note = kind === "message" ? `Sent ${label}` : `Reply to ${label}`;
+      onChange(await api.logEvent(job.id, { kind, person, channel, template, note }));
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusyKey("");
+    }
   }
 
   return (
@@ -451,15 +466,18 @@ function PeopleTab({ job, onChange }: { job: JobFull; onChange: (j: JobFull) => 
         ) : job.details.contacts.length ? (
           <ul className="people">
             {job.details.contacts.map((c) => {
-              const key = (c.name || c.email).toLowerCase();
+              const state = contactOutreachState(job.events, c.name || c.email, date);
               return (
                 <li key={c.id}>
                   <div>
                     <strong>{c.name || c.email}</strong>
                     {c.role && <span className="muted"> · {c.role}</span>}
-                    {sentTo.has(key) && <span className="tag tag-quiet">messaged</span>}
-                    {replied.has(key) && <span className="tag tag-ok">replied</span>}
+                    {state.status === "replied" && <span className="tag tag-ok">replied</span>}
+                    {state.status === "waiting" && <span className="tag tag-quiet">waiting</span>}
+                    {state.status === "in_flight" && <span className="tag tag-quiet">in progress</span>}
+                    {state.status === "not_started" && <span className="tag tag-quiet">not messaged</span>}
                   </div>
+                  <p className="muted small people-status">{state.statusNote}</p>
                   <div className="people-links">
                     {c.url && <a href={c.url} target="_blank" rel="noreferrer">Profile ↗</a>}
                     {c.email && <a href={`mailto:${c.email}`}>{c.email}</a>}
@@ -479,44 +497,93 @@ function PeopleTab({ job, onChange }: { job: JobFull; onChange: (j: JobFull) => 
         title="Messages"
         aside={
           <label className="jv-channel">
-            Sent via{" "}
+            Sending via{" "}
             <select value={channel} onChange={(e) => setChannel(e.target.value as Channel)}>
               {CHANNELS.map((c) => <option key={c} value={c}>{channelLabel(c)}</option>)}
             </select>
           </label>
         }
       >
-        <p className="muted small">Written from your own profile lines. Send after you apply, then log it here so follow-ups and reply rates stay honest.</p>
+        <p className="muted small">
+          Copy one draft, send it yourself, then mark <strong>that</strong> draft as sent.
+          When they answer, mark which draft they replied to. This keeps follow-ups honest across many applications.
+        </p>
+        {error && <div className="alert alert-error">{error}</div>}
         {messages === null && <p className="muted">Writing…</p>}
-        {messages?.map((m) => (
-          <div className="msg" key={m.contactId}>
-            <div className="msg-head">
-              <strong>{m.to || "Hiring team"}</strong>
-              <span className="jv-toolbar">
-                <button className="btn btn-ghost btn-xs" onClick={() => log("message", m.to)}>Log as sent</button>
-                <button className="btn btn-quiet btn-xs" onClick={() => log("reply", m.to)}>They replied</button>
-              </span>
+        {messages?.map((m) => {
+          const state = contactOutreachState(job.events, m.to, date);
+          const drafts: { template: MessageTemplate; label: string; text: string; hint?: string }[] = [
+            { template: "connection", label: `Connection note · ${m.connectionNote.length}/200`, text: m.connectionNote, hint: "Best first touch on LinkedIn" },
+            { template: "first", label: "First message", text: m.firstMessage, hint: "Use after connect, or as a direct note" },
+            { template: "email", label: `Email · ${m.emailSubject}`, text: m.emailBody, hint: "When you have their email" },
+            { template: "nudge", label: "Nudge, once, after 7 quiet days", text: m.nudge, hint: "Only after a week of silence" },
+          ];
+          return (
+            <div className="msg" key={m.contactId}>
+              <div className="msg-head">
+                <div>
+                  <strong>{m.to || "Hiring team"}</strong>
+                  <p className="muted small msg-status">{state.statusNote}</p>
+                </div>
+                {state.status !== "replied" && state.lastSent && (
+                  <button
+                    className="btn btn-primary btn-xs"
+                    disabled={busyKey.startsWith("reply:")}
+                    onClick={() => logTouch("reply", m.to, state.lastSent!.template, templateLabel(state.lastSent!.template))}
+                  >
+                    They replied
+                  </button>
+                )}
+                {state.status === "replied" && <span className="tag tag-ok">Conversation open</span>}
+              </div>
+              {drafts.map((draft) => {
+                const sent = state.sent[draft.template];
+                const replied = state.replies.find((r) => r.template === draft.template);
+                const isNext = state.nextTemplate === draft.template;
+                const sendBusy = busyKey === `message:${m.to}:${draft.template}`;
+                const replyBusy = busyKey === `reply:${m.to}:${draft.template}`;
+                return (
+                  <div className={`msg-block ${isNext ? "msg-next" : ""} ${sent ? "msg-sent" : ""}`} key={draft.template}>
+                    <div className="msg-label">
+                      <span>
+                        {draft.label}
+                        {isNext && <span className="msg-next-pill">Send this next</span>}
+                        {sent && <span className="msg-sent-pill">Sent {ago(sent.at)}{sent.channel ? ` · ${channelLabel(sent.channel)}` : ""}</span>}
+                        {replied && <span className="msg-reply-pill">Reply logged {ago(replied.at)}</span>}
+                      </span>
+                      <Copy text={draft.text} />
+                    </div>
+                    {draft.hint && <p className="muted small msg-hint">{draft.hint}</p>}
+                    <p>{draft.text}</p>
+                    <div className="msg-actions">
+                      {!sent ? (
+                        <button
+                          className={isNext ? "btn btn-primary btn-xs" : "btn btn-ghost btn-xs"}
+                          disabled={Boolean(busyKey)}
+                          onClick={() => logTouch("message", m.to, draft.template, templateLabel(draft.template))}
+                        >
+                          {sendBusy ? "Saving…" : "Mark this as sent"}
+                        </button>
+                      ) : !replied && state.status !== "replied" ? (
+                        <button
+                          className="btn btn-ghost btn-xs"
+                          disabled={Boolean(busyKey)}
+                          onClick={() => logTouch("reply", m.to, draft.template, templateLabel(draft.template))}
+                        >
+                          {replyBusy ? "Saving…" : "They replied to this"}
+                        </button>
+                      ) : (
+                        <span className="muted small">Logged</span>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
             </div>
-            <MsgBlock label={`Connection note · ${m.connectionNote.length}/200`} text={m.connectionNote} />
-            <MsgBlock label="First message" text={m.firstMessage} />
-            <MsgBlock label="Nudge, once, after 7 quiet days" text={m.nudge} />
-            <MsgBlock label={`Email · ${m.emailSubject}`} text={m.emailBody} />
-          </div>
-        ))}
+          );
+        })}
       </Section>
     </>
-  );
-}
-
-function MsgBlock({ label, text }: { label: string; text: string }) {
-  return (
-    <div className="msg-block">
-      <div className="msg-label">
-        <span>{label}</span>
-        <Copy text={text} />
-      </div>
-      <p>{text}</p>
-    </div>
   );
 }
 
@@ -539,8 +606,19 @@ function HistoryTab({ job, pack, onChange }: { job: JobFull; pack: Pack | null; 
             <time>{shortDate(e.at)}</time>
             <div>
               {e.kind === "status" && <>Marked <strong>{e.status ? statusLabel(e.status) : ""}</strong></>}
-              {e.kind === "message" && <>Messaged <strong>{e.person || "someone"}</strong>{e.channel && ` on ${channelLabel(e.channel)}`}</>}
-              {e.kind === "reply" && <>Reply from <strong>{e.person || "the employer"}</strong></>}
+              {e.kind === "message" && (
+                <>
+                  Sent {isMessageTemplate(e.template) ? <strong>{templateLabel(e.template)}</strong> : "a message"}
+                  {" "}to <strong>{e.person || "someone"}</strong>
+                  {e.channel && ` on ${channelLabel(e.channel)}`}
+                </>
+              )}
+              {e.kind === "reply" && (
+                <>
+                  Reply from <strong>{e.person || "the employer"}</strong>
+                  {isMessageTemplate(e.template) ? <> to your <strong>{templateLabel(e.template).toLowerCase()}</strong></> : null}
+                </>
+              )}
               {e.kind === "note" && null}
               {e.note && <p className={e.kind === "note" ? "" : "muted"}>{e.note}</p>}
             </div>

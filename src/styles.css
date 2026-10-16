@@ -547,12 +547,25 @@ th[aria-sort] .sort-arrow { color: var(--ink); opacity: 1; }
 .people-links { display: flex; gap: 14px; font-size: 13px; }
 .contact-row { display: grid; grid-template-columns: 1.1fr 1fr 1.2fr 1.1fr auto; gap: 6px; margin-bottom: 6px; }
 .contact-row input { padding: 6px 8px; font-size: 13px; }
-.msg { border: 1px solid var(--line); border-radius: 8px; padding: 14px 16px 6px; margin: 12px 0; background: var(--paper); }
-.msg-head { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; }
+.msg { border: 1px solid var(--line); border-radius: 8px; padding: 14px 16px 10px; margin: 12px 0; background: var(--paper); }
+.msg-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; flex-wrap: wrap; }
 .msg-head .jv-toolbar { margin: 0; }
+.msg-status, .people-status, .msg-hint { margin: 2px 0 0; }
 .msg-block { border-top: 1px dashed var(--line-2); padding-top: 8px; margin-top: 10px; }
-.msg-label { display: flex; justify-content: space-between; align-items: center; font-size: 12px; color: var(--muted); }
+.msg-block.msg-next { background: color-mix(in srgb, var(--accent-soft) 55%, transparent); margin-left: -8px; margin-right: -8px; padding-left: 8px; padding-right: 8px; border-radius: 6px; }
+.msg-block.msg-sent { opacity: 0.92; }
+.msg-label { display: flex; justify-content: space-between; align-items: center; gap: 8px; font-size: 12px; color: var(--muted); flex-wrap: wrap; }
 .msg-block p { font-size: 14px; margin: 4px 0 6px; white-space: pre-wrap; }
+.msg-actions { display: flex; gap: 8px; align-items: center; margin-bottom: 6px; }
+.msg-next-pill, .msg-sent-pill, .msg-reply-pill {
+  display: inline-block; margin-left: 8px; padding: 1px 7px; border-radius: 999px; font-size: 11px; border: 1px solid var(--line);
+}
+.msg-next-pill { background: var(--ink); color: var(--paper); border-color: var(--ink); }
+.msg-sent-pill { background: var(--paper-2, #f3f1ea); }
+.msg-reply-pill { background: var(--accent-soft); color: var(--good); border-color: #bcd3c2; }
+.outreach-why { display: flex; flex-wrap: wrap; gap: 6px; margin: 4px 0 0; }
+.outreach-why span { font-size: 11px; color: var(--muted); border: 1px solid var(--line); border-radius: 999px; padding: 1px 8px; }
+.outreach-next { font-size: 12px; color: var(--ink); margin: 4px 0 0; }
 
 .jv-addnote { display: flex; gap: 8px; margin: 18px 0 8px; }
 .timeline { list-style: none; margin: 0; padding: 0; }

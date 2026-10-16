@@ -69,7 +69,7 @@ export function OutreachPage() {
       <div className="page-top">
         <div>
           <h1 className="page-title">Outreach</h1>
-          <p className="lede">Applications go into a pile. A short note to a named person gets read. This is where you keep that honest.</p>
+          <p className="lede">Ranked by who is most likely to reply next: strong fit, fresh apply, named contact, still-open posting. Log each draft you send so nudges stay honest.</p>
         </div>
       </div>
       {notice && <div className="alert alert-warn" role="status">{notice}</div>}
@@ -84,8 +84,8 @@ export function OutreachPage() {
         <>
           <section className="queue">
             <header>
-              <h2>First message <span className="n">{q.messageNow.length}</span></h2>
-              <p>Each one has a note, a first message and an email written from your profile. Open it, copy, send, log.</p>
+              <h2>Best first touches <span className="n">{q.messageNow.length}</span></h2>
+              <p>Highest-prospect applications first. Open the person, copy the highlighted draft, send it, then mark that draft as sent.</p>
             </header>
             {q.messageNow.length ? (
               <ul className="lines">{q.messageNow.map((j) => <JobLine key={j.id} job={j} mode="message" />)}</ul>

@@ -1,4 +1,5 @@
 import type { JobRecord } from "../types";
+import { sortByOutreachProspect } from "./outreachIntel";
 
 const DAY = 86_400_000;
 
@@ -63,9 +64,10 @@ export function todayQueues(jobs: JobRecord[], today: string, options?: { exclud
 
   const recent = active.filter((j) => j.status === "applied" && age(j.appliedAt) <= 30);
   const seen = new Set<string>();
-  const messageNow = recent
-    .filter((j) => j.contactCount > 0 && j.messagesSent === 0)
-    .sort(openPostingFirst(byPayThenScore))
+  const messageNow = sortByOutreachProspect(
+    recent.filter((j) => j.contactCount > 0 && j.messagesSent === 0),
+    today,
+  )
     .filter((j) => {
       const key = j.company.toLowerCase();
       if (seen.has(key)) return false;
@@ -74,9 +76,10 @@ export function todayQueues(jobs: JobRecord[], today: string, options?: { exclud
     });
   const needContact = recent.filter((j) => j.contactCount === 0).length;
 
-  const nudge = active
-    .filter((j) => j.status === "applied" && j.messagesSent > 0 && j.replies === 0 && age(j.lastTouchAt) >= 7 && age(j.appliedAt) <= 45)
-    .sort(openPostingFirst(byPayThenScore));
+  const nudge = sortByOutreachProspect(
+    active.filter((j) => j.status === "applied" && j.messagesSent > 0 && j.replies === 0 && age(j.lastTouchAt) >= 7 && age(j.appliedAt) <= 45),
+    today,
+  );
   const due = active
     .filter((j) => j.nextActionAt !== null && j.nextActionAt <= today && !["rejected", "withdrawn", "closed"].includes(j.status))
     .sort(openPostingFirst((a, b) => (a.nextActionAt ?? "").localeCompare(b.nextActionAt ?? "")));

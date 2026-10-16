@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { rowEvidence } from "../../shared/agency";
 import { postingClosedCopy } from "../../shared/engine/liveness";
+import { outreachProspect } from "../../shared/engine/outreachIntel";
 import { PAY_NOT_PUBLISHED, showPayNotPublished } from "../../shared/engine/searchPaths";
 import type { JobRecord, JobStatus } from "../../shared/types";
 import { api } from "../api";
@@ -19,7 +20,9 @@ export function JobLine({ job, mode }: { job: JobRecord; mode: LineMode }) {
   const { put, open, currency, searchPaths } = useJobs();
   const [busy, setBusy] = useState(false);
   const pay = formatPay(job, currency);
-  const evidence = rowEvidence(job, today());
+  const date = today();
+  const evidence = rowEvidence(job, date);
+  const prospect = mode === "message" || mode === "nudge" ? outreachProspect(job, date) : null;
 
   async function mark(status: JobStatus) {
     setBusy(true);
@@ -61,6 +64,12 @@ export function JobLine({ job, mode }: { job: JobRecord; mode: LineMode }) {
           {mode === "message" && <span className="hint">{job.contactCount === 1 ? "1 person saved" : `${job.contactCount} people saved`}</span>}
         </span>
         {postingClosed && <span className="posting-closed-note">{postingClosedCopy(job.status)}</span>}
+        {prospect && (
+          <>
+            <span className="outreach-next">{prospect.nextAction}</span>
+            <span className="outreach-why">{prospect.reasons.map((reason) => <span key={reason}>{reason}</span>)}</span>
+          </>
+        )}
       </button>
       <span className="line-actions">
         {mode === "apply" && (
@@ -79,7 +88,7 @@ export function JobLine({ job, mode }: { job: JobRecord; mode: LineMode }) {
         )}
         {(mode === "message" || mode === "nudge") && (
           <>
-            <button className="btn btn-primary btn-sm" onClick={() => open(job.id, "people")}>{mode === "message" ? "Write message" : "Send nudge"}</button>
+            <button className="btn btn-primary btn-sm" onClick={() => open(job.id, "people")}>{mode === "message" ? "Open & send" : "Open nudge"}</button>
             <button className="btn btn-ghost btn-sm" disabled={busy} onClick={() => mark("rejected")}>Rejected</button>
           </>
         )}

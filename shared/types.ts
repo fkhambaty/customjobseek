@@ -190,6 +190,8 @@ export interface JobEvent {
   at: string;
   person: string;
   note: string;
+  /** Which outreach draft this touch belongs to (connection / first / nudge / email). */
+  template: string;
 }
 
 export interface JobRecord {
