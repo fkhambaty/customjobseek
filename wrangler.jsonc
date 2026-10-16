@@ -19,7 +19,8 @@
   "vars": {
     "MAIL_FROM": "CustomJobSeek <no-reply@funberrykids.in>",
     "OWNER_EMAIL": "fktiindia@gmail.com",
-    "PAYMENTS_ENABLED": "false"
+    "LEGAL_NAME": "Fakhruddin Khambaty",
+    "PAYMENTS_ENABLED": "true"
   },
   "triggers": {
     "crons": ["17 * * * *", "30 * * * *", "* * * * *"]
