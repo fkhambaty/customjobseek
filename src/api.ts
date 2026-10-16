@@ -265,11 +265,17 @@ export interface AccountHome {
 
 export const api = {
   signup: (email: string, password: string, referralCode?: string) =>
-    call<{ ok: true; needsVerification: true }>("POST", "/auth/signup", { email, password, referralCode: referralCode || undefined }),
+    call<{ ok: true; needsVerification: true; codeExpiresAt: string | null; codeExpiresInMinutes: number }>(
+      "POST",
+      "/auth/signup",
+      { email, password, referralCode: referralCode || undefined },
+    ),
   verify: (email: string, code: string, referralCode?: string) =>
     call<{ ok: true }>("POST", "/auth/verify", { email, code, referralCode }),
-  resendCode: (email: string, purpose: "signup" | "reset") => call<{ ok: true }>("POST", "/auth/resend-code", { email, purpose }),
-  forgot: (email: string) => call<{ ok: true }>("POST", "/auth/forgot", { email }),
+  resendCode: (email: string, purpose: "signup" | "reset") =>
+    call<{ ok: true; codeExpiresAt: string | null; codeExpiresInMinutes: number }>("POST", "/auth/resend-code", { email, purpose }),
+  forgot: (email: string) =>
+    call<{ ok: true; codeExpiresAt: string | null; codeExpiresInMinutes: number }>("POST", "/auth/forgot", { email }),
   reset: (email: string, code: string, password: string) => call<{ ok: true }>("POST", "/auth/reset", { email, code, password }),
   login: (email: string, password: string) => call<{ ok: true }>("POST", "/auth/login", { email, password }),
   logout: () => call<{ ok: true }>("POST", "/auth/logout"),

@@ -1,10 +1,13 @@
 import { discoveryTokens } from "../shared/capacity";
 import { payProvenanceFor } from "../shared/agency";
+import { companyMatchesIndustries } from "../shared/industries";
 import { routeFromUrl } from "../shared/engine/classify";
 import { buildApplication, buildJobFile } from "../shared/engine/documents";
 import { evaluateFit, locationCheck, marketLocationOk, titleTokens, type JobInput } from "../shared/engine/fit";
+import { dedupeJobOpenings, jobIdentityKey } from "../shared/engine/jobIdentity";
 import {
   assignSearchPath,
+  countryLabelFor,
   jobPayPlace,
   openingLocationAllowed,
   placePathLabel,
@@ -73,8 +76,9 @@ export async function matchingRows(env: Env, userId: string, profile: Profile): 
   if (!keywords.length) return [];
 
   const nowIso = new Date().toISOString();
+  const industries = profile.preferences.industries ?? [];
   const { results } = await env.DB.prepare(
-    `SELECT o.title, o.location, o.url, o.updated_at, co.name AS company, co.ats
+    `SELECT o.title, o.location, o.url, o.updated_at, co.name AS company, co.ats, co.sectors
      FROM opening_search s
      JOIN openings o ON o.company_id = s.company_id AND o.external_id = s.external_id
      JOIN companies co ON co.id = o.company_id
@@ -85,17 +89,31 @@ export async function matchingRows(env: Env, userId: string, profile: Profile): 
      ORDER BY o.updated_at DESC LIMIT ${MAX_TITLE_CANDIDATES}`,
   )
     .bind(...keywords, nowIso, userId)
-    .all<{ title: string; location: string; url: string; updated_at: string; company: string; ats: string }>();
+    .all<{ title: string; location: string; url: string; updated_at: string; company: string; ats: string; sectors: string }>();
+
+  const existing = await env.DB.prepare("SELECT title, company, url FROM jobs WHERE user_id = ? AND archived_at IS NULL")
+    .bind(userId)
+    .all<{ title: string; company: string; url: string }>();
+  const seenKeys = new Set(
+    existing.results.flatMap((job) => {
+      const key = jobIdentityKey(job);
+      return key ? [key] : [];
+    }),
+  );
 
   const excluded = profile.preferences.excludedTitleWords.map((w) => w.toLowerCase()).filter(Boolean);
   const paths = await listSearchPaths(env.DB, userId);
   const rows: DiscoverRow[] = [];
   for (const o of results) {
+    if (industries.length && !companyMatchesIndustries(o.sectors || "[]", industries)) continue;
     if (!openingLocationAllowed(o.location, profile.preferences, paths)) continue;
     const lower = o.title.toLowerCase();
     if (excluded.some((w) => lower.includes(w))) continue;
+    const identity = jobIdentityKey(o);
+    if (identity && seenKeys.has(identity)) continue;
     const match = meaningfulTitleMatch(o.title, targets);
     if (!match) continue;
+    if (identity) seenKeys.add(identity);
     const place = locationCheck({ title: o.title, company: o.company, location: o.location, salaryText: "", description: "" }, profile);
     rows.push({
       title: o.title,
@@ -106,11 +124,11 @@ export async function matchingRows(env: Env, userId: string, profile: Profile): 
       seenAt: o.updated_at,
       match: Math.round(match * 100),
       locationNote: paths.length ? "" : (place.note ?? ""),
-      pathLabel: placePathLabel(paths, o.location),
+      pathLabel: placePathLabel(paths, o.location, profile.preferences.country, countryLabelFor(profile.preferences)),
     });
   }
   rows.sort((a, b) => b.match - a.match || b.seenAt.localeCompare(a.seenAt));
-  return rows.slice(0, 150);
+  return dedupeJobOpenings(rows).slice(0, 150);
 }
 
 /** Only contacts printed in the posting are retained, encrypted in this user's job details. */
@@ -228,6 +246,7 @@ export async function packStatements(
     paths,
     preferences: profile.preferences,
   });
+  const identityKey = jobIdentityKey({ title: input.title, company: input.company, url: input.url });
   const jobBinds = [
     id, userId, input.title, input.company, input.location, input.url, input.salaryText, input.description,
     JSON.stringify(fit), assigned.lane, routeFromUrl(input.url),
@@ -245,8 +264,10 @@ export async function packStatements(
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'resume_ready', ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         jobBinds,
         gate,
-        "SELECT 1 FROM jobs WHERE id = ?",
-        [id],
+        `SELECT 1 FROM jobs WHERE id = ?
+          OR (user_id = ? AND url != '' AND url = ?)
+          OR (user_id = ? AND lower(title) = lower(?) AND lower(company) = lower(?) AND ? != '')`,
+        [id, userId, input.url, userId, input.title, input.company, identityKey],
       ),
       gated(env.DB, "INSERT INTO resumes (job_id, user_id, ciphertext) VALUES (?, ?, ?)", [id, userId, packed[0]], gate, "SELECT 1 FROM resumes WHERE job_id = ?", [id]),
       gated(

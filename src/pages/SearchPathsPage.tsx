@@ -6,8 +6,10 @@ import { useJobs } from "../data";
 
 export function SearchPathsPage() {
   const { profile, searchPaths, error, reload } = useJobs();
-  const cities = COUNTRIES.find((country) => country.code === profile?.preferences.country)?.cities ?? [];
-  const currency = profile?.preferences.currency || "USD";
+  const country = COUNTRIES.find((item) => item.code === profile?.preferences.country);
+  const cities = country?.cities ?? [];
+  const countryName = country?.name ?? "Country";
+  const currency = profile?.preferences.currency || "INR";
   const salaryPeriod = profile?.preferences.salaryPeriod || "year";
 
   async function preview(commit: PathCommit) {
@@ -44,7 +46,7 @@ export function SearchPathsPage() {
       <div className="page-top">
         <div>
           <h1 className="page-title">Search paths</h1>
-          <p className="lede">Up to six ordered paths. Each one is a city or Remote, and a pay rule. Jobs land on the first path that fits.</p>
+          <p className="lede">Up to six ordered paths. Each one is a place rule and a pay band. Jobs land on the first path that fits.</p>
         </div>
       </div>
       <p className="muted">{PAY_MIDPOINT_NOTE}</p>
@@ -55,6 +57,7 @@ export function SearchPathsPage() {
         cities={cities}
         currency={currency}
         salaryPeriod={salaryPeriod}
+        countryName={countryName}
         onPreview={preview}
         onCommit={commit}
       />

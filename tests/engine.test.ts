@@ -49,6 +49,7 @@ function profile(overrides: Partial<Profile> = {}): Profile {
       minSalary: 30,
       maxSalary: 50,
       salaryPeriod: "lpa",
+      industries: ["technology"],
       targetRoles: ["Analytics Engineer", "Data Engineer"],
       excludedTitleWords: ["Intern"],
       timezone: "Asia/Kolkata",

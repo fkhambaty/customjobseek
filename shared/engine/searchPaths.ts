@@ -1,4 +1,4 @@
-import { cityNames, currencies } from "../geo";
+import { cityNames, countryByCode, currencies } from "../geo";
 import { emptyProfile, type Blocker, type Decision, type FitResult, type Preferences, type SalaryPeriod } from "../types";
 import { laneFor } from "./classify";
 import { annualise, locationCheck, marketLocationOk } from "./fit";
@@ -8,14 +8,12 @@ export const UNASSIGNED_PATH_FILTER = "__unassigned";
 
 export const PAY_NOT_PUBLISHED = "Pay not published";
 
+/** Pay bands are inclusive on both ends: midpoint matches when payMin ≤ midpoint ≤ payMax (after annualising the band). */
 export const PAY_MIDPOINT_NOTE =
-  "A job matches on the midpoint of the pay the posting published. If only one number is published, that number is used. If the posting has no pay, the job can be reviewed on its own. A missing number is never guessed.";
+  "A job matches when the midpoint of the published pay falls inside the path's pay band, inclusive on both the lower and upper limit. If only one number is published, that number is used. If the posting has no pay, the job can be reviewed on its own. A missing number is never guessed.";
 
-export const LOCATION_MODES = ["city", "remote"] as const;
+export const LOCATION_MODES = ["cities", "remote", "country"] as const;
 export type LocationMode = (typeof LOCATION_MODES)[number];
-
-export const PAY_DIRECTIONS = ["above", "below", "any"] as const;
-export type PayDirection = (typeof PAY_DIRECTIONS)[number];
 
 export const JOB_DISPOSITIONS = ["reclassify", "archive", "move"] as const;
 export type JobDisposition = (typeof JOB_DISPOSITIONS)[number];
@@ -26,9 +24,10 @@ export interface SearchPath {
   id: string;
   name: string;
   locationMode: LocationMode;
-  city: string;
-  payDirection: PayDirection;
-  payAmount: number | null;
+  cities: string[];
+  excludedCities: string[];
+  payMin: number;
+  payMax: number;
   currency: string;
   salaryPeriod: SalaryPeriod;
   sortOrder: number;
@@ -40,9 +39,10 @@ export interface SearchPath {
 export interface SearchPathDraft {
   id?: string;
   locationMode: LocationMode;
-  city: string;
-  payDirection: PayDirection;
-  payAmount: number | null;
+  cities: string[];
+  excludedCities: string[];
+  payMin: number;
+  payMax: number;
   currency: string;
   salaryPeriod: SalaryPeriod;
   sortOrder: number;
@@ -93,6 +93,7 @@ export type CommitPlan =
   | { ok: false; status: 400 | 404; error: string };
 
 const SALARY_PERIODS = ["year", "month", "hour", "lpa"] as const;
+const WIDE_PAY_MAX = 1_000_000_000;
 
 export function payMidpoint(low: number | null, high: number | null): number | null {
   if (low === null && high === null) return null;
@@ -111,14 +112,33 @@ function mentionsPlace(location: string, name: string): boolean {
   return new RegExp(`(?:^|[^a-z0-9])${escaped}(?:[^a-z0-9]|$)`, "i").test(location);
 }
 
-export function locationMatches(location: string, path: { locationMode: LocationMode; city: string }): boolean {
+function mentionsAnyCity(location: string, cities: string[]): boolean {
+  return cities.some((city) => cityNames(city).some((name) => mentionsPlace(location, name)));
+}
+
+export function countryLabelFor(prefs: Pick<Preferences, "country"> | string): string {
+  const code = typeof prefs === "string" ? prefs : prefs.country;
+  return countryByCode(code)?.name ?? "Country";
+}
+
+export function locationMatches(
+  location: string,
+  path: Pick<SearchPath, "locationMode" | "cities" | "excludedCities">,
+  countryCode = "",
+): boolean {
   const remote = isRemoteLocation(location);
   switch (path.locationMode) {
     case "remote":
       return remote;
-    case "city": {
+    case "cities": {
       if (remote) return false;
-      return cityNames(path.city).some((name) => mentionsPlace(location, name));
+      return mentionsAnyCity(location, path.cities);
+    }
+    case "country": {
+      if (remote) return false;
+      if (!marketLocationOk(location, countryCode)) return false;
+      if (mentionsAnyCity(location, path.excludedCities)) return false;
+      return true;
     }
     default: {
       const never: never = path.locationMode;
@@ -142,17 +162,18 @@ function formatAmount(amount: number): string {
   return new Intl.NumberFormat("en", { maximumFractionDigits: 2 }).format(amount);
 }
 
-export function formatPayThreshold(amount: number, currency: string, period: SalaryPeriod): string {
-  const rendered = `${currencySymbol(currency)}${formatAmount(amount)}`;
+export function formatPayBand(payMin: number, payMax: number, currency: string, period: SalaryPeriod): string {
+  const symbol = currencySymbol(currency);
+  const band = `${symbol}${formatAmount(payMin)}–${symbol}${formatAmount(payMax)}`;
   switch (period) {
     case "lpa":
-      return `${rendered} LPA`;
+      return `${band} LPA`;
     case "year":
-      return `${rendered} per year`;
+      return `${band} per year`;
     case "month":
-      return `${rendered} per month`;
+      return `${band} per month`;
     case "hour":
-      return `${rendered} per hour`;
+      return `${band} per hour`;
     default: {
       const never: never = period;
       return never;
@@ -160,12 +181,20 @@ export function formatPayThreshold(amount: number, currency: string, period: Sal
   }
 }
 
-function placeName(path: { locationMode: LocationMode; city: string }): string {
+function placeName(
+  path: Pick<SearchPath, "locationMode" | "cities" | "excludedCities">,
+  countryLabel = "Country",
+): string {
   switch (path.locationMode) {
     case "remote":
       return "Remote";
-    case "city":
-      return path.city.trim();
+    case "cities":
+      return path.cities.map((city) => city.trim()).filter(Boolean).join(", ");
+    case "country": {
+      const excluded = path.excludedCities.map((city) => city.trim()).filter(Boolean);
+      if (!excluded.length) return countryLabel;
+      return `${countryLabel} except ${excluded.join(", ")}`;
+    }
     default: {
       const never: never = path.locationMode;
       return never;
@@ -174,61 +203,29 @@ function placeName(path: { locationMode: LocationMode; city: string }): string {
 }
 
 export function searchPathLabel(
-  path: Pick<SearchPath, "locationMode" | "city" | "payDirection" | "payAmount" | "currency" | "salaryPeriod">,
+  path: Pick<SearchPath, "locationMode" | "cities" | "excludedCities" | "payMin" | "payMax" | "currency" | "salaryPeriod">,
+  countryLabel = "Country",
 ): string {
-  const place = placeName(path);
-  switch (path.payDirection) {
-    case "any":
-      return `${place} · Any pay`;
-    case "above":
-      return `${place} · Above ${formatPayThreshold(path.payAmount ?? 0, path.currency, path.salaryPeriod)}`;
-    case "below":
-      return `${place} · Below ${formatPayThreshold(path.payAmount ?? 0, path.currency, path.salaryPeriod)}`;
-    default: {
-      const never: never = path.payDirection;
-      return never;
-    }
-  }
+  return `${placeName(path, countryLabel)} · ${formatPayBand(path.payMin, path.payMax, path.currency, path.salaryPeriod)}`;
 }
 
 function byOrder(a: SearchPath, b: SearchPath): number {
   return a.sortOrder - b.sortOrder || a.id.localeCompare(b.id);
 }
 
-function directionMatches(direction: "above" | "below", midpoint: number, threshold: number): boolean {
-  switch (direction) {
-    case "above":
-      return midpoint >= threshold;
-    case "below":
-      return midpoint < threshold;
-    default: {
-      const never: never = direction;
-      return never;
-    }
-  }
-}
-
+/** Inclusive on both ends after annualising the path band into the same units as stored job pay. */
 function payMatches(path: SearchPath, midpoint: number, currency: string): boolean {
-  switch (path.payDirection) {
-    case "any":
-      return true;
-    case "above":
-    case "below": {
-      if (path.currency !== currency || path.payAmount === null) return false;
-      return directionMatches(path.payDirection, midpoint, annualise(path.payAmount, path.salaryPeriod));
-    }
-    default: {
-      const never: never = path.payDirection;
-      return never;
-    }
-  }
+  if (path.currency !== currency) return false;
+  const min = annualise(path.payMin, path.salaryPeriod);
+  const max = annualise(path.payMax, path.salaryPeriod);
+  return midpoint >= min && midpoint <= max;
 }
 
-/** First path in sort order whose place and pay rule both fit. Unknown pay only matches Any pay. */
-export function firstOrderedMatch(paths: SearchPath[], job: JobPayPlace): SearchPath | null {
-  const located = [...paths].sort(byOrder).filter((path) => locationMatches(job.location, path));
+/** First path in sort order whose place and pay band both fit. Unknown pay never matches a band. */
+export function firstOrderedMatch(paths: SearchPath[], job: JobPayPlace, countryCode = ""): SearchPath | null {
+  const located = [...paths].sort(byOrder).filter((path) => locationMatches(job.location, path, countryCode));
   const midpoint = payMidpoint(job.payLow, job.payHigh);
-  if (midpoint === null) return located.find((path) => path.payDirection === "any") ?? null;
+  if (midpoint === null) return null;
   for (const path of located) {
     if (payMatches(path, midpoint, job.currency)) return path;
   }
@@ -243,8 +240,14 @@ export function assignSearchPath(input: JobPayPlace & { paths: SearchPath[]; pre
       payNotPublished: false,
     };
   }
-  const match = firstOrderedMatch(input.paths, input);
-  if (match) return { searchPathId: match.id, lane: searchPathLabel(match), payNotPublished: false };
+  const match = firstOrderedMatch(input.paths, input, input.preferences.country);
+  if (match) {
+    return {
+      searchPathId: match.id,
+      lane: searchPathLabel(match, countryLabelFor(input.preferences)),
+      payNotPublished: false,
+    };
+  }
   return { searchPathId: null, lane: "", payNotPublished: payMidpoint(input.payLow, input.payHigh) === null };
 }
 
@@ -327,14 +330,15 @@ export function planJobPathAction(
   paths: SearchPath[],
   preferences: Preferences,
 ): JobPathPlan {
-  const match = paths.length ? firstOrderedMatch(paths, job) : null;
+  const match = paths.length ? firstOrderedMatch(paths, job, preferences.country) : null;
+  const label = match ? searchPathLabel(match, countryLabelFor(preferences)) : "";
   switch (action) {
     case "restore":
       if (!paths.length) return { kind: "legacy", lane: laneFor(job.location, job.payLow, job.payHigh, preferences) };
       if (!match) return { kind: "refuse" };
-      return { kind: "assign", searchPathId: match.id, lane: searchPathLabel(match) };
+      return { kind: "assign", searchPathId: match.id, lane: label };
     case "reclassify":
-      if (match) return { kind: "assign", searchPathId: match.id, lane: searchPathLabel(match) };
+      if (match) return { kind: "assign", searchPathId: match.id, lane: label };
       if (!paths.length) return { kind: "legacy", lane: laneFor(job.location, job.payLow, job.payHigh, preferences) };
       if (!job.searchPathId) return { kind: "unchanged" };
       return { kind: "archive", lane: job.lane };
@@ -353,24 +357,36 @@ export function storedAnnualPay(
   return { low: parsed.annualMin, high: parsed.annualMax };
 }
 
-export function placePathLabel(paths: SearchPath[], location: string): string {
-  const hit = [...paths].sort(byOrder).find((path) => locationMatches(location, path));
-  return hit ? `${placeName(hit)} · pay checked after opening is read` : "";
+export function placePathLabel(paths: SearchPath[], location: string, countryCode = "", countryLabel = "Country"): string {
+  const hit = [...paths].sort(byOrder).find((path) => locationMatches(location, path, countryCode));
+  return hit ? `${placeName(hit, countryLabel)} · pay checked after opening is read` : "";
+}
+
+function suggestedPayBand(prefs: Preferences): { payMin: number; payMax: number } {
+  const min = prefs.minSalary !== null && prefs.minSalary > 0 ? prefs.minSalary : null;
+  const max = prefs.maxSalary !== null && prefs.maxSalary > 0 ? prefs.maxSalary : null;
+  if (min !== null && max !== null && max > min) return { payMin: min, payMax: max };
+  if (min !== null) {
+    const wide = Math.min(Math.max(min * 10, min + 1), WIDE_PAY_MAX);
+    return { payMin: min, payMax: wide };
+  }
+  if (max !== null) return { payMin: 1, payMax: max };
+  return { payMin: 1, payMax: WIDE_PAY_MAX };
 }
 
 export function suggestSearchPaths(prefs: Preferences): SearchPathDraft[] {
   const cities = [...new Set(prefs.cities.map((city) => city.trim()).filter(Boolean))];
   const includeRemote = prefs.remoteOk;
   const cityRoom = SEARCH_PATH_LIMIT - (includeRemote ? 1 : 0);
-  const payDirection: PayDirection = prefs.minSalary !== null && prefs.minSalary > 0 ? "above" : "any";
-  const payAmount = payDirection === "above" ? prefs.minSalary : null;
   const salaryPeriod: SalaryPeriod = prefs.salaryPeriod === "lpa" && prefs.currency !== "INR" ? "year" : prefs.salaryPeriod;
-  const currency = salaryPeriod === "lpa" ? "INR" : prefs.currency;
+  const currency = salaryPeriod === "lpa" ? "INR" : prefs.currency || "INR";
+  const { payMin, payMax } = suggestedPayBand(prefs);
   const drafts: SearchPathDraft[] = cities.slice(0, Math.max(0, cityRoom)).map((city, sortOrder) => ({
-    locationMode: "city",
-    city,
-    payDirection,
-    payAmount,
+    locationMode: "cities",
+    cities: [city],
+    excludedCities: [],
+    payMin,
+    payMax,
     currency,
     salaryPeriod,
     sortOrder,
@@ -378,9 +394,10 @@ export function suggestSearchPaths(prefs: Preferences): SearchPathDraft[] {
   if (includeRemote && drafts.length < SEARCH_PATH_LIMIT) {
     drafts.push({
       locationMode: "remote",
-      city: "",
-      payDirection,
-      payAmount,
+      cities: [],
+      excludedCities: [],
+      payMin,
+      payMax,
       currency,
       salaryPeriod,
       sortOrder: drafts.length,
@@ -397,7 +414,7 @@ export function openingLocationAllowed(location: string, prefs: Preferences, pat
     const place = locationCheck({ title: "", company: "", location, salaryText: "", description: "" }, profile);
     return !place.blocker;
   }
-  return paths.some((path) => locationMatches(location, path));
+  return paths.some((path) => locationMatches(location, path, prefs.country));
 }
 
 function isPlaceOrPayBlocker(kind: Blocker["kind"]): boolean {
@@ -425,16 +442,21 @@ export function withoutPlaceAndPayBlockers(fit: FitResult): FitResult {
 
 export type ScanPathDecision = "legacy" | "prepare" | "review" | "skip";
 
-export function scanCandidateDecision(paths: SearchPath[], job: JobPayPlace): ScanPathDecision {
+export function scanCandidateDecision(paths: SearchPath[], job: JobPayPlace, countryCode = ""): ScanPathDecision {
   if (paths.length === 0) return "legacy";
-  if (!paths.some((path) => locationMatches(job.location, path))) return "skip";
+  if (!paths.some((path) => locationMatches(job.location, path, countryCode))) return "skip";
   if (payMidpoint(job.payLow, job.payHigh) === null) return "review";
-  return firstOrderedMatch(paths, job) ? "prepare" : "skip";
+  return firstOrderedMatch(paths, job, countryCode) ? "prepare" : "skip";
 }
 
 /** Legacy scans keep every blocker. Path scans ignore place and pay blockers and use the path rules. */
-export function scanOpeningAcceptance(paths: SearchPath[], job: JobPayPlace, blockerKinds: Blocker["kind"][]): "pack" | "skip" {
-  const decision = scanCandidateDecision(paths, job);
+export function scanOpeningAcceptance(
+  paths: SearchPath[],
+  job: JobPayPlace,
+  blockerKinds: Blocker["kind"][],
+  countryCode = "",
+): "pack" | "skip" {
+  const decision = scanCandidateDecision(paths, job, countryCode);
   switch (decision) {
     case "skip":
       return "skip";
@@ -475,19 +497,9 @@ export function matchesPathFilter(
 
 function parseLocationMode(value: unknown): LocationMode | null {
   switch (value) {
-    case "city":
+    case "cities":
     case "remote":
-      return value;
-    default:
-      return null;
-  }
-}
-
-function parsePayDirection(value: unknown): PayDirection | null {
-  switch (value) {
-    case "above":
-    case "below":
-    case "any":
+    case "country":
       return value;
     default:
       return null;
@@ -527,20 +539,48 @@ function parseJobDisposition(value: unknown): JobDisposition | null {
   }
 }
 
-function parseAmount(value: unknown): number | null | undefined {
-  if (value === null || value === undefined || value === "") return null;
+function parseRequiredAmount(value: unknown): number | undefined {
   if (typeof value !== "number" || !Number.isFinite(value)) return undefined;
   return value;
 }
 
+function parseCityList(value: unknown): string[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const cities: string[] = [];
+  for (const item of value) {
+    if (typeof item !== "string") return undefined;
+    cities.push(item);
+  }
+  return cities;
+}
+
+function cleanCities(cities: string[]): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const city of cities) {
+    const trimmed = city.trim();
+    if (!trimmed) continue;
+    const key = trimmed.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(trimmed);
+  }
+  return out;
+}
+
 export function validateSearchPathDraft(draft: SearchPathDraft): string | null {
   switch (draft.locationMode) {
-    case "city":
-      if (!draft.city.trim()) return "Choose a city for this search path.";
-      if (draft.city.trim().length > 80) return "City names can be up to 80 characters.";
+    case "cities":
+      if (!draft.cities.length) return "Add at least one city for this search path.";
+      if (draft.cities.some((city) => city.length > 80)) return "City names can be up to 80 characters.";
+      if (draft.excludedCities.length) return "A cities path does not exclude cities.";
       break;
     case "remote":
-      if (draft.city.trim()) return "A remote search path does not take a city.";
+      if (draft.cities.length || draft.excludedCities.length) return "A remote search path does not take cities.";
+      break;
+    case "country":
+      if (draft.cities.length) return "A country path lists exclusions, not included cities.";
+      if (draft.excludedCities.some((city) => city.length > 80)) return "City names can be up to 80 characters.";
       break;
     default: {
       const never: never = draft.locationMode;
@@ -550,20 +590,9 @@ export function validateSearchPathDraft(draft: SearchPathDraft): string | null {
   if (!currencies().includes(draft.currency)) return "Choose a supported currency.";
   if (!SALARY_PERIODS.includes(draft.salaryPeriod)) return "Choose a pay period.";
   if (draft.salaryPeriod === "lpa" && draft.currency !== "INR") return "LPA is only available for INR.";
-  switch (draft.payDirection) {
-    case "any":
-      if (draft.payAmount !== null) return "Any pay does not take an amount.";
-      break;
-    case "above":
-    case "below":
-      if (draft.payAmount === null || draft.payAmount <= 0 || draft.payAmount > 1_000_000_000) {
-        return "Enter a pay amount above zero.";
-      }
-      break;
-    default: {
-      const never: never = draft.payDirection;
-      return never;
-    }
+  if (!(draft.payMin > 0) || draft.payMin > WIDE_PAY_MAX) return "Enter a pay minimum above zero.";
+  if (!(draft.payMax > draft.payMin) || draft.payMax > WIDE_PAY_MAX) {
+    return "Enter a pay maximum higher than the minimum.";
   }
   if (!Number.isInteger(draft.sortOrder) || draft.sortOrder < 0 || draft.sortOrder >= SEARCH_PATH_LIMIT) {
     return "Search paths stay in an order from 1 to 6.";
@@ -579,22 +608,23 @@ function succeed(after: SearchPath[], deletedId: string | null, moveToId: string
   return { ok: true, after, deletedId, moveToId };
 }
 
-function withOrder(paths: SearchPath[]): SearchPath[] {
+function withOrder(paths: SearchPath[], countryLabel: string): SearchPath[] {
   return paths.map((path, sortOrder) => {
     const next = { ...path, sortOrder };
-    next.name = searchPathLabel(next);
+    next.name = searchPathLabel(next, countryLabel);
     return next;
   });
 }
 
-function realize(draft: SearchPathDraft, id: string, sortOrder: number, stamp: string): SearchPath {
+function realize(draft: SearchPathDraft, id: string, sortOrder: number, stamp: string, countryLabel: string): SearchPath {
   const path: SearchPath = {
     id,
     name: "",
     locationMode: draft.locationMode,
-    city: draft.locationMode === "remote" ? "" : draft.city.trim(),
-    payDirection: draft.payDirection,
-    payAmount: draft.payDirection === "any" ? null : draft.payAmount,
+    cities: draft.locationMode === "cities" ? draft.cities : [],
+    excludedCities: draft.locationMode === "country" ? draft.excludedCities : [],
+    payMin: draft.payMin,
+    payMax: draft.payMax,
     currency: draft.currency,
     salaryPeriod: draft.salaryPeriod,
     sortOrder,
@@ -602,17 +632,25 @@ function realize(draft: SearchPathDraft, id: string, sortOrder: number, stamp: s
     createdAt: stamp,
     updatedAt: stamp,
   };
-  path.name = searchPathLabel(path);
+  path.name = searchPathLabel(path, countryLabel);
   return path;
 }
 
 function normalizeDraft(draft: SearchPathDraft, sortOrder: number): SearchPathDraft {
-  return {
-    ...draft,
-    sortOrder,
-    city: draft.locationMode === "remote" ? "" : draft.city.trim(),
-    payAmount: draft.payDirection === "any" ? null : draft.payAmount,
-  };
+  const cities = cleanCities(draft.cities);
+  const excludedCities = cleanCities(draft.excludedCities);
+  switch (draft.locationMode) {
+    case "cities":
+      return { ...draft, sortOrder, cities, excludedCities: [] };
+    case "remote":
+      return { ...draft, sortOrder, cities: [], excludedCities: [] };
+    case "country":
+      return { ...draft, sortOrder, cities: [], excludedCities };
+    default: {
+      const never: never = draft.locationMode;
+      return never;
+    }
+  }
 }
 
 function owned(current: SearchPath[], id: string): SearchPath | undefined {
@@ -626,14 +664,24 @@ function bumpRevisions(current: SearchPath[], after: SearchPath[]): SearchPath[]
   });
 }
 
-export function nextPathSet(current: SearchPath[], commit: PathCommit, newIds: string[], stamp = ""): CommitPlan {
+export function nextPathSet(
+  current: SearchPath[],
+  commit: PathCommit,
+  newIds: string[],
+  stamp = "",
+  countryLabel = "Country",
+): CommitPlan {
   switch (commit.action) {
     case "create": {
       if (current.length >= SEARCH_PATH_LIMIT) return fail(400, "You can keep up to 6 search paths.");
       const draft = normalizeDraft(commit.draft, current.length);
       const error = validateSearchPathDraft(draft);
       if (error) return fail(400, error);
-      return succeed(bumpRevisions(current, withOrder([...current, realize(draft, newIds[0] ?? crypto.randomUUID(), current.length, stamp)])), null, null);
+      return succeed(
+        bumpRevisions(current, withOrder([...current, realize(draft, newIds[0] ?? crypto.randomUUID(), current.length, stamp, countryLabel)], countryLabel)),
+        null,
+        null,
+      );
     }
     case "update": {
       const existing = owned(current, commit.id);
@@ -641,12 +689,14 @@ export function nextPathSet(current: SearchPath[], commit: PathCommit, newIds: s
       const draft = normalizeDraft(commit.draft, existing.sortOrder);
       const error = validateSearchPathDraft(draft);
       if (error) return fail(400, error);
-      const after = current.map((path) => (path.id === commit.id ? realize(draft, commit.id, path.sortOrder, path.createdAt || stamp) : path));
-      return succeed(bumpRevisions(current, withOrder(after)), null, null);
+      const after = current.map((path) =>
+        path.id === commit.id ? realize(draft, commit.id, path.sortOrder, path.createdAt || stamp, countryLabel) : path,
+      );
+      return succeed(bumpRevisions(current, withOrder(after, countryLabel)), null, null);
     }
     case "delete": {
       if (!owned(current, commit.id)) return fail(404, "That search path was not found.");
-      const after = bumpRevisions(current, withOrder(current.filter((path) => path.id !== commit.id)));
+      const after = bumpRevisions(current, withOrder(current.filter((path) => path.id !== commit.id), countryLabel));
       if (commit.disposition === "move") {
         if (!commit.moveToId || commit.moveToId === commit.id || !after.some((path) => path.id === commit.moveToId)) {
           return fail(400, "Choose one of your other search paths to move the jobs to.");
@@ -666,7 +716,7 @@ export function nextPathSet(current: SearchPath[], commit: PathCommit, newIds: s
         if (!path) return fail(404, "That search path was not found.");
         after.push(path);
       }
-      return succeed(bumpRevisions(current, withOrder(after)), null, null);
+      return succeed(bumpRevisions(current, withOrder(after, countryLabel)), null, null);
     }
     case "replace": {
       if (commit.drafts.length > SEARCH_PATH_LIMIT) return fail(400, "You can keep up to 6 search paths.");
@@ -684,10 +734,10 @@ export function nextPathSet(current: SearchPath[], commit: PathCommit, newIds: s
           return fail(404, "That search path was not found.");
         }
         const previous = owned(current, id);
-        after.push(realize(draft, id, index, previous?.createdAt || stamp));
+        after.push(realize(draft, id, index, previous?.createdAt || stamp, countryLabel));
       }
       if (new Set(after.map((path) => path.id)).size !== after.length) return fail(400, "Each search path can appear only once.");
-      return succeed(bumpRevisions(current, withOrder(after)), null, null);
+      return succeed(bumpRevisions(current, withOrder(after, countryLabel)), null, null);
     }
     default: {
       const never: never = commit;
@@ -709,6 +759,7 @@ export function planJobChanges(input: {
   now: string;
   preferences: Preferences;
 }): JobChange[] {
+  const countryLabel = countryLabelFor(input.preferences);
   if (input.after.length === 0 && input.disposition === "reclassify") {
     return input.jobs.flatMap((job) => {
       if (!job.searchPathId && !job.archivedAt) return [];
@@ -732,14 +783,19 @@ export function planJobChanges(input: {
   const moveTo = input.moveToId ? input.after.find((path) => path.id === input.moveToId) ?? null : null;
   const changes: JobChange[] = [];
   for (const job of input.jobs) {
-    const next = firstOrderedMatch(input.after, job);
+    const next = firstOrderedMatch(input.after, job, input.preferences.country);
     const nextId = next?.id ?? null;
     const currentId = job.searchPathId ?? null;
     let change: JobChange | null = null;
     switch (input.disposition) {
       case "move":
         if (input.deletedId && job.searchPathId === input.deletedId && moveTo) {
-          change = { id: job.id, searchPathId: moveTo.id, lane: searchPathLabel(moveTo), archivedAt: job.archivedAt };
+          change = {
+            id: job.id,
+            searchPathId: moveTo.id,
+            lane: searchPathLabel(moveTo, countryLabel),
+            archivedAt: job.archivedAt,
+          };
         }
         break;
       case "archive":
@@ -753,13 +809,15 @@ export function planJobChanges(input: {
           };
         }
         break;
-      case "reclassify":
-        if (next && (currentId !== next.id || job.archivedAt || job.lane !== searchPathLabel(next))) {
-          change = { id: job.id, searchPathId: next.id, lane: searchPathLabel(next), archivedAt: null };
+      case "reclassify": {
+        const nextLabel = next ? searchPathLabel(next, countryLabel) : "";
+        if (next && (currentId !== next.id || job.archivedAt || job.lane !== nextLabel)) {
+          change = { id: job.id, searchPathId: next.id, lane: nextLabel, archivedAt: null };
         } else if (!next && currentId !== null) {
           change = { id: job.id, searchPathId: null, lane: job.lane, archivedAt: job.archivedAt ?? input.now };
         }
         break;
+      }
       default: {
         const never: never = input.disposition;
         throw new Error(String(never));
@@ -782,19 +840,25 @@ function readDraft(value: unknown, sortOrder: number): { ok: true; draft: Search
   if (!value || typeof value !== "object") return { ok: false, error: "A search path is missing." };
   const body = value as Record<string, unknown>;
   const locationMode = parseLocationMode(body.locationMode);
-  if (!locationMode) return { ok: false, error: "Choose a city or Remote." };
-  const payDirection = parsePayDirection(body.payDirection);
-  if (!payDirection) return { ok: false, error: "Choose Above threshold, Below threshold, or Any pay." };
+  if (!locationMode) return { ok: false, error: "Choose cities, Remote, or whole country." };
   const salaryPeriod = parseSalaryPeriod(body.salaryPeriod);
   if (!salaryPeriod) return { ok: false, error: "Choose a pay period." };
-  const payAmount = parseAmount(body.payAmount);
-  if (payAmount === undefined) return { ok: false, error: "Enter the pay amount as a number." };
+  const payMin = parseRequiredAmount(body.payMin);
+  if (payMin === undefined) return { ok: false, error: "Enter the pay minimum as a number." };
+  const payMax = parseRequiredAmount(body.payMax);
+  if (payMax === undefined) return { ok: false, error: "Enter the pay maximum as a number." };
+  const cities = parseCityList(body.cities);
+  if (!cities) return { ok: false, error: "Cities must be a list of names." };
+  const excludedCities = parseCityList(body.excludedCities);
+  if (!excludedCities) return { ok: false, error: "Excluded cities must be a list of names." };
   const currency = typeof body.currency === "string" ? body.currency.trim().toUpperCase() : "";
-  const city = typeof body.city === "string" ? body.city : "";
   const id = typeof body.id === "string" ? body.id.trim().slice(0, 80) : undefined;
   return {
     ok: true,
-    draft: normalizeDraft({ id, locationMode, city, payDirection, payAmount, currency, salaryPeriod, sortOrder }, sortOrder),
+    draft: normalizeDraft(
+      { id, locationMode, cities, excludedCities, payMin, payMax, currency, salaryPeriod, sortOrder },
+      sortOrder,
+    ),
   };
 }
 

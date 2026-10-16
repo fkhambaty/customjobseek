@@ -79,6 +79,7 @@ export const OCCUPATIONS: Occupation[] = [
   { id: "physiotherapist", family: "healthcare", title: "Physiotherapist", aliases: ["physical therapist"] },
   { id: "caregiver", family: "healthcare", title: "Caregiver", aliases: ["care assistant", "healthcare assistant", "home health aide"] },
   { id: "dentist", family: "healthcare", title: "Dentist", aliases: ["dental surgeon"] },
+  { id: "dietitian", family: "healthcare", title: "Dietitian", aliases: ["dietician", "clinical dietitian", "clinical dietician", "nutritionist", "registered dietitian", "registered dietician", "rdn"] },
   { id: "teacher", family: "education", title: "Teacher", aliases: ["school teacher", "classroom teacher", "primary teacher"] },
   { id: "teaching-assistant", family: "education", title: "Teaching Assistant", aliases: ["classroom assistant", "teacher aide"] },
   { id: "lecturer", family: "education", title: "Lecturer", aliases: ["university lecturer"] },

@@ -1,8 +1,9 @@
 import { Hono } from "hono";
 import { isEmail, utcDay } from "../../shared/commercial";
+import { validatePassword } from "../../shared/password";
 import { hashPassword, verifyPassword } from "../crypto";
 import { HttpError, type AppContext, type AppEnv, type UserRow } from "../env";
-import { issueCode, takeCode } from "../mail";
+import { CODE_TTL_MINUTES, issueCode, takeCode } from "../mail";
 import { readOnboarding, seedNewAccount } from "../onboarding";
 import { enforceRateLimit, purgeExpired, rateLimitDeletes, requestIp } from "../rateLimit";
 import { commitReferralIntent, ensureReferralCode, saveReferralIntent } from "../referrals";
@@ -15,8 +16,19 @@ function credentialsFrom(body: Record<string, unknown>): { email: string; passwo
   const email = typeof body.email === "string" ? body.email.trim().toLowerCase() : "";
   const password = typeof body.password === "string" ? body.password : "";
   if (!isEmail(email)) throw new HttpError(400, "Enter a valid email address.");
-  if (password.length < 10) throw new HttpError(400, "Use a password of at least 10 characters.");
+  const passwordError = validatePassword(password);
+  if (passwordError) throw new HttpError(400, passwordError);
   return { email, password };
+}
+
+function codeMeta(issued: { expiresAt: string; expiresInMinutes: number } | null): {
+  codeExpiresAt: string | null;
+  codeExpiresInMinutes: number;
+} {
+  return {
+    codeExpiresAt: issued?.expiresAt ?? null,
+    codeExpiresInMinutes: issued?.expiresInMinutes ?? CODE_TTL_MINUTES,
+  };
 }
 
 async function readCredentials(req: Request): Promise<{ email: string; password: string }> {
@@ -61,7 +73,7 @@ export const auth = new Hono<AppEnv>()
         console.error("referral intent failed", err);
       });
     }
-    return c.json({ ok: true, needsVerification: true });
+    return c.json({ ok: true, needsVerification: true, ...codeMeta(issued) });
   })
   .post("/verify", async (c) => {
     await limitIp(c);
@@ -100,8 +112,8 @@ export const auth = new Hono<AppEnv>()
     if (!isEmail(email)) throw new HttpError(400, "Enter a valid email address.");
     await enforceRateLimit(c.env.DB, "auth_email", email);
     const user = await c.env.DB.prepare("SELECT 1 FROM users WHERE email = ?").bind(email).first();
-    if (user) await issueCode(c.env, email, purpose);
-    return c.json({ ok: true });
+    const issued = user ? await issueCode(c.env, email, purpose) : null;
+    return c.json({ ok: true, ...codeMeta(issued) });
   })
   .post("/forgot", async (c) => {
     await limitIp(c);
@@ -110,8 +122,8 @@ export const auth = new Hono<AppEnv>()
     if (!isEmail(email)) throw new HttpError(400, "Enter a valid email address.");
     await enforceRateLimit(c.env.DB, "auth_email", email);
     const user = await c.env.DB.prepare("SELECT 1 FROM users WHERE email = ?").bind(email).first();
-    if (user) await issueCode(c.env, email, "reset");
-    return c.json({ ok: true });
+    const issued = user ? await issueCode(c.env, email, "reset") : null;
+    return c.json({ ok: true, ...codeMeta(issued) });
   })
   .post("/reset", async (c) => {
     await limitIp(c);
@@ -121,7 +133,8 @@ export const auth = new Hono<AppEnv>()
     const password = typeof body.password === "string" ? body.password : "";
     if (!isEmail(email) || !/^\d{6}$/.test(code)) throw new HttpError(400, "Enter the email and the 6-digit code.");
     await enforceRateLimit(c.env.DB, "auth_email", email);
-    if (password.length < 10) throw new HttpError(400, "Use a password of at least 10 characters.");
+    const passwordError = validatePassword(password);
+    if (passwordError) throw new HttpError(400, passwordError);
     const proof = await takeCode(c.env, email, "reset", code);
     if (!proof) throw new HttpError(400, "That code is wrong or expired. Request a new one.");
     const user = await c.env.DB.prepare("SELECT id FROM users WHERE email = ?").bind(email).first<{ id: string }>();

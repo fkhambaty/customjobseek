@@ -11,6 +11,7 @@ import {
   scanProgress,
   type ScanStage,
 } from "../shared/engine/scanRules";
+import { jobIdentityKey } from "../shared/engine/jobIdentity";
 import { jobPayPlace, scanCandidateDecision, scanOpeningAcceptance, withoutPlaceAndPayBlockers } from "../shared/engine/searchPaths";
 import type { JobRecord } from "../shared/types";
 import { profileReadiness } from "../shared/validate";
@@ -242,6 +243,7 @@ export async function processScan(env: Env, scan: MarketScanRow): Promise<void> 
         paths,
         jobPayPlace(checked.input.location, checked.fit.parsedSalary),
         checked.fit.blockers.map((blocker) => blocker.kind),
+        profile.preferences.country,
       );
       switch (acceptance) {
         case "pack":
@@ -262,12 +264,21 @@ export async function processScan(env: Env, scan: MarketScanRow): Promise<void> 
     ));
   }
   await updateStage(env, scan.id, "checking_fit", { checked: candidates.length });
-  const chosen = readable.sort((a, b) => {
+  const ranked = readable.sort((a, b) => {
     const rank = (item: CheckedOpening) => {
-      return scanCandidateDecision(paths, jobPayPlace(item.input.location, item.fit.parsedSalary)) === "review" ? 1 : 0;
+      return scanCandidateDecision(paths, jobPayPlace(item.input.location, item.fit.parsedSalary), profile.preferences.country) === "review" ? 1 : 0;
     };
     return rank(a) - rank(b) || b.row.match - a.row.match || b.fit.score - a.fit.score;
-  }).slice(0, packs);
+  });
+  const chosen: typeof ranked = [];
+  const packedKeys = new Set<string>();
+  for (const item of ranked) {
+    if (chosen.length >= packs) break;
+    const key = jobIdentityKey(item.input) || `${item.input.company}::${item.input.title}::${item.input.url}`.toLowerCase();
+    if (packedKeys.has(key)) continue;
+    packedKeys.add(key);
+    chosen.push(item);
+  }
   if (!chosen.length) {
     await completeWithNothing(env, scan, "The strongest openings had a deal-breaker or could not be read. Nothing was charged.");
     return;

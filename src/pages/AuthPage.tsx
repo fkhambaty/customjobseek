@@ -1,5 +1,6 @@
 import { useState, type FormEvent } from "react";
 import { Link, Navigate, useLocation, useNavigate, useSearchParams } from "react-router-dom";
+import { CODE_TTL_MINUTES, passwordRuleStates, validatePassword } from "../../shared/password";
 import { api, ApiError } from "../api";
 import { CapacityNotice } from "../components/CapacityNotice";
 import { useSession } from "../session";
@@ -14,6 +15,7 @@ export function AuthPage({ mode }: { mode: "login" | "signup" }) {
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const rules = passwordRuleStates(password);
 
   const from = (location.state as { from?: string } | null)?.from;
   if (account) return <Navigate to={from ?? "/today"} replace />;
@@ -21,11 +23,22 @@ export function AuthPage({ mode }: { mode: "login" | "signup" }) {
   async function submit(e: FormEvent) {
     e.preventDefault();
     setError("");
+    if (mode === "signup") {
+      const problem = validatePassword(password);
+      if (problem) {
+        setError(problem);
+        return;
+      }
+    }
     setBusy(true);
     try {
       if (mode === "signup") {
         sessionStorage.setItem("cjs_referral", referralCode);
-        await api.signup(email, password, referralCode);
+        const result = await api.signup(email, password, referralCode);
+        const expiresAt = result.codeExpiresAt ?? "";
+        const minutes = result.codeExpiresInMinutes ?? CODE_TTL_MINUTES;
+        if (expiresAt) sessionStorage.setItem("cjs_code_expires", expiresAt);
+        sessionStorage.setItem("cjs_code_minutes", String(minutes));
         navigate(`/verify?email=${encodeURIComponent(email)}`);
         return;
       }
@@ -43,7 +56,9 @@ export function AuthPage({ mode }: { mode: "login" | "signup" }) {
       <div className="card auth-card">
         <h1>{mode === "signup" ? "Create your free account" : "Welcome back"}</h1>
         <p className="muted">
-          {mode === "signup" ? "3 application packs to start. We email you a code to confirm it's you." : "Sign in to your job search."}
+          {mode === "signup"
+            ? `3 application packs to start. We email you a code that expires in ${CODE_TTL_MINUTES} minutes.`
+            : "Sign in to your job search."}
         </p>
         <form onSubmit={submit} className="stack">
           <label className="field">
@@ -60,7 +75,17 @@ export function AuthPage({ mode }: { mode: "login" | "signup" }) {
               value={password}
               onChange={(e) => setPassword(e.target.value)}
             />
-            {mode === "signup" ? <small className="muted">At least 10 characters.</small> : <small className="muted"><Link to="/reset">Forgot password?</Link></small>}
+            {mode === "signup" ? (
+              <ul className="password-hints" aria-live="polite">
+                {rules.map((rule) => (
+                  <li key={rule.id} className={rule.met ? "ok" : ""}>
+                    {rule.met ? "Met" : "Needed"}: {rule.label}
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <small className="muted"><Link to="/reset">Forgot password?</Link></small>
+            )}
           </label>
           {pause && <CapacityNotice pause={pause} compact />}
           {error && <div className="alert alert-error">{error}</div>}

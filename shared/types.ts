@@ -45,6 +45,8 @@ export interface Preferences {
   minSalary: number | null;
   maxSalary: number | null;
   salaryPeriod: SalaryPeriod;
+  /** Industry ids from shared/industries.ts. Empty means no sector preference. */
+  industries: string[];
   targetRoles: string[];
   excludedTitleWords: string[];
   /** IANA zone used for the daily scan hour. Empty profiles default to Asia/Kolkata. */
@@ -267,10 +269,11 @@ export function emptyProfile(email = ""): Profile {
       country: "",
       cities: [],
       remoteOk: true,
-      currency: "USD",
+      currency: "INR",
       minSalary: null,
       maxSalary: null,
       salaryPeriod: "year",
+      industries: [],
       targetRoles: [],
       excludedTitleWords: [],
       timezone: "Asia/Kolkata",

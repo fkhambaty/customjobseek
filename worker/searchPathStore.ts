@@ -1,6 +1,7 @@
 import type { D1Database, D1PreparedStatement, D1Result } from "@cloudflare/workers-types";
 import {
   assignSearchPath,
+  countryLabelFor,
   jobPayPlace,
   nextPathSet,
   planJobChanges,
@@ -20,9 +21,10 @@ interface PathRow {
   id: string;
   name: string;
   location_mode: string;
-  city: string;
-  pay_direction: string;
-  pay_amount: number | null;
+  cities_json: string;
+  excluded_cities_json: string;
+  pay_min: number;
+  pay_max: number;
   currency: string;
   salary_period: string;
   sort_order: number;
@@ -33,19 +35,9 @@ interface PathRow {
 
 function locationMode(value: string): SearchPath["locationMode"] {
   switch (value) {
-    case "city":
+    case "cities":
     case "remote":
-      return value;
-    default:
-      throw new HttpError(500, "A search path could not be read.");
-  }
-}
-
-function payDirection(value: string): SearchPath["payDirection"] {
-  switch (value) {
-    case "above":
-    case "below":
-    case "any":
+    case "country":
       return value;
     default:
       throw new HttpError(500, "A search path could not be read.");
@@ -64,14 +56,25 @@ function salaryPeriod(value: string): SalaryPeriod {
   }
 }
 
+function parseCitiesJson(raw: string): string[] {
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter((item): item is string => typeof item === "string").map((item) => item.trim()).filter(Boolean);
+  } catch {
+    return [];
+  }
+}
+
 function toPath(row: PathRow): SearchPath {
   return {
     id: row.id,
     name: row.name,
     locationMode: locationMode(row.location_mode),
-    city: row.city,
-    payDirection: payDirection(row.pay_direction),
-    payAmount: row.pay_amount,
+    cities: parseCitiesJson(row.cities_json),
+    excludedCities: parseCitiesJson(row.excluded_cities_json),
+    payMin: row.pay_min,
+    payMax: row.pay_max,
     currency: row.currency,
     salaryPeriod: salaryPeriod(row.salary_period),
     sortOrder: row.sort_order,
@@ -98,7 +101,7 @@ async function retryTransientRead<T>(read: () => Promise<D1Result<T>>): Promise<
 export async function listSearchPaths(db: D1Database, userId: string): Promise<SearchPath[]> {
   const { results } = await retryTransientRead(() =>
     db.prepare(
-      `SELECT id, name, location_mode, city, pay_direction, pay_amount, currency, salary_period, sort_order, revision, created_at, updated_at
+      `SELECT id, name, location_mode, cities_json, excluded_cities_json, pay_min, pay_max, currency, salary_period, sort_order, revision, created_at, updated_at
        FROM search_paths WHERE user_id = ? ORDER BY sort_order ASC, id ASC`,
     )
     .bind(userId)
@@ -145,7 +148,13 @@ async function prepareChange(
 ): Promise<{ before: SearchPath[]; after: SearchPath[]; changes: JobChange[] }> {
   const before = await listSearchPaths(db, userId);
   const jobs = await loadJobs(db, userId, preferences.currency);
-  const planned = nextPathSet(before, commit, Array.from({ length: 6 }, () => crypto.randomUUID()), new Date().toISOString());
+  const planned = nextPathSet(
+    before,
+    commit,
+    Array.from({ length: 6 }, () => crypto.randomUUID()),
+    new Date().toISOString(),
+    countryLabelFor(preferences),
+  );
   if (!planned.ok) throw new HttpError(planned.status, planned.error);
   const changes = planJobChanges({
     jobs,
@@ -192,33 +201,48 @@ function writeStatements(db: D1Database, userId: string, before: SearchPath[], a
     if (!kept.has(path.id)) statements.push(db.prepare("DELETE FROM search_paths WHERE id = ? AND user_id = ?").bind(path.id, userId));
   }
   for (const path of after) {
+    const citiesJson = JSON.stringify(path.cities);
+    const excludedJson = JSON.stringify(path.excludedCities);
     const existed = before.some((row) => row.id === path.id);
     if (existed) {
       statements.push(
         db
           .prepare(
             `UPDATE search_paths
-             SET name = ?, location_mode = ?, city = ?, pay_direction = ?, pay_amount = ?, currency = ?, salary_period = ?, sort_order = ?, revision = revision + 1, updated_at = datetime('now')
+             SET name = ?, location_mode = ?, cities_json = ?, excluded_cities_json = ?, pay_min = ?, pay_max = ?, currency = ?, salary_period = ?, sort_order = ?, revision = revision + 1, updated_at = datetime('now')
              WHERE id = ? AND user_id = ?`,
           )
-          .bind(path.name, path.locationMode, path.city, path.payDirection, path.payAmount, path.currency, path.salaryPeriod, path.sortOrder, path.id, userId),
+          .bind(
+            path.name,
+            path.locationMode,
+            citiesJson,
+            excludedJson,
+            path.payMin,
+            path.payMax,
+            path.currency,
+            path.salaryPeriod,
+            path.sortOrder,
+            path.id,
+            userId,
+          ),
       );
     } else {
       statements.push(
         db
           .prepare(
             `INSERT INTO search_paths
-             (id, user_id, name, location_mode, city, pay_direction, pay_amount, currency, salary_period, sort_order, created_at, updated_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+             (id, user_id, name, location_mode, cities_json, excluded_cities_json, pay_min, pay_max, currency, salary_period, sort_order, created_at, updated_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           )
           .bind(
             path.id,
             userId,
             path.name,
             path.locationMode,
-            path.city,
-            path.payDirection,
-            path.payAmount,
+            citiesJson,
+            excludedJson,
+            path.payMin,
+            path.payMax,
             path.currency,
             path.salaryPeriod,
             path.sortOrder,

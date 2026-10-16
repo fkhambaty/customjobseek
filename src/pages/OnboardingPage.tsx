@@ -19,7 +19,8 @@ import { api } from "../api";
 import { CountrySelect, TimeZoneField } from "../components/CountrySelect";
 import { OnboardingPaths, SaveCancelled } from "../components/SearchPaths";
 import { Field, ListInput, NumberInput, newId } from "../components/fields";
-import { RoleTargets } from "../components/RoleTargets";
+import { IndustryPicker, RoleTargets } from "../components/RoleTargets";
+import { industryLabels } from "../../shared/industries";
 import { plural } from "../format";
 import { useSession } from "../session";
 
@@ -632,12 +633,18 @@ function StepBody({
     case "roles":
       return (
         <>
+          <Field label="Your industry" hint="Optional but important. Scans prefer boards in these industries so a healthcare role is not scored against unrelated technology employers first.">
+            <IndustryPicker
+              selected={profile.preferences.industries}
+              onChange={(value) => onPref("industries", value)}
+            />
+          </Field>
           <Field label="Job titles you want" hint="Comma-separated. A scan looks for these titles, including any title you type yourself.">
             <ListInput
               key={rolesKey}
               value={profile.preferences.targetRoles}
               onChange={(value) => onPref("targetRoles", value)}
-              placeholder="Registered Nurse, Electrician, Teacher"
+              placeholder="Dietitian, Registered Nurse, Electrician, Teacher"
             />
           </Field>
           <RoleTargets roles={profile.preferences.targetRoles} onAdd={onAddRole} />
@@ -848,6 +855,7 @@ function Confirm({ profile, onJump }: { profile: Profile; onJump: (step: WizardS
               : "Not set"}
           </dd>
         </div>
+        <div><dt>Industry</dt><dd>{industryLabels(profile.preferences.industries).join(", ") || "Not set"}</dd></div>
         <div><dt>Titles to find</dt><dd>{profile.preferences.targetRoles.join(", ") || "Not set"}</dd></div>
         <div><dt>Place</dt><dd>{countryLabel(profile.preferences.country)}{profile.preferences.cities.length ? ` · ${profile.preferences.cities.join(", ")}` : ""} · scans at {timeZoneLabel(profile.preferences.timezone)}</dd></div>
         <div><dt>Work mode</dt><dd>{profile.preferences.remoteOk ? "Remote roles are fine" : "No remote roles"}</dd></div>

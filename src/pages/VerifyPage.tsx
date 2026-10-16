@@ -1,26 +1,61 @@
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
+import { CODE_TTL_MINUTES, passwordRuleStates, validatePassword } from "../../shared/password";
 import { api } from "../api";
 import { useSession } from "../session";
+
+function readStoredExpiry(): { expiresAt: string | null; minutes: number } {
+  const expiresAt = sessionStorage.getItem("cjs_code_expires");
+  const minutes = Number(sessionStorage.getItem("cjs_code_minutes") || CODE_TTL_MINUTES);
+  return { expiresAt, minutes: Number.isFinite(minutes) && minutes > 0 ? minutes : CODE_TTL_MINUTES };
+}
+
+function rememberExpiry(expiresAt: string | null, minutes: number) {
+  if (expiresAt) sessionStorage.setItem("cjs_code_expires", expiresAt);
+  sessionStorage.setItem("cjs_code_minutes", String(minutes));
+}
+
+function expiryCopy(expiresAt: string | null, minutes: number, nowMs: number): string {
+  if (expiresAt) {
+    const leftMs = Date.parse(expiresAt) - nowMs;
+    if (Number.isFinite(leftMs)) {
+      if (leftMs <= 0) return "This code has expired. Request a new one.";
+      const leftMin = Math.max(1, Math.ceil(leftMs / 60_000));
+      return `This code expires in ${leftMin} minute${leftMin === 1 ? "" : "s"} (codes last ${minutes} minutes).`;
+    }
+  }
+  return `Enter the 6-digit code we emailed you. It expires in ${minutes} minutes.`;
+}
 
 export function VerifyPage() {
   const [params] = useSearchParams();
   const navigate = useNavigate();
   const { refresh } = useSession();
+  const stored = readStoredExpiry();
   const [email, setEmail] = useState(params.get("email") ?? "");
   const [code, setCode] = useState("");
   const [error, setError] = useState("");
-  const [info, setInfo] = useState("Enter the 6-digit code we emailed you. It expires in 15 minutes.");
+  const [expiresAt, setExpiresAt] = useState<string | null>(stored.expiresAt);
+  const [minutes, setMinutes] = useState(stored.minutes);
+  const [nowMs, setNowMs] = useState(Date.now());
   const [busy, setBusy] = useState(false);
+  const info = expiryCopy(expiresAt, minutes, nowMs);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setNowMs(Date.now()), 15_000);
+    return () => window.clearInterval(timer);
+  }, []);
 
   async function submit(e: FormEvent) {
     e.preventDefault();
     setBusy(true);
     setError("");
     try {
-      const stored = sessionStorage.getItem("cjs_referral");
-      await api.verify(email, code, stored ?? undefined);
+      const storedReferral = sessionStorage.getItem("cjs_referral");
+      await api.verify(email, code, storedReferral ?? undefined);
       sessionStorage.removeItem("cjs_referral");
+      sessionStorage.removeItem("cjs_code_expires");
+      sessionStorage.removeItem("cjs_code_minutes");
       await refresh();
       navigate("/onboarding");
     } catch (err) {
@@ -45,8 +80,16 @@ export function VerifyPage() {
           <button
             className="btn btn-ghost btn-sm"
             onClick={async () => {
-              await api.resendCode(email, "signup").catch((err: Error) => setError(err.message));
-              setInfo("If that account is waiting, a new code is on its way.");
+              try {
+                const result = await api.resendCode(email, "signup");
+                rememberExpiry(result.codeExpiresAt, result.codeExpiresInMinutes);
+                setExpiresAt(result.codeExpiresAt);
+                setMinutes(result.codeExpiresInMinutes);
+                setNowMs(Date.now());
+                setError("");
+              } catch (err) {
+                setError((err as Error).message);
+              }
             }}
           >
             Send a new code
@@ -66,15 +109,29 @@ export function ResetPage() {
   const [sent, setSent] = useState(false);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [expiresAt, setExpiresAt] = useState<string | null>(null);
+  const [minutes, setMinutes] = useState(CODE_TTL_MINUTES);
+  const [nowMs, setNowMs] = useState(Date.now());
   const navigate = useNavigate();
   const { refresh } = useSession();
+  const rules = passwordRuleStates(password);
+
+  useEffect(() => {
+    if (!sent) return;
+    const timer = window.setInterval(() => setNowMs(Date.now()), 15_000);
+    return () => window.clearInterval(timer);
+  }, [sent]);
 
   async function send(e: FormEvent) {
     e.preventDefault();
     setBusy(true);
     setError("");
     try {
-      await api.forgot(email);
+      const result = await api.forgot(email);
+      rememberExpiry(result.codeExpiresAt, result.codeExpiresInMinutes);
+      setExpiresAt(result.codeExpiresAt);
+      setMinutes(result.codeExpiresInMinutes);
+      setNowMs(Date.now());
       setSent(true);
     } catch (err) {
       setError((err as Error).message);
@@ -85,6 +142,11 @@ export function ResetPage() {
 
   async function apply(e: FormEvent) {
     e.preventDefault();
+    const problem = validatePassword(password);
+    if (problem) {
+      setError(problem);
+      return;
+    }
     setBusy(true);
     setError("");
     try {
@@ -110,9 +172,21 @@ export function ResetPage() {
           </form>
         ) : (
           <form onSubmit={apply} className="stack">
-            <p className="muted">If an account exists for that email, the code is on its way.</p>
+            <p className="muted">
+              If an account exists for that email, the code is on its way. {expiryCopy(expiresAt, minutes, nowMs)}
+            </p>
             <label className="field"><span>Code</span><input inputMode="numeric" required value={code} onChange={(e) => setCode(e.target.value)} /></label>
-            <label className="field"><span>New password</span><input type="password" minLength={10} required value={password} onChange={(e) => setPassword(e.target.value)} /></label>
+            <label className="field">
+              <span>New password</span>
+              <input type="password" minLength={10} required value={password} onChange={(e) => setPassword(e.target.value)} />
+              <ul className="password-hints" aria-live="polite">
+                {rules.map((rule) => (
+                  <li key={rule.id} className={rule.met ? "ok" : ""}>
+                    {rule.met ? "Met" : "Needed"}: {rule.label}
+                  </li>
+                ))}
+              </ul>
+            </label>
             {error && <div className="alert alert-error">{error}</div>}
             <button className="btn btn-primary btn-block" disabled={busy}>Save password</button>
           </form>

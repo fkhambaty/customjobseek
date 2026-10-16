@@ -75,7 +75,7 @@ export function wizardCopy(step: WizardStep): WizardCopy {
       return {
         title: "Which jobs should we look for?",
         short: "Roles",
-        why: "Titles decide which openings are worth reading. Without at least one, a scan has nothing to match and stays off.",
+        why: "Pick your industry, then the titles to find. Industry steers which employer boards a scan prefers. Titles decide which openings are worth reading. Without at least one title, a scan has nothing to match and stays off.",
       };
     case "market":
       return {
@@ -87,7 +87,7 @@ export function wizardCopy(step: WizardStep): WizardCopy {
       return {
         title: "Name the search paths you want",
         short: "Paths",
-        why: "A search path is one place and one pay rule, such as Pune · Below ₹35 LPA or Remote · Above ₹30 LPA. A job matches on the midpoint of the pay the posting published. If the posting has no pay, you can review it separately. Nothing is guessed.",
+        why: "A search path is one place rule and one pay band, such as Pune + Mumbai · ₹25–₹35 LPA, Remote · $80k–$120k, or India except Pune · ₹40–₹80 LPA. Every path needs a lower and upper pay limit and a currency (INR by default). A job matches on the midpoint of published pay. If the posting has no pay, you can review it separately. Nothing is guessed.",
       };
     case "confirm":
       return {

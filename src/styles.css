@@ -600,6 +600,7 @@ th[aria-sort] .sort-arrow { color: var(--ink); opacity: 1; }
 .role-read { list-style: none; margin: 10px 0 0; padding: 0; }
 .role-read li { margin: 0 0 4px; font-size: 14px; }
 .chip { font-size: 12.5px; padding: 2px 8px; border-radius: 3px; border: 1px solid var(--line-2); color: var(--ink-2); background: var(--surface); }
+.chip-on { border-color: var(--ink); color: var(--ink); background: var(--accent-soft, #eef3ef); font-weight: 600; }
 .chip-ok { border-color: #bcd3c2; color: var(--good); background: var(--accent-soft); }
 .chip-gap { border-color: #e2c3b9; color: var(--bad); background: #fbf2ef; }
 .chip-soft { color: var(--muted); }
@@ -698,6 +699,16 @@ th[aria-sort] .sort-arrow { color: var(--ink); opacity: 1; }
 
 /* Account */
 .auth-card { margin-top: 24px; }
+.password-hints {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+  display: grid;
+  gap: 4px;
+  font-size: 0.85rem;
+  color: var(--muted, #6b6560);
+}
+.password-hints li.ok { color: var(--good, #2f6b3a); }
 .stat-row { display: flex; gap: 32px; margin: 8px 0 16px; flex-wrap: wrap; }
 .stat { display: flex; flex-direction: column; }
 .stat-n { font-family: var(--serif); font-size: 30px; }

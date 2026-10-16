@@ -40,19 +40,21 @@ function prefs(over: Partial<Preferences> = {}): Preferences {
     remoteOk: true,
     currency: "INR",
     minSalary: 30,
+    maxSalary: 50,
     salaryPeriod: "lpa",
     ...over,
   };
 }
 
-function makePath(over: Partial<SearchPath> & Pick<SearchPath, "id" | "sortOrder" | "locationMode" | "payDirection">): SearchPath {
+function makePath(over: Partial<SearchPath> & Pick<SearchPath, "id" | "sortOrder" | "locationMode">): SearchPath {
   const path: SearchPath = {
     id: over.id,
     name: "",
     locationMode: over.locationMode,
-    city: over.city ?? (over.locationMode === "remote" ? "" : "Pune"),
-    payDirection: over.payDirection,
-    payAmount: over.payAmount === undefined ? (over.payDirection === "any" ? null : 35) : over.payAmount,
+    cities: over.cities ?? (over.locationMode === "cities" ? ["Pune"] : []),
+    excludedCities: over.excludedCities ?? [],
+    payMin: over.payMin ?? 30,
+    payMax: over.payMax ?? 50,
     currency: over.currency ?? "INR",
     salaryPeriod: over.salaryPeriod ?? "lpa",
     sortOrder: over.sortOrder,
@@ -60,16 +62,17 @@ function makePath(over: Partial<SearchPath> & Pick<SearchPath, "id" | "sortOrder
     createdAt: "2026-10-14T00:00:00Z",
     updatedAt: "2026-10-14T00:00:00Z",
   };
-  path.name = over.name ?? searchPathLabel(path);
+  path.name = over.name ?? searchPathLabel(path, over.locationMode === "country" ? "India" : "Country");
   return path;
 }
 
 function draft(over: Partial<SearchPathDraft> = {}): SearchPathDraft {
   return {
-    locationMode: "city",
-    city: "Pune",
-    payDirection: "above",
-    payAmount: 35,
+    locationMode: "cities",
+    cities: ["Pune"],
+    excludedCities: [],
+    payMin: 30,
+    payMax: 50,
     currency: "INR",
     salaryPeriod: "lpa",
     sortOrder: 0,
@@ -92,71 +95,101 @@ function tracked(over: Partial<TrackedJob> = {}): TrackedJob {
 }
 
 describe("search path labels, place, and pay", () => {
-  it("builds labels for cities, remote, currencies, and periods", () => {
-    expect(searchPathLabel(makePath({ id: "a", sortOrder: 0, locationMode: "city", city: "Pune", payDirection: "below", payAmount: 35 }))).toBe("Pune · Below ₹35 LPA");
-    expect(searchPathLabel(makePath({ id: "b", sortOrder: 0, locationMode: "city", city: "Bengaluru", payDirection: "above", payAmount: 50 }))).toBe("Bengaluru · Above ₹50 LPA");
-    expect(searchPathLabel(makePath({ id: "c", sortOrder: 0, locationMode: "remote", city: "", payDirection: "above", payAmount: 30 }))).toBe("Remote · Above ₹30 LPA");
-    expect(searchPathLabel(makePath({ id: "d", sortOrder: 0, locationMode: "city", city: "Austin", payDirection: "above", payAmount: 120000, currency: "USD", salaryPeriod: "year" }))).toBe("Austin · Above $120,000 per year");
-    expect(searchPathLabel(makePath({ id: "e", sortOrder: 0, locationMode: "city", city: "London", payDirection: "below", payAmount: 5000, currency: "GBP", salaryPeriod: "month" }))).toBe("London · Below £5,000 per month");
-    expect(searchPathLabel(makePath({ id: "f", sortOrder: 0, locationMode: "remote", city: "", payDirection: "above", payAmount: 40, currency: "EUR", salaryPeriod: "hour" }))).toBe("Remote · Above €40 per hour");
-    expect(searchPathLabel(makePath({ id: "g", sortOrder: 0, locationMode: "city", city: "Sydney", payDirection: "any", payAmount: null, currency: "AUD", salaryPeriod: "year" }))).toBe("Sydney · Any pay");
+  it("builds labels for multi-city, remote, country exclude, currencies, and periods", () => {
+    expect(searchPathLabel(makePath({ id: "a", sortOrder: 0, locationMode: "cities", cities: ["Pune", "Mumbai"], payMin: 30, payMax: 45 }))).toBe(
+      "Pune, Mumbai · ₹30–₹45 LPA",
+    );
+    expect(searchPathLabel(makePath({ id: "b", sortOrder: 0, locationMode: "remote", payMin: 80_000, payMax: 120_000, currency: "USD", salaryPeriod: "year" }))).toBe(
+      "Remote · $80,000–$120,000 per year",
+    );
+    expect(
+      searchPathLabel(
+        makePath({ id: "c", sortOrder: 0, locationMode: "country", excludedCities: ["Pune"], payMin: 40, payMax: 80 }),
+        "India",
+      ),
+    ).toBe("India except Pune · ₹40–₹80 LPA");
+    expect(searchPathLabel(makePath({ id: "d", sortOrder: 0, locationMode: "cities", cities: ["Austin"], payMin: 100_000, payMax: 150_000, currency: "USD", salaryPeriod: "year" }))).toBe(
+      "Austin · $100,000–$150,000 per year",
+    );
+    expect(searchPathLabel(makePath({ id: "e", sortOrder: 0, locationMode: "cities", cities: ["London"], payMin: 4_000, payMax: 5_000, currency: "GBP", salaryPeriod: "month" }))).toBe(
+      "London · £4,000–£5,000 per month",
+    );
+    expect(searchPathLabel(makePath({ id: "f", sortOrder: 0, locationMode: "remote", payMin: 30, payMax: 60, currency: "EUR", salaryPeriod: "hour" }))).toBe(
+      "Remote · €30–€60 per hour",
+    );
+    expect(searchPathLabel(makePath({ id: "g", sortOrder: 0, locationMode: "country", excludedCities: [], payMin: 1, payMax: 1_000_000_000 }), "India")).toBe(
+      "India · ₹1–₹1,000,000,000 LPA",
+    );
   });
 
-  it("matches a city or remote, including city aliases, and ignores the other mode", () => {
-    const pune = makePath({ id: "pune", sortOrder: 0, locationMode: "city", city: "Pune", payDirection: "any", payAmount: null });
-    const bengaluru = makePath({ id: "blr", sortOrder: 1, locationMode: "city", city: "Bengaluru", payDirection: "any", payAmount: null });
-    const remote = makePath({ id: "remote", sortOrder: 2, locationMode: "remote", city: "", payDirection: "any", payAmount: null });
-    expect(locationMatches("Pune, India", pune)).toBe(true);
+  it("matches multi-city, remote, and country-exclude modes", () => {
+    const metro = makePath({ id: "metro", sortOrder: 0, locationMode: "cities", cities: ["Pune", "Mumbai"], payMin: 1, payMax: 1e9 });
+    const bengaluru = makePath({ id: "blr", sortOrder: 1, locationMode: "cities", cities: ["Bengaluru"], payMin: 1, payMax: 1e9 });
+    const remote = makePath({ id: "remote", sortOrder: 2, locationMode: "remote", payMin: 1, payMax: 1e9 });
+    const indiaExceptPune = makePath({
+      id: "india",
+      sortOrder: 3,
+      locationMode: "country",
+      excludedCities: ["Pune"],
+      payMin: 1,
+      payMax: 1e9,
+    });
+
+    expect(locationMatches("Pune, India", metro)).toBe(true);
+    expect(locationMatches("Mumbai, India", metro)).toBe(true);
+    expect(locationMatches("Hyderabad, India", metro)).toBe(false);
     expect(locationMatches("Pune, India", remote)).toBe(false);
     expect(locationMatches("Bangalore, India", bengaluru)).toBe(true);
     expect(locationMatches("Remote (India)", remote)).toBe(true);
-    expect(locationMatches("Remote (India)", pune)).toBe(false);
+    expect(locationMatches("Remote (India)", metro)).toBe(false);
     expect(locationMatches("Work from home", remote)).toBe(true);
-    expect(locationMatches("Hyderabad", pune)).toBe(false);
+
+    expect(locationMatches("Bengaluru, India", indiaExceptPune, "IN")).toBe(true);
+    expect(locationMatches("Pune, India", indiaExceptPune, "IN")).toBe(false);
+    expect(locationMatches("Remote (India)", indiaExceptPune, "IN")).toBe(false);
+    expect(locationMatches("Austin, TX", indiaExceptPune, "IN")).toBe(false);
   });
 
-  it("compares the published midpoint with an annualised threshold and does not guess", () => {
-    const above = makePath({ id: "above", sortOrder: 0, locationMode: "city", city: "Pune", payDirection: "above", payAmount: 35 });
-    const below = makePath({ id: "below", sortOrder: 1, locationMode: "city", city: "Pune", payDirection: "below", payAmount: 35 });
-    const any = makePath({ id: "any", sortOrder: 2, locationMode: "city", city: "Pune", payDirection: "any", payAmount: null });
-    const usd = makePath({ id: "usd", sortOrder: 3, locationMode: "city", city: "Pune", payDirection: "above", payAmount: 100000, currency: "USD", salaryPeriod: "year" });
-    const hourly = makePath({ id: "hour", sortOrder: 0, locationMode: "remote", city: "", payDirection: "above", payAmount: 30, currency: "USD", salaryPeriod: "hour" });
-    const monthly = makePath({ id: "month", sortOrder: 0, locationMode: "city", city: "London", payDirection: "below", payAmount: 5000, currency: "GBP", salaryPeriod: "month" });
+  it("compares the published midpoint with an inclusive annualised pay band", () => {
+    const band = makePath({ id: "band", sortOrder: 0, locationMode: "cities", cities: ["Pune"], payMin: 35, payMax: 50 });
+    const wide = makePath({ id: "wide", sortOrder: 1, locationMode: "cities", cities: ["Pune"], payMin: 1, payMax: 1e9 });
+    const usd = makePath({ id: "usd", sortOrder: 2, locationMode: "cities", cities: ["Pune"], payMin: 100_000, payMax: 200_000, currency: "USD", salaryPeriod: "year" });
+    const hourly = makePath({ id: "hour", sortOrder: 0, locationMode: "remote", payMin: 30, payMax: 50, currency: "USD", salaryPeriod: "hour" });
+    const monthly = makePath({ id: "month", sortOrder: 0, locationMode: "cities", cities: ["London"], payMin: 4_000, payMax: 6_000, currency: "GBP", salaryPeriod: "month" });
 
-    expect(firstOrderedMatch([above], { location: "Pune", payLow: 3_500_000, payHigh: 3_500_000, currency: "INR" })?.id).toBe("above");
-    expect(firstOrderedMatch([above], { location: "Pune", payLow: 3_000_000, payHigh: 3_000_000, currency: "INR" })).toBeNull();
-    expect(firstOrderedMatch([below], { location: "Pune", payLow: 3_500_000, payHigh: 3_500_000, currency: "INR" })).toBeNull();
-    expect(firstOrderedMatch([below], { location: "Pune", payLow: 3_000_000, payHigh: 3_400_000, currency: "INR" })?.id).toBe("below");
-    expect(firstOrderedMatch([above, any], { location: "Pune", payLow: null, payHigh: null, currency: "INR" })?.id).toBe("any");
-    expect(firstOrderedMatch([above], { location: "Pune", payLow: null, payHigh: null, currency: "INR" })).toBeNull();
-    expect(firstOrderedMatch([usd, any], { location: "Pune", payLow: 4_000_000, payHigh: 4_000_000, currency: "INR" })?.id).toBe("any");
+    // 35 LPA = 3_500_000; inclusive on both ends
+    expect(firstOrderedMatch([band], { location: "Pune", payLow: 3_500_000, payHigh: 3_500_000, currency: "INR" })?.id).toBe("band");
+    expect(firstOrderedMatch([band], { location: "Pune", payLow: 5_000_000, payHigh: 5_000_000, currency: "INR" })?.id).toBe("band");
+    expect(firstOrderedMatch([band], { location: "Pune", payLow: 3_000_000, payHigh: 3_000_000, currency: "INR" })).toBeNull();
+    expect(firstOrderedMatch([band], { location: "Pune", payLow: 5_500_000, payHigh: 5_500_000, currency: "INR" })).toBeNull();
+    expect(firstOrderedMatch([band, wide], { location: "Pune", payLow: null, payHigh: null, currency: "INR" })).toBeNull();
+    expect(firstOrderedMatch([band], { location: "Pune", payLow: null, payHigh: null, currency: "INR" })).toBeNull();
+    expect(firstOrderedMatch([usd, wide], { location: "Pune", payLow: 4_000_000, payHigh: 4_000_000, currency: "INR" })?.id).toBe("wide");
     expect(firstOrderedMatch([hourly], { location: "Remote", payLow: 70_000, payHigh: 70_000, currency: "USD" })?.id).toBe("hour");
     expect(firstOrderedMatch([hourly], { location: "Remote", payLow: 50_000, payHigh: 50_000, currency: "USD" })).toBeNull();
-    expect(firstOrderedMatch([monthly], { location: "London, UK", payLow: 50_000, payHigh: 50_000, currency: "GBP" })?.id).toBe("month");
-    const anyFirst = makePath({ id: "any-first", sortOrder: 0, locationMode: "city", city: "Pune", payDirection: "any", payAmount: null });
-    const aboveLater = makePath({ id: "above-later", sortOrder: 1, locationMode: "city", city: "Pune", payDirection: "above", payAmount: 35 });
-    expect(firstOrderedMatch([aboveLater, anyFirst], { location: "Pune", payLow: 5_000_000, payHigh: 5_000_000, currency: "INR" })?.id).toBe("any-first");
+    expect(firstOrderedMatch([monthly], { location: "London, UK", payLow: 60_000, payHigh: 60_000, currency: "GBP" })?.id).toBe("month");
 
     const foreign = jobPayPlace("Pune", { currency: "USD", annualMin: 120_000, annualMax: 140_000 });
     expect(foreign.currency).toBe("USD");
-    expect(firstOrderedMatch([above], foreign)).toBeNull();
-    expect(firstOrderedMatch([above, any], foreign)?.id).toBe("any");
-    const foreignAssignment = assignSearchPath({ ...foreign, paths: [above], preferences: prefs() });
+    expect(firstOrderedMatch([band], foreign)).toBeNull();
+    expect(firstOrderedMatch([band, wide], foreign)).toBeNull();
+    expect(firstOrderedMatch([band, wide, usd], foreign)?.id).toBe("usd");
+    const foreignAssignment = assignSearchPath({ ...foreign, paths: [band], preferences: prefs() });
     expect(foreignAssignment).toMatchObject({ searchPathId: null, payNotPublished: false });
-    expect(scanCandidateDecision([above], foreign)).toBe("skip");
-    expect(scanOpeningAcceptance([above], foreign, [])).toBe("skip");
-    expect(scanCandidateDecision([above], { location: "Pune", payLow: null, payHigh: null, currency: "" })).toBe("review");
+    expect(scanCandidateDecision([band], foreign)).toBe("skip");
+    expect(scanOpeningAcceptance([band], foreign, [])).toBe("skip");
+    expect(scanCandidateDecision([band], { location: "Pune", payLow: null, payHigh: null, currency: "" })).toBe("review");
     expect(showPayNotPublished({ searchPathId: null, payLow: null, payHigh: null, payProvenance: "posting" }, true)).toBe(false);
     expect(showPayNotPublished({ searchPathId: null, payLow: null, payHigh: null, salaryText: "$120,000" }, true)).toBe(false);
   });
 
   it("uses sort order, then id, and keeps the no-path lane", () => {
-    const later = makePath({ id: "b", sortOrder: 1, locationMode: "city", city: "Pune", payDirection: "any", payAmount: null });
-    const earlier = makePath({ id: "a", sortOrder: 0, locationMode: "city", city: "Pune", payDirection: "above", payAmount: 30 });
-    const tieHigh = makePath({ id: "m", sortOrder: 0, locationMode: "city", city: "Pune", payDirection: "any", payAmount: null });
-    const tieLow = makePath({ id: "c", sortOrder: 0, locationMode: "city", city: "Pune", payDirection: "any", payAmount: null });
+    const later = makePath({ id: "b", sortOrder: 1, locationMode: "cities", cities: ["Pune"], payMin: 1, payMax: 1e9 });
+    const earlier = makePath({ id: "a", sortOrder: 0, locationMode: "cities", cities: ["Pune"], payMin: 30, payMax: 80 });
+    const tieHigh = makePath({ id: "m", sortOrder: 0, locationMode: "cities", cities: ["Pune"], payMin: 1, payMax: 1e9 });
+    const tieLow = makePath({ id: "c", sortOrder: 0, locationMode: "cities", cities: ["Pune"], payMin: 1, payMax: 1e9 });
     expect(firstOrderedMatch([later, earlier], { location: "Pune", payLow: 4_000_000, payHigh: 4_000_000, currency: "INR" })?.id).toBe("a");
-    expect(firstOrderedMatch([tieHigh, tieLow], { location: "Pune", payLow: null, payHigh: null, currency: "INR" })?.id).toBe("c");
+    expect(firstOrderedMatch([tieHigh, tieLow], { location: "Pune", payLow: 4_000_000, payHigh: 4_000_000, currency: "INR" })?.id).toBe("c");
 
     const preferences = prefs();
     const assigned = assignSearchPath({ location: "Pune, India", payLow: 3_500_000, payHigh: 4_500_000, currency: "INR", paths: [], preferences });
@@ -180,38 +213,46 @@ describe("search path labels, place, and pay", () => {
     expect(matchesPathFilter({ searchPathId: "a", lane: earlier.name }, UNASSIGNED_PATH_FILTER, true)).toBe(false);
   });
 
-  it("suggests one path per city plus remote, capped at six, above a global floor", () => {
-    const suggested = suggestSearchPaths(prefs({ cities: ["Pune", "Bengaluru"], minSalary: 30 }));
-    expect(suggested.map((path) => searchPathLabel({ ...path, city: path.locationMode === "remote" ? "" : path.city }))).toEqual([
-      "Pune · Above ₹30 LPA",
-      "Bengaluru · Above ₹30 LPA",
-      "Remote · Above ₹30 LPA",
+  it("suggests one path per city plus remote, capped at six, with INR default and a pay band", () => {
+    const suggested = suggestSearchPaths(prefs({ cities: ["Pune", "Bengaluru"], minSalary: 30, maxSalary: 50 }));
+    expect(suggested.map((path) => searchPathLabel(path))).toEqual([
+      "Pune · ₹30–₹50 LPA",
+      "Bengaluru · ₹30–₹50 LPA",
+      "Remote · ₹30–₹50 LPA",
     ]);
+    expect(suggested[0]?.currency).toBe("INR");
+    expect(suggested[0]?.cities).toEqual(["Pune"]);
     const many = suggestSearchPaths(prefs({
       cities: ["Pune", "Mumbai", "Delhi", "Chennai", "Hyderabad", "Kolkata"],
       remoteOk: true,
       minSalary: null,
+      maxSalary: null,
     }));
     expect(many).toHaveLength(6);
-    expect(many.filter((path) => path.locationMode === "city")).toHaveLength(5);
+    expect(many.filter((path) => path.locationMode === "cities")).toHaveLength(5);
     expect(many.at(-1)?.locationMode).toBe("remote");
-    expect(many[0]?.payDirection).toBe("any");
+    expect(many[0]?.payMin).toBe(1);
+    expect(many[0]?.payMax).toBe(1_000_000_000);
     const london = suggestSearchPaths(prefs({
       country: "GB",
       cities: ["London"],
       remoteOk: false,
       currency: "GBP",
-      minSalary: 80000,
+      minSalary: 80_000,
+      maxSalary: 120_000,
       salaryPeriod: "year",
     }));
-    expect(searchPathLabel(london[0]!)).toBe("London · Above £80,000 per year");
+    expect(searchPathLabel(london[0]!)).toBe("London · £80,000–£120,000 per year");
+    const inrDefault = suggestSearchPaths(prefs({ currency: "", cities: ["Pune"], remoteOk: false, minSalary: 20, maxSalary: 40 }));
+    expect(inrDefault[0]?.currency).toBe("INR");
   });
 
   it("rejects an invalid path and a seventh path", () => {
-    expect(validateSearchPathDraft(draft({ city: "" }))).toMatch(/city/i);
-    expect(validateSearchPathDraft(draft({ locationMode: "remote", city: "Pune" }))).toMatch(/remote/i);
-    expect(validateSearchPathDraft(draft({ payDirection: "any", payAmount: 10 }))).toMatch(/any pay/i);
-    expect(validateSearchPathDraft(draft({ payDirection: "above", payAmount: null }))).toMatch(/amount/i);
+    expect(validateSearchPathDraft(draft({ cities: [] }))).toMatch(/city/i);
+    expect(validateSearchPathDraft(draft({ locationMode: "remote", cities: ["Pune"] }))).toMatch(/remote/i);
+    expect(validateSearchPathDraft(draft({ locationMode: "country", cities: ["Pune"], excludedCities: [] }))).toMatch(/exclus/i);
+    expect(validateSearchPathDraft(draft({ payMin: 0, payMax: 50 }))).toMatch(/minimum/i);
+    expect(validateSearchPathDraft(draft({ payMin: 50, payMax: 50 }))).toMatch(/maximum/i);
     expect(validateSearchPathDraft(draft({ currency: "XXX" }))).toMatch(/currency/i);
     expect(validateSearchPathDraft(draft({ currency: "USD", salaryPeriod: "lpa" }))).toMatch(/INR/);
     expect(draftWithPeriod(draft({ currency: "USD", salaryPeriod: "year" }), "lpa")).toMatchObject({ currency: "INR", salaryPeriod: "lpa" });
@@ -223,20 +264,20 @@ describe("search path labels, place, and pay", () => {
     const six = Array.from({ length: 6 }, (_, index) => makePath({
       id: `p${index}`,
       sortOrder: index,
-      locationMode: "city",
-      city: `City${index}`,
-      payDirection: "any",
-      payAmount: null,
+      locationMode: "cities",
+      cities: [`City${index}`],
+      payMin: 1,
+      payMax: 1e9,
     }));
-    const extra = nextPathSet(six, { action: "create", draft: draft({ city: "Noida", sortOrder: 6 }), disposition: "reclassify" }, ["new"]);
+    const extra = nextPathSet(six, { action: "create", draft: draft({ cities: ["Noida"], sortOrder: 6 }), disposition: "reclassify" }, ["new"]);
     expect(extra.ok).toBe(false);
     if (!extra.ok) expect(extra.error).toMatch(/6/);
   });
 });
 
 describe("job disposition", () => {
-  const pune = makePath({ id: "pune", sortOrder: 0, locationMode: "city", city: "Pune", payDirection: "above", payAmount: 50 });
-  const remote = makePath({ id: "remote", sortOrder: 1, locationMode: "remote", city: "", payDirection: "any", payAmount: null });
+  const pune = makePath({ id: "pune", sortOrder: 0, locationMode: "cities", cities: ["Pune"], payMin: 50, payMax: 100 });
+  const remote = makePath({ id: "remote", sortOrder: 1, locationMode: "remote", payMin: 1, payMax: 1e9 });
   const preferences = prefs();
 
   it("reclassifies onto the first remaining match, archives the rest, and restores a later match", () => {
@@ -255,21 +296,21 @@ describe("job disposition", () => {
       preferences,
     });
     expect(archived.find((change) => change.id === "high")).toMatchObject({ searchPathId: null, lane: pune.name, archivedAt: "2026-10-14T12:00:00Z" });
-    expect(archived.find((change) => change.id === "remote-job")).toBeUndefined();
+    expect(archived.find((change) => change.id === "remote-job")).toMatchObject({ searchPathId: null, archivedAt: "2026-10-14T12:00:00Z" });
     const restored = planJobChanges({
       jobs: jobs.map((job) => (job.id === "low" ? { ...job, searchPathId: null, archivedAt: "2026-10-14T12:00:00Z" } : job)),
-      after: [pune, remote, makePath({ id: "any", sortOrder: 2, locationMode: "city", city: "Pune", payDirection: "any", payAmount: null })],
+      after: [pune, remote, makePath({ id: "wide", sortOrder: 2, locationMode: "cities", cities: ["Pune"], payMin: 1, payMax: 1e9 })],
       disposition: "reclassify",
       deletedId: null,
       moveToId: null,
       now: "2026-10-14T13:00:00Z",
       preferences,
     });
-    expect(restored.find((change) => change.id === "low")).toMatchObject({ searchPathId: "any", archivedAt: null });
+    expect(restored.find((change) => change.id === "low")).toMatchObject({ searchPathId: "wide", archivedAt: null });
   });
 
   it("moves every job on a deleted path, or archives while keeping the label", () => {
-    const jobs = [tracked({ id: "remote-job", location: "Remote", searchPathId: "remote", lane: remote.name, payLow: null, payHigh: null })];
+    const jobs = [tracked({ id: "remote-job", location: "Remote", searchPathId: "remote", lane: remote.name, payLow: 2_000_000, payHigh: 2_000_000 })];
     const moved = planJobChanges({
       jobs,
       after: [pune],
@@ -334,8 +375,8 @@ describe("job disposition", () => {
       kind: "legacy",
       lane: laneFor(assigned.location, assigned.payLow, assigned.payHigh, preferences),
     });
-    expect(rescorePathFields({ archivedAt: "2026-10-01", lane: "Pune · Above ₹50 LPA", searchPathId: "pune" }, { searchPathId: null, lane: "" })).toEqual({
-      lane: "Pune · Above ₹50 LPA",
+    expect(rescorePathFields({ archivedAt: "2026-10-01", lane: "Pune · ₹50–₹100 LPA", searchPathId: "pune" }, { searchPathId: null, lane: "" })).toEqual({
+      lane: "Pune · ₹50–₹100 LPA",
       searchPathId: "pune",
     });
     expect(rescorePathFields({ archivedAt: null, lane: "old", searchPathId: "pune" }, { searchPathId: null, lane: "" })).toEqual({
@@ -362,10 +403,11 @@ describe("search path storage", () => {
           action: "create",
           disposition: "reclassify",
           draft: draft({
-            city: index === 5 ? "London" : `City${index}`,
+            cities: [index === 5 ? "London" : `City${index}`],
             currency: index === 5 ? "GBP" : "INR",
             salaryPeriod: period,
-            payAmount: index === 5 ? 80000 : 30,
+            payMin: index === 5 ? 80_000 : 30,
+            payMax: index === 5 ? 120_000 : 50,
             sortOrder: index,
           }),
         });
@@ -376,11 +418,11 @@ describe("search path storage", () => {
       await expect(commitSearchPaths(db, userId, preferences, {
         action: "create",
         disposition: "reclassify",
-        draft: draft({ city: "Noida", sortOrder: 6 }),
+        draft: draft({ cities: ["Noida"], sortOrder: 6 }),
       })).rejects.toThrow(/6/);
       await expect(db.prepare(
-        "INSERT INTO search_paths (id, user_id, name, location_mode, city, pay_direction, pay_amount, currency, salary_period, sort_order) VALUES (?, ?, 'Extra', 'city', 'Noida', 'any', NULL, 'INR', 'lpa', 9)",
-      ).bind(crypto.randomUUID(), userId).run()).rejects.toThrow(/search path limit/);
+        "INSERT INTO search_paths (id, user_id, name, location_mode, cities_json, excluded_cities_json, pay_min, pay_max, currency, salary_period, sort_order) VALUES (?, ?, 'Extra', 'cities', ?, '[]', 1, 2, 'INR', 'lpa', 9)",
+      ).bind(crypto.randomUUID(), userId, JSON.stringify(["Noida"])).run()).rejects.toThrow(/search path limit/);
 
       const owned = paths[0];
       expect(owned).toBeTruthy();
@@ -388,18 +430,18 @@ describe("search path storage", () => {
         action: "update",
         id: owned!.id,
         disposition: "reclassify",
-        draft: draft({ city: "Stolen" }),
+        draft: draft({ cities: ["Stolen"] }),
       })).rejects.toThrow(/not found/);
 
       const pune = await commitSearchPaths(db, otherId, preferences, {
         action: "create",
         disposition: "reclassify",
-        draft: draft({ city: "Pune", payDirection: "above", payAmount: 50 }),
+        draft: draft({ cities: ["Pune"], payMin: 50, payMax: 100 }),
       });
       const remote = await commitSearchPaths(db, otherId, preferences, {
         action: "create",
         disposition: "reclassify",
-        draft: draft({ locationMode: "remote", city: "", payDirection: "any", payAmount: null, sortOrder: 1 }),
+        draft: draft({ locationMode: "remote", cities: [], excludedCities: [], payMin: 1, payMax: 1e9, sortOrder: 1 }),
       });
       const puneId = pune[0]!.id;
       const remoteId = remote[1]!.id;
@@ -407,7 +449,7 @@ describe("search path storage", () => {
         "INSERT INTO jobs (id, user_id, title, location, description, fit_json, lane, pay_low, pay_high, search_path_id) VALUES (?, ?, 'Role', 'Pune', 'A long enough description for the row.', '{}', ?, 2000000, 2000000, ?)",
       ).bind(`${otherId}-low`, otherId, pune[0]!.name, puneId).run();
       await db.prepare(
-        "INSERT INTO jobs (id, user_id, title, location, description, fit_json, lane, search_path_id, archived_at) VALUES (?, ?, 'Role', 'Remote', 'A long enough description for the row.', '{}', ?, ?, ?)",
+        "INSERT INTO jobs (id, user_id, title, location, description, fit_json, lane, pay_low, pay_high, search_path_id, archived_at) VALUES (?, ?, 'Role', 'Remote', 'A long enough description for the row.', '{}', ?, 2000000, 2000000, ?, ?)",
       ).bind(`${otherId}-remote`, otherId, remote[1]!.name, remoteId, "2026-10-01T00:00:00.000Z").run();
 
       const moved = await commitSearchPaths(db, otherId, preferences, {
@@ -442,7 +484,7 @@ describe("search path storage", () => {
       const restored = await commitSearchPaths(db, otherId, preferences, {
         action: "create",
         disposition: "reclassify",
-        draft: draft({ city: "Pune", payDirection: "any", payAmount: null }),
+        draft: draft({ cities: ["Pune"], payMin: 1, payMax: 1e9 }),
       });
       const back = await db.prepare("SELECT search_path_id, archived_at FROM jobs WHERE id = ?").bind(`${otherId}-low`).first<{ search_path_id: string | null; archived_at: string | null }>();
       expect(back).toEqual({ search_path_id: restored[0]!.id, archived_at: null });
@@ -452,5 +494,5 @@ describe("search path storage", () => {
       await db.prepare("DELETE FROM users WHERE id IN (?, ?)").bind(userId, otherId).run();
       await proxy.dispose();
     }
-  });
+  }, 60_000);
 });

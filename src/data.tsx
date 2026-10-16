@@ -1,5 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 import { useSearchParams } from "react-router-dom";
+import { collapseDuplicateJobs } from "../shared/engine/jobIdentity";
 import type { SearchPath } from "../shared/engine/searchPaths";
 import type { JobRecord, Profile } from "../shared/types";
 import { api } from "./api";
@@ -31,7 +32,7 @@ export function JobsProvider({ children }: { children: ReactNode }) {
   const reload = useCallback(async () => {
     try {
       const [list, p, paths] = await Promise.all([api.listJobs(), api.getProfile(), api.listSearchPaths()]);
-      setJobs(list.jobs);
+      setJobs(collapseDuplicateJobs(list.jobs));
       setNotice(list.notice);
       setProfile(p.profile);
       setSearchPaths(paths.paths);
@@ -71,7 +72,7 @@ export function JobsProvider({ children }: { children: ReactNode }) {
   );
 
   const value = useMemo(
-    () => ({ jobs, error, notice, profile, searchPaths, currency: profile?.preferences.currency || "USD", reload, put, drop, open }),
+    () => ({ jobs, error, notice, profile, searchPaths, currency: profile?.preferences.currency || "INR", reload, put, drop, open }),
     [jobs, error, notice, profile, searchPaths, reload, put, drop, open],
   );
   return <JobsContext.Provider value={value}>{children}</JobsContext.Provider>;

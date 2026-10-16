@@ -48,14 +48,15 @@ export interface TodayQueues {
 }
 
 /** What to do today, in the order that pays off: live conversations, then fresh applications, then people. */
-export function todayQueues(jobs: JobRecord[], today: string): TodayQueues {
+export function todayQueues(jobs: JobRecord[], today: string, options?: { excludeIds?: ReadonlySet<string> }): TodayQueues {
+  const excludeIds = options?.excludeIds;
   const active = jobs.filter((job) => !job.archivedAt);
   const age = (iso: string | null) => daysBetween(iso, today) ?? Infinity;
   const live = active
     .filter((j) => j.status === "interview" || j.status === "offer")
     .sort((a, b) => (a.liveStatus === "closed" ? 1 : 0) - (b.liveStatus === "closed" ? 1 : 0));
   const applyNext = active
-    .filter((j) => TO_APPLY.has(j.status) && (j.fit.imported || j.fit.decision !== "skip"))
+    .filter((j) => TO_APPLY.has(j.status) && (j.fit.imported || j.fit.decision !== "skip") && !excludeIds?.has(j.id))
     .sort(openPostingFirst((a, b) => b.fit.score - a.fit.score || (payMid(b) ?? 0) - (payMid(a) ?? 0)));
 
   const recent = active.filter((j) => j.status === "applied" && age(j.appliedAt) <= 30);

@@ -1,4 +1,5 @@
 import { resolveTimeZone } from "./geo";
+import { isIndustryId } from "./industries";
 import type { Profile, SalaryPeriod, SkillLevel } from "./types";
 
 type Raw = Record<string, unknown>;
@@ -94,7 +95,7 @@ function readPreferences(prefs: Raw): Profile["preferences"] {
   const legacyMin = num(prefs.minSalaryLpa, 0, 1000);
   const legacyMax = num(prefs.maxSalaryLpa, 0, 1000);
   const period = PERIODS.includes(prefs.salaryPeriod as SalaryPeriod) ? (prefs.salaryPeriod as SalaryPeriod) : legacyMin !== null ? "lpa" : "year";
-  const currency = /^[A-Za-z]{3}$/.test(text(prefs.currency, 3)) ? text(prefs.currency, 3).toUpperCase() : period === "lpa" ? "INR" : "USD";
+  const currency = /^[A-Za-z]{3}$/.test(text(prefs.currency, 3)) ? text(prefs.currency, 3).toUpperCase() : period === "lpa" ? "INR" : "INR";
   const country = /^[A-Za-z]{2}$/.test(text(prefs.country, 2)) ? text(prefs.country, 2).toUpperCase() : "";
   return {
     country,
@@ -104,6 +105,10 @@ function readPreferences(prefs: Raw): Profile["preferences"] {
     minSalary: num(prefs.minSalary, 0, 100_000_000) ?? legacyMin,
     maxSalary: num(prefs.maxSalary, 0, 100_000_000) ?? legacyMax,
     salaryPeriod: period,
+    industries: list(prefs.industries, 12, (item) => {
+      const id = text(item, 40);
+      return isIndustryId(id) ? id : null;
+    }),
     targetRoles: words(prefs.targetRoles, 15),
     excludedTitleWords: words(prefs.excludedTitleWords, 20),
     timezone: resolveTimeZone(country, text(prefs.timezone, 64)),

@@ -3,6 +3,7 @@ import { COUNTRIES, currencies } from "../../shared/geo";
 import {
   PAY_MIDPOINT_NOTE,
   SEARCH_PATH_LIMIT,
+  countryLabelFor,
   draftWithCurrency,
   draftWithPeriod,
   searchPathLabel,
@@ -10,9 +11,9 @@ import {
   validateSearchPathDraft,
   type EditDisposition,
   type JobDisposition,
+  type LocationMode,
   type PathCommit,
   type PathPreview,
-  type PayDirection,
   type SearchPath,
   type SearchPathDraft,
 } from "../../shared/engine/searchPaths";
@@ -26,22 +27,23 @@ export class SaveCancelled extends Error {
   }
 }
 
-function renumber(paths: SearchPath[]): SearchPath[] {
+function renumber(paths: SearchPath[], countryLabel: string): SearchPath[] {
   return paths.map((path, sortOrder) => {
     const next = { ...path, sortOrder };
-    next.name = searchPathLabel(next);
+    next.name = searchPathLabel(next, countryLabel);
     return next;
   });
 }
 
-function toPath(draft: SearchPathDraft, id: string): SearchPath {
+function toPath(draft: SearchPathDraft, id: string, countryLabel: string): SearchPath {
   const next: SearchPath = {
     id,
     name: "",
     locationMode: draft.locationMode,
-    city: draft.locationMode === "remote" ? "" : draft.city.trim(),
-    payDirection: draft.payDirection,
-    payAmount: draft.payDirection === "any" ? null : draft.payAmount,
+    cities: draft.locationMode === "cities" ? draft.cities : [],
+    excludedCities: draft.locationMode === "country" ? draft.excludedCities : [],
+    payMin: draft.payMin,
+    payMax: draft.payMax,
     currency: draft.currency,
     salaryPeriod: draft.salaryPeriod,
     sortOrder: draft.sortOrder,
@@ -49,7 +51,7 @@ function toPath(draft: SearchPathDraft, id: string): SearchPath {
     createdAt: "",
     updatedAt: "",
   };
-  next.name = searchPathLabel(next);
+  next.name = searchPathLabel(next, countryLabel);
   return next;
 }
 
@@ -57,9 +59,10 @@ function toDraft(path: SearchPath, index: number): SearchPathDraft {
   return {
     id: path.id.startsWith("draft-") ? undefined : path.id,
     locationMode: path.locationMode,
-    city: path.city,
-    payDirection: path.payDirection,
-    payAmount: path.payAmount,
+    cities: path.cities,
+    excludedCities: path.excludedCities,
+    payMin: path.payMin,
+    payMax: path.payMax,
     currency: path.currency,
     salaryPeriod: path.salaryPeriod,
     sortOrder: index,
@@ -67,7 +70,18 @@ function toDraft(path: SearchPath, index: number): SearchPathDraft {
 }
 
 function blankDraft(currency: string, salaryPeriod: SalaryPeriod, sortOrder: number): SearchPathDraft {
-  return { locationMode: "city", city: "", payDirection: "any", payAmount: null, currency, salaryPeriod, sortOrder };
+  const payMin = salaryPeriod === "lpa" ? 20 : salaryPeriod === "hour" ? 20 : salaryPeriod === "month" ? 50_000 : 50_000;
+  const payMax = salaryPeriod === "lpa" ? 50 : salaryPeriod === "hour" ? 80 : salaryPeriod === "month" ? 150_000 : 150_000;
+  return {
+    locationMode: "cities",
+    cities: [],
+    excludedCities: [],
+    payMin,
+    payMax,
+    currency: currency || "INR",
+    salaryPeriod,
+    sortOrder,
+  };
 }
 
 function pathsBesides(paths: SearchPath[], commit: PathCommit): SearchPath[] {
@@ -103,68 +117,133 @@ function withDisposition(commit: PathCommit, disposition: JobDisposition, moveTo
   }
 }
 
+function withLocationMode(draft: SearchPathDraft, locationMode: LocationMode): SearchPathDraft {
+  switch (locationMode) {
+    case "cities":
+      return { ...draft, locationMode, cities: draft.cities, excludedCities: [] };
+    case "remote":
+      return { ...draft, locationMode, cities: [], excludedCities: [] };
+    case "country":
+      return { ...draft, locationMode, cities: [], excludedCities: draft.excludedCities };
+    default: {
+      const never: never = locationMode;
+      return never;
+    }
+  }
+}
+
+function CityChips({
+  label,
+  hint,
+  value,
+  cities,
+  listId,
+  onChange,
+}: {
+  label: string;
+  hint: string;
+  value: string[];
+  cities: string[];
+  listId: string;
+  onChange: (cities: string[]) => void;
+}) {
+  return (
+    <Field label={label} hint={hint}>
+      <select
+        aria-label={label}
+        value=""
+        onChange={(event) => {
+          const city = event.target.value;
+          if (!city || value.includes(city)) return;
+          onChange([...value, city]);
+        }}
+      >
+        <option value="">Add a city…</option>
+        {cities.map((city) => <option key={city} value={city}>{city}</option>)}
+      </select>
+      <input
+        aria-label={`${label} typed`}
+        list={listId}
+        placeholder="Or type a city and press Enter"
+        onKeyDown={(event) => {
+          if (event.key !== "Enter") return;
+          event.preventDefault();
+          const next = event.currentTarget.value.trim();
+          if (!next || value.includes(next)) return;
+          onChange([...value, next]);
+          event.currentTarget.value = "";
+        }}
+      />
+      <datalist id={listId}>
+        {cities.map((city) => <option key={city} value={city} />)}
+      </datalist>
+      <span className="chips">
+        {value.map((city) => (
+          <button
+            type="button"
+            key={city}
+            className="chip chip-ok"
+            onClick={() => onChange(value.filter((item) => item !== city))}
+          >
+            {city} ×
+          </button>
+        ))}
+      </span>
+    </Field>
+  );
+}
+
 export function SearchPathEditor({
   draft,
   cities,
+  countryName,
   onChange,
 }: {
   draft: SearchPathDraft;
   cities: string[];
+  countryName: string;
   onChange: (draft: SearchPathDraft) => void;
 }) {
-  const label = searchPathLabel({
-    ...draft,
-    city: draft.locationMode === "remote" ? "" : draft.city,
-    payAmount: draft.payDirection === "any" ? null : draft.payAmount,
-  });
+  const label = searchPathLabel(draft, countryName);
   return (
     <div className="path-editor">
       <Field label="Place">
         <select
           aria-label="Place"
           value={draft.locationMode}
-          onChange={(event) => {
-            const locationMode = event.target.value === "remote" ? "remote" : "city";
-            onChange({ ...draft, locationMode, city: locationMode === "remote" ? "" : draft.city });
-          }}
+          onChange={(event) => onChange(withLocationMode(draft, event.target.value as LocationMode))}
         >
-          <option value="city">One city</option>
+          <option value="cities">Multiple cities</option>
           <option value="remote">Remote</option>
+          <option value="country">Whole country except…</option>
         </select>
       </Field>
-      {draft.locationMode === "city" && (
-        <Field label="City" hint="One city for this path. Remote is its own path.">
-          <input
-            aria-label="City"
-            list="search-path-cities"
-            value={draft.city}
-            onChange={(event) => onChange({ ...draft, city: event.target.value })}
-            placeholder="Pune"
-          />
-          <datalist id="search-path-cities">
-            {cities.map((city) => <option key={city} value={city} />)}
-          </datalist>
-        </Field>
+      {draft.locationMode === "cities" && (
+        <CityChips
+          label="Cities"
+          hint="One or more cities in this path. Remote is its own path."
+          value={draft.cities}
+          cities={cities}
+          listId="search-path-cities"
+          onChange={(next) => onChange({ ...draft, cities: next })}
+        />
       )}
-      <Field label="Pay rule">
-        <select
-          aria-label="Pay rule"
-          value={draft.payDirection}
-          onChange={(event) => {
-            const payDirection = event.target.value as PayDirection;
-            onChange({ ...draft, payDirection, payAmount: payDirection === "any" ? null : draft.payAmount });
-          }}
-        >
-          <option value="above">Above threshold</option>
-          <option value="below">Below threshold</option>
-          <option value="any">Any pay</option>
-        </select>
+      {draft.locationMode === "country" && (
+        <CityChips
+          label="Excluded cities"
+          hint={`All locations in ${countryName}, except the cities you list here.`}
+          value={draft.excludedCities}
+          cities={cities}
+          listId="search-path-excluded-cities"
+          onChange={(next) => onChange({ ...draft, excludedCities: next })}
+        />
+      )}
+      <Field label="Pay minimum" hint="Inclusive lower bound for the published midpoint.">
+        <NumberInput value={draft.payMin} onChange={(payMin) => onChange({ ...draft, payMin: payMin ?? 0 })} placeholder="30" />
       </Field>
-      {draft.payDirection !== "any" && (
-        <Field label="Threshold" hint="Compared with the midpoint of the published range.">
-          <NumberInput value={draft.payAmount} onChange={(payAmount) => onChange({ ...draft, payAmount })} placeholder="35" />
-        </Field>
-      )}
+      <Field label="Pay maximum" hint="Inclusive upper bound for the published midpoint.">
+        <NumberInput value={draft.payMax} onChange={(payMax) => onChange({ ...draft, payMax: payMax ?? 0 })} placeholder="50" />
+      </Field>
       <Field label="Currency">
         <select aria-label="Currency" value={draft.currency} onChange={(event) => onChange(draftWithCurrency(draft, event.target.value))}>
           {currencies().map((code) => <option key={code} value={code}>{code}</option>)}
@@ -271,11 +350,29 @@ function DispositionDialog({
   );
 }
 
+function placeSummary(path: SearchPath, countryName: string): string {
+  switch (path.locationMode) {
+    case "remote":
+      return "Remote";
+    case "cities":
+      return path.cities.join(", ");
+    case "country":
+      return path.excludedCities.length
+        ? `${countryName} except ${path.excludedCities.join(", ")}`
+        : countryName;
+    default: {
+      const never: never = path.locationMode;
+      return never;
+    }
+  }
+}
+
 export function SearchPathManager({
   paths,
   cities,
   currency,
   salaryPeriod,
+  countryName,
   mode,
   onChange,
   onPreview,
@@ -285,11 +382,13 @@ export function SearchPathManager({
   cities: string[];
   currency: string;
   salaryPeriod: SalaryPeriod;
+  countryName?: string;
   mode: "local" | "live";
   onChange?: (paths: SearchPath[]) => void;
   onPreview?: (commit: PathCommit) => Promise<PathPreview>;
   onCommit?: (commit: PathCommit) => Promise<void>;
 }) {
+  const resolvedCountry = countryName || "Country";
   const [editing, setEditing] = useState<{ id: string | null; draft: SearchPathDraft } | null>(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -335,10 +434,10 @@ export function SearchPathManager({
 
   function saveEditor() {
     if (!editing) return;
-    const draft = {
+    const draft: SearchPathDraft = {
       ...editing.draft,
-      city: editing.draft.locationMode === "remote" ? "" : editing.draft.city.trim(),
-      payAmount: editing.draft.payDirection === "any" ? null : editing.draft.payAmount,
+      cities: editing.draft.locationMode === "cities" ? editing.draft.cities : [],
+      excludedCities: editing.draft.locationMode === "country" ? editing.draft.excludedCities : [],
       sortOrder: editing.id ? paths.find((path) => path.id === editing.id)?.sortOrder ?? editing.draft.sortOrder : paths.length,
     };
     const problem = validateSearchPathDraft(draft);
@@ -350,9 +449,9 @@ export function SearchPathManager({
     if (mode === "local") {
       const id = editing.id ?? `draft-${crypto.randomUUID()}`;
       const next = editing.id
-        ? paths.map((path) => (path.id === editing.id ? toPath(draft, path.id) : path))
-        : [...paths, toPath(draft, id)];
-      onChange?.(renumber(next));
+        ? paths.map((path) => (path.id === editing.id ? toPath(draft, path.id, resolvedCountry) : path))
+        : [...paths, toPath(draft, id, resolvedCountry)];
+      onChange?.(renumber(next, resolvedCountry));
       setEditing(null);
       return;
     }
@@ -364,7 +463,7 @@ export function SearchPathManager({
 
   function remove(path: SearchPath) {
     if (mode === "local") {
-      onChange?.(renumber(paths.filter((item) => item.id !== path.id)));
+      onChange?.(renumber(paths.filter((item) => item.id !== path.id), resolvedCountry));
       return;
     }
     void commitLive({ action: "delete", id: path.id, disposition: "reclassify", moveToId: null });
@@ -379,7 +478,7 @@ export function SearchPathManager({
     if (!current || !swap) return;
     next[index] = swap;
     next[target] = current;
-    const ordered = renumber(next);
+    const ordered = renumber(next, resolvedCountry);
     if (mode === "local") {
       onChange?.(ordered);
       return;
@@ -430,7 +529,7 @@ export function SearchPathManager({
       {error && <div className="alert alert-error" role="alert">{error}</div>}
       {editing && (
         <section className="card sub-card" aria-label={editing.id ? "Edit search path" : "New search path"}>
-          <SearchPathEditor draft={editing.draft} cities={cities} onChange={editDraft} />
+          <SearchPathEditor draft={editing.draft} cities={cities} countryName={resolvedCountry} onChange={editDraft} />
           <div className="row-end">
             <button type="button" className="btn btn-ghost btn-sm" onClick={() => setEditing(null)} disabled={busy}>Cancel</button>
             <button type="button" className="btn btn-primary btn-sm" onClick={saveEditor} disabled={busy}>{busy ? "Saving…" : "Save path"}</button>
@@ -440,8 +539,8 @@ export function SearchPathManager({
       {paths.length === 0 && !editing && (
         <div className="card path-empty">
           <h2>No search paths yet</h2>
-          <p>Add up to six. Each one is a city or Remote, plus a pay rule. Until you save one, jobs keep the older place-and-floor labels.</p>
-          <p className="muted small">Examples: Pune · Below ₹35 LPA, Bengaluru · Above ₹50 LPA, Remote · Above ₹30 LPA.</p>
+          <p>Add up to six. Each one is a place rule plus a pay band. Until you save one, jobs keep the older place-and-floor labels.</p>
+          <p className="muted small">Examples: Pune, Mumbai · ₹30–₹45 LPA, Remote · $80,000–$120,000 per year, India except Pune · ₹40–₹80 LPA.</p>
         </div>
       )}
       <ol className="path-list">
@@ -449,7 +548,7 @@ export function SearchPathManager({
           <li className="card path-card" key={path.id}>
             <div>
               <h2>{path.name}</h2>
-              <p className="muted small">{path.locationMode === "remote" ? "Remote" : path.city} · {path.payDirection === "any" ? "Any pay" : path.payDirection === "above" ? "Above threshold" : "Below threshold"}</p>
+              <p className="muted small">{placeSummary(path, resolvedCountry)} · pay band</p>
             </div>
             <div className="path-card-actions">
               <button type="button" className="btn btn-ghost btn-sm" aria-label={`Move ${path.name} up`} disabled={index === 0 || busy} onClick={() => move(index, -1)}>Up</button>
@@ -519,11 +618,14 @@ export function OnboardingPaths({
     resolve: () => void;
     reject: (err: Error) => void;
   } | null>(null);
-  const cities = COUNTRIES.find((country) => country.code === profile.preferences.country)?.cities ?? [];
+  const country = COUNTRIES.find((item) => item.code === profile.preferences.country);
+  const cities = country?.cities ?? [];
+  const countryName = country?.name ?? countryLabelFor(profile.preferences);
   const suggestionKey = [
     profile.preferences.cities.join("|"),
     profile.preferences.remoteOk ? "remote" : "local",
     profile.preferences.minSalary ?? "",
+    profile.preferences.maxSalary ?? "",
     profile.preferences.currency,
     profile.preferences.salaryPeriod,
   ].join("~");
@@ -553,8 +655,8 @@ export function OnboardingPaths({
 
   useEffect(() => {
     if (savedCount !== 0 || edited.current) return;
-    setPaths(suggestSearchPaths(profile.preferences).map((draft, index) => toPath(draft, `draft-${index + 1}`)));
-  }, [savedCount, suggestionKey, profile.preferences]);
+    setPaths(suggestSearchPaths(profile.preferences).map((draft, index) => toPath(draft, `draft-${index + 1}`, countryName)));
+  }, [savedCount, suggestionKey, profile.preferences, countryName]);
 
   useEffect(() => {
     if (!paths) {
@@ -578,19 +680,20 @@ export function OnboardingPaths({
   return (
     <>
       <div className="path-examples">
-        <p>Start from your cities and remote choice. If you set a pay floor, each suggestion is Above that amount. Edit them before you continue.</p>
+        <p>Start from your cities and remote choice. Each suggestion uses a pay band from your market step. Edit them before you continue.</p>
         <ul className="onboard-points">
-          <li>Pune · Below ₹35 LPA</li>
-          <li>Bengaluru · Above ₹50 LPA</li>
-          <li>Remote · Above ₹30 LPA</li>
+          <li>Pune, Mumbai · ₹30–₹45 LPA</li>
+          <li>Remote · $80,000–$120,000 per year</li>
+          <li>India except Pune · ₹40–₹80 LPA</li>
         </ul>
       </div>
       <SearchPathManager
         mode="local"
         paths={paths}
         cities={cities}
-        currency={profile.preferences.currency}
+        currency={profile.preferences.currency || "INR"}
         salaryPeriod={profile.preferences.salaryPeriod}
+        countryName={countryName}
         onChange={(next) => {
           edited.current = true;
           setPaths(next);

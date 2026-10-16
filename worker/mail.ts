@@ -1,5 +1,8 @@
+import { CODE_TTL_MINUTES } from "../shared/password";
 import { sha256 } from "./crypto";
 import { HttpError, type Env } from "./env";
+
+export { CODE_TTL_MINUTES };
 
 export async function sendMail(env: Env, to: string, subject: string, text: string, headers?: Record<string, string>): Promise<void> {
   if (!env.RESEND_API_KEY || !env.MAIL_FROM) {
@@ -22,10 +25,13 @@ function newCode(): string {
 }
 
 const GAP_MS = 60_000;
+const CODE_TTL_MS = CODE_TTL_MINUTES * 60_000;
 
 export interface IssuedCode {
   id: number;
   createdAt: string;
+  expiresAt: string;
+  expiresInMinutes: number;
 }
 
 export async function issueCode(env: Env, email: string, purpose: "signup" | "reset"): Promise<IssuedCode | null> {
@@ -39,10 +45,11 @@ export async function issueCode(env: Env, email: string, purpose: "signup" | "re
   const code = newCode();
   const now = new Date();
   const createdAt = now.toISOString();
+  const expiresAt = new Date(now.getTime() + CODE_TTL_MS).toISOString();
   const row = await env.DB.prepare(
     "INSERT INTO email_codes (email, purpose, code_hash, expires_at, created_at) VALUES (?, ?, ?, ?, ?) RETURNING id",
   )
-    .bind(email, purpose, await sha256(code), new Date(now.getTime() + 15 * 60_000).toISOString(), createdAt)
+    .bind(email, purpose, await sha256(code), expiresAt, createdAt)
     .first<{ id: number }>();
   if (!row) throw new HttpError(500, "The email could not be sent. Try again in a minute.");
 
@@ -51,9 +58,9 @@ export async function issueCode(env: Env, email: string, purpose: "signup" | "re
     env,
     email,
     purpose === "signup" ? "Your CustomJobSeek code" : "Reset your CustomJobSeek password",
-    `Your code to ${action} is ${code}.\n\nIt expires in 15 minutes. If you did not ask for this, ignore the email.`,
+    `Your code to ${action} is ${code}.\n\nIt expires in ${CODE_TTL_MINUTES} minutes. If you did not ask for this, ignore the email.`,
   );
-  return { id: row.id, createdAt };
+  return { id: row.id, createdAt, expiresAt, expiresInMinutes: CODE_TTL_MINUTES };
 }
 
 export async function takeCode(env: Env, email: string, purpose: "signup" | "reset", code: string): Promise<IssuedCode | null> {
@@ -68,5 +75,10 @@ export async function takeCode(env: Env, email: string, purpose: "signup" | "res
     return null;
   }
   await env.DB.prepare("DELETE FROM email_codes WHERE email = ? AND purpose = ?").bind(email, purpose).run();
-  return { id: row.id, createdAt: row.created_at };
+  return {
+    id: row.id,
+    createdAt: row.created_at,
+    expiresAt: new Date(Date.parse(row.created_at) + CODE_TTL_MS).toISOString(),
+    expiresInMinutes: CODE_TTL_MINUTES,
+  };
 }

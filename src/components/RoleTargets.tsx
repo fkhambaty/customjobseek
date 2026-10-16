@@ -1,4 +1,38 @@
+import { INDUSTRY_CATEGORIES } from "../../shared/industries";
 import { describeRole, familyExamples, resolveRole } from "../../shared/engine/occupations";
+
+export function IndustryPicker({
+  selected,
+  onChange,
+}: {
+  selected: string[];
+  onChange: (ids: string[]) => void;
+}) {
+  const taken = new Set(selected);
+  return (
+    <div className="role-targets">
+      <p className="muted small">
+        Pick the industries you work in. Scans prefer employer boards in those industries, so a dietitian is not matched against unrelated software boards first.
+      </p>
+      <div className="chips">
+        {INDUSTRY_CATEGORIES.map((item) => {
+          const on = taken.has(item.id);
+          return (
+            <button
+              type="button"
+              key={item.id}
+              className={`chip ${on ? "chip-on" : ""}`}
+              aria-pressed={on}
+              onClick={() => onChange(on ? selected.filter((id) => id !== item.id) : [...selected, item.id])}
+            >
+              {item.label}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
 
 export function RoleTargets({ roles, onAdd }: { roles: string[]; onAdd: (title: string) => void }) {
   const taken = new Set(roles.map((role) => role.toLowerCase()));

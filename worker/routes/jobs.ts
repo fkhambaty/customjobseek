@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import { badMatchSupportMessage, parseBadMatchReason, parseInterviewStage, parseLiveStatus, payProvenanceFor } from "../../shared/agency";
 import { routeFromUrl } from "../../shared/engine/classify";
+import { collapseDuplicateJobs } from "../../shared/engine/jobIdentity";
 import { rescorePathFields } from "../../shared/engine/searchPaths";
 import { buildApplication, buildJobFile } from "../../shared/engine/documents";
 import { evaluateFit, type JobInput } from "../../shared/engine/fit";
@@ -165,8 +166,23 @@ export const jobs = new Hono<AppEnv>()
         page.limit,
       )
       .all<JobRow>();
-    const jobs = results.map(toJob);
-    return c.json({ jobs, nextCursor: nextJobCursor(jobs, page.limit) });
+    const mapped = results.map(toJob);
+    const collapsed = collapseDuplicateJobs(mapped);
+    const kept = new Set(collapsed.map((job) => job.id));
+    const duplicates = mapped.filter((job) => !kept.has(job.id) && !job.archivedAt);
+    if (duplicates.length) {
+      const now = new Date().toISOString();
+      c.executionCtx?.waitUntil(
+        c.env.DB.batch(
+          duplicates.map((job) =>
+            c.env.DB.prepare(
+              "UPDATE jobs SET archived_at = COALESCE(archived_at, ?), updated_at = datetime('now') WHERE id = ? AND user_id = ? AND archived_at IS NULL",
+            ).bind(now, job.id, c.get("user").id),
+          ),
+        ).catch((err: unknown) => console.error("duplicate job archive failed", err)),
+      );
+    }
+    return c.json({ jobs: collapsed, nextCursor: nextJobCursor(collapsed, page.limit) });
   })
   .get("/activity", async (c) => {
     const user = c.get("user");

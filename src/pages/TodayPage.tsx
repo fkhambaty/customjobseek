@@ -1,9 +1,10 @@
-import { useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { Link } from "react-router-dom";
 import { packageAudit } from "../../shared/agency";
 import { computeAnalytics, todayQueues } from "../../shared/engine/insights";
 import type { JobRecord, Profile } from "../../shared/types";
 import { profileReadiness } from "../../shared/validate";
+import { api } from "../api";
 import { JobLine, type LineMode } from "../components/JobLine";
 import { MarketScanConsole } from "../components/MarketScanConsole";
 import { useJobs } from "../data";
@@ -104,7 +105,22 @@ function Welcome({ greeting, name, profile }: { greeting: string; name: string |
 export function TodayPage() {
   const { jobs, error, notice, profile } = useJobs();
   const date = today();
-  const q = useMemo(() => (jobs ? todayQueues(jobs, date) : null), [jobs, date]);
+  const [handpickedIds, setHandpickedIds] = useState<ReadonlySet<string>>(new Set());
+  useEffect(() => {
+    api.currentMarketScan()
+      .then(({ scan }) => {
+        if (scan?.status === "complete" && scan.prepared?.length) {
+          setHandpickedIds(new Set(scan.prepared.map((job) => job.id)));
+        } else {
+          setHandpickedIds(new Set());
+        }
+      })
+      .catch(() => setHandpickedIds(new Set()));
+  }, [jobs]);
+  const q = useMemo(
+    () => (jobs ? todayQueues(jobs, date, { excludeIds: handpickedIds }) : null),
+    [jobs, date, handpickedIds],
+  );
   const a = useMemo(() => (jobs ? computeAnalytics(jobs, date) : null), [jobs, date]);
   const gaps = useMemo(() => (jobs ? packageAudit(jobs, date) : []), [jobs, date]);
 
@@ -156,7 +172,11 @@ export function TodayPage() {
         title="Apply next"
         mode="apply"
         jobs={q.applyNext}
-        note="Best fit first, then the higher pay. Open one, read the resume, apply, and mark it applied."
+        note={
+          handpickedIds.size
+            ? "Best fit first, then the higher pay. Roles from your latest scan are listed above, not repeated here."
+            : "Best fit first, then the higher pay. Open one, read the resume, apply, and mark it applied."
+        }
         empty="Nothing waiting. Check a job or look at Discover for new openings."
       />
       {gaps.length > 0 && (
