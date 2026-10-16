@@ -100,7 +100,7 @@ const HEADLINE_MAP: Record<string, Slot> = {
 // Otherwise the focus leads: "ANALYTICS & BI MANAGER | PEOPLE LEADERSHIP & KPI GOVERNANCE | TABLEAU, LOOKER".
 const SLOT_HEADLINES: Record<Slot, { label: string; terms: string[]; max: number; tail: string; toolsFirst: boolean }> = {
   data_engineer: { label: "Data Engineer", terms: ["Snowflake", "dbt", "SQL", "Airflow", "Databricks", "Apache Spark", "Kafka", "Redshift", "BigQuery"], max: 4, tail: "Warehouse Platforms", toolsFirst: true },
-  data_engineering_lead: { label: "Data Engineering Lead", terms: ["dbt", "Airflow", "Snowflake", "Databricks", "Apache Spark", "Redshift"], max: 2, tail: "Warehouse Platforms | Team Building & Delivery Standards", toolsFirst: true },
+  data_engineering_lead: { label: "Data Engineering Lead", terms: ["Snowflake", "dbt", "Airflow", "Databricks", "Apache Spark", "Redshift"], max: 3, tail: "Warehouse Platforms | Team Building & Delivery Standards", toolsFirst: true },
   analytics_engineer: { label: "Analytics Engineer", terms: ["dbt", "SQL", "Snowflake", "BigQuery", "Redshift"], max: 3, tail: "Warehouse Modelling & Reconciliation", toolsFirst: true },
   data_architect: { label: "Data Architect", terms: ["Snowflake", "dbt", "Redshift", "Databricks", "BigQuery"], max: 2, tail: "Warehouse Foundations, Dimensional Modelling & Governance", toolsFirst: true },
   solution_architect: { label: "Solution Architect", terms: ["Snowflake", "dbt", "Airflow", "AWS", "Azure", "GCP"], max: 3, tail: "Enterprise Data Delivery, Integration & Governance", toolsFirst: false },
@@ -348,10 +348,17 @@ function headlineSlot(title: string, track: Track, seniority: Seniority): Slot |
   return slot;
 }
 
-function tailoredHeadline(profile: Profile, held: Set<string>, slot: Slot | null): string {
+function tailoredHeadline(profile: Profile, held: Set<string>, slot: Slot | null, jobText = ""): string {
   if (!slot) return profile.headline;
   const spec = SLOT_HEADLINES[slot];
-  const terms = spec.terms.filter((name) => held.has(name)).slice(0, spec.max);
+  const lowJob = normalise(jobText);
+  const heldTerms = spec.terms.filter((name) => held.has(name));
+  // Tools named in the posting lead, so a Snowflake-heavy JD never drops Snowflake from the header.
+  const ranked = [
+    ...heldTerms.filter((name) => lowJob.includes(normalise(name))),
+    ...heldTerms.filter((name) => !lowJob.includes(normalise(name))),
+  ];
+  const terms = ranked.slice(0, spec.max);
   if (terms.length === 0) return profile.headline;
   const focusHasAnd = (spec.tail.split(" | ")[0] ?? "").includes("&");
   const text = spec.toolsFirst
@@ -514,7 +521,7 @@ export function tailorResume(profile: Profile, fit: FitResult, job: JobRef): Tai
   const slot = headlineSlot(job.title, track, seniority);
   const resume: Omit<TailoredResume, "provenance"> = {
     fullName: profile.fullName,
-    headline: resumePunctuation(tailoredHeadline(profile, held, slot)),
+    headline: resumePunctuation(tailoredHeadline(profile, held, slot, jobText)),
     contact,
     summary,
     profileParagraphs,

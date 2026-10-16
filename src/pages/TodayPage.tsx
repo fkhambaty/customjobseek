@@ -3,7 +3,8 @@ import { Link } from "react-router-dom";
 import { packageAudit } from "../../shared/agency";
 import { computeAnalytics, todayQueues } from "../../shared/engine/insights";
 import { collapseDuplicateJobs } from "../../shared/engine/jobIdentity";
-import type { JobRecord, Profile } from "../../shared/types";
+import { jobInPipelineGroup } from "../../shared/engine/searchPaths";
+import type { JobRecord, JobStatus, Profile } from "../../shared/types";
 import { profileReadiness } from "../../shared/validate";
 import { api } from "../api";
 import { JobLine, type LineMode } from "../components/JobLine";
@@ -11,6 +12,15 @@ import { MarketScanConsole } from "../components/MarketScanConsole";
 import { useJobs } from "../data";
 import { pct, plural, today } from "../format";
 import { useSession } from "../session";
+
+const TO_APPLY: JobStatus[] = ["evaluated", "resume_ready"];
+const PIPELINE_TALLY: { label: string; group: string; statuses: JobStatus[]; to: string }[] = [
+  { label: "To apply", group: "todo", statuses: TO_APPLY, to: "/pipeline?group=todo" },
+  { label: "Applied", group: "applied", statuses: ["applied"], to: "/pipeline?group=applied" },
+  { label: "Interviewing", group: "live", statuses: ["interview", "offer"], to: "/pipeline?group=live" },
+  { label: "Rejected", group: "rejected", statuses: ["rejected"], to: "/pipeline?group=rejected" },
+  { label: "Closed", group: "closed", statuses: ["closed", "withdrawn"], to: "/pipeline?group=closed" },
+];
 
 const PREVIEW = 6;
 
@@ -110,11 +120,18 @@ export function TodayPage() {
   useEffect(() => {
     api.currentMarketScan()
       .then(({ scan }) => {
-        if (scan?.status === "complete" && scan.prepared?.length) {
-          setHandpickedIds(new Set(collapseDuplicateJobs(scan.prepared).map((job) => job.id)));
-        } else {
+        if (scan?.status !== "complete" || !scan.prepared?.length || !jobs) {
           setHandpickedIds(new Set());
+          return;
         }
+        // Only hide handpicked roles that are still waiting to apply (and shown above).
+        const stillOpen = new Set(
+          collapseDuplicateJobs(scan.prepared)
+            .map((row) => jobs.find((job) => job.id === row.id) ?? row)
+            .filter((job) => !job.archivedAt && TO_APPLY.includes(job.status))
+            .map((job) => job.id),
+        );
+        setHandpickedIds(stillOpen);
       })
       .catch(() => setHandpickedIds(new Set()));
   }, [jobs]);
@@ -124,11 +141,17 @@ export function TodayPage() {
   );
   const a = useMemo(() => (jobs ? computeAnalytics(jobs, date) : null), [jobs, date]);
   const gaps = useMemo(() => (jobs ? packageAudit(jobs, date) : []), [jobs, date]);
+  const tally = useMemo(() => {
+    if (!jobs) return [];
+    return PIPELINE_TALLY.map((item) => ({
+      ...item,
+      count: jobs.filter((job) => jobInPipelineGroup(job, item.group, item.statuses)).length,
+    }));
+  }, [jobs]);
 
   if (error) return <div className="page"><div className="alert alert-error">{error}</div></div>;
   if (!jobs || !q || !a) return <div className="page"><p className="muted">Loading your search…</p></div>;
 
-  const count = (s: string[]) => jobs.filter((j) => s.includes(j.status)).length;
   const greeting = new Date().getHours() < 12 ? "Good morning" : new Date().getHours() < 17 ? "Good afternoon" : "Good evening";
   const name = profile?.fullName.split(/\s+/)[0];
 
@@ -149,12 +172,16 @@ export function TodayPage() {
       <MarketScanConsole compact />
 
       <dl className="tally">
-        <div><dt>To apply</dt><dd>{count(["evaluated", "resume_ready"])}</dd></div>
-        <div><dt>Applied</dt><dd>{count(["applied"])}</dd></div>
-        <div><dt>Interviewing</dt><dd>{count(["interview", "offer"])}</dd></div>
-        <div><dt>Rejected</dt><dd>{count(["rejected"])}</dd></div>
-        <div><dt>Closed</dt><dd>{count(["closed", "withdrawn"])}</dd></div>
-        <div><dt>Messages to send</dt><dd>{q.messageNow.length}</dd></div>
+        {tally.map((item) => (
+          <div key={item.group}>
+            <dt>{item.label}</dt>
+            <dd><Link className="tally-link" to={item.to}>{item.count}</Link></dd>
+          </div>
+        ))}
+        <div>
+          <dt>Messages to send</dt>
+          <dd><Link className="tally-link" to="/outreach">{q.messageNow.length}</Link></dd>
+        </div>
       </dl>
 
       <Queue
@@ -175,7 +202,7 @@ export function TodayPage() {
         jobs={q.applyNext}
         note={
           handpickedIds.size
-            ? "Best fit first, then the higher pay. Roles from your latest scan are listed above, not repeated here."
+            ? "Best fit first, then the higher pay. Roles from your latest scan that still need applying are listed above, not repeated here."
             : "Best fit first, then the higher pay. Open one, read the resume, apply, and mark it applied."
         }
         empty="Nothing waiting. Check a job or look at Discover for new openings."

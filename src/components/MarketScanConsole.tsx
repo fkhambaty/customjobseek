@@ -3,12 +3,22 @@ import { Link } from "react-router-dom";
 import { collapseDuplicateJobs } from "../../shared/engine/jobIdentity";
 import { pipelineCountLabel } from "../../shared/engine/liveness";
 import { scanStageLabel, type ScanStage } from "../../shared/engine/scanRules";
+import type { JobRecord } from "../../shared/types";
 import { api, type MarketScan, type MarketStats, type ScanSchedule } from "../api";
 import { useJobs } from "../data";
 import { creditAmount, isUnlimited } from "../format";
 import { useSession } from "../session";
+import { statusLabel } from "./FitCard";
 import { SCAN_FINISHED_EVENT, SCAN_STARTED_EVENT, ScanReviewDialog } from "./ScanReviewDialog";
 import { UpgradePrompt } from "./UpgradePrompt";
+
+function livePrepared(prepared: JobRecord[], jobs: JobRecord[] | null): JobRecord[] {
+  const collapsed = collapseDuplicateJobs(prepared);
+  return collapsed.map((row) => {
+    const live = jobs?.find((job) => job.id === row.id);
+    return live ?? row;
+  });
+}
 
 const STAGES: ScanStage[] = ["searching", "reading", "checking_fit", "building_resumes", "building_packs", "complete"];
 
@@ -39,7 +49,7 @@ function marketCoverage(stats: MarketStats | null, countryName: string): string 
 
 export function MarketScanConsole({ compact = false }: { compact?: boolean }) {
   const { account, refresh } = useSession();
-  const { open, reload } = useJobs();
+  const { open, reload, jobs } = useJobs();
   const [scan, setScan] = useState<MarketScan | null>(null);
   const [quota, setQuota] = useState<ScanSchedule | null>(null);
   const [stats, setStats] = useState<MarketStats | null>(null);
@@ -96,8 +106,9 @@ export function MarketScanConsole({ compact = false }: { compact?: boolean }) {
     && !active;
   const countryName = quota?.countryName ?? "";
   const coverage = marketCoverage(stats, countryName);
-  const prepared = scan?.prepared?.length ? collapseDuplicateJobs(scan.prepared) : [];
-  const handpickedCount = prepared.length || scan?.handpickedCount || 0;
+  const prepared = scan?.prepared?.length ? livePrepared(scan.prepared, jobs) : [];
+  const openPrepared = prepared.filter((job) => !job.archivedAt || job.status === "applied");
+  const handpickedCount = openPrepared.length || scan?.handpickedCount || 0;
 
   return (
     <section className={`market-scan ${compact ? "market-scan-compact" : ""}`}>
@@ -168,25 +179,37 @@ export function MarketScanConsole({ compact = false }: { compact?: boolean }) {
 
       {complete && (
         <div className="market-complete">
-          {prepared.length > 0 ? (
+          {openPrepared.length > 0 ? (
             <ul className="lines scan-ready">
-              {prepared.map((job) => (
-                <li className="line" key={job.id}>
-                  <span className={`score score-${job.fit.score >= 70 ? "hi" : job.fit.score >= 50 ? "mid" : "lo"}`}>{job.fit.score}</span>
-                  <button className="line-main" onClick={() => open(job.id)}>
-                    <span className="line-title">{job.title}</span>
-                    <span className="line-company">{job.company}</span>
-                    <span className="line-facts">
-                      <span>fit checked</span><span>resume ready</span><span>application pack ready</span>
-                      {job.contactCount > 0 && <span>{job.contactCount} contact{job.contactCount === 1 ? "" : "s"}</span>}
+              {openPrepared.map((job) => {
+                const applied = job.status === "applied" || Boolean(job.appliedAt);
+                const ready = job.status === "resume_ready" || job.hasResume;
+                return (
+                  <li className="line" key={job.id}>
+                    <span className={`score score-${job.fit.score >= 70 ? "hi" : job.fit.score >= 50 ? "mid" : "lo"}`}>{job.fit.score}</span>
+                    <button className="line-main" onClick={() => open(job.id)}>
+                      <span className="line-title">{job.title}</span>
+                      <span className="line-company">{job.company}</span>
+                      <span className="line-facts">
+                        <span className={applied ? "flag" : ""}>{statusLabel(job.status)}</span>
+                        {ready && !applied && <span>resume ready</span>}
+                        {job.hasPack && !applied && <span>application pack ready</span>}
+                        {job.contactCount > 0 && <span>{job.contactCount} contact{job.contactCount === 1 ? "" : "s"}</span>}
+                      </span>
+                    </button>
+                    <span className="line-actions">
+                      {applied ? (
+                        <button className="btn btn-ghost btn-sm" onClick={() => open(job.id)}>Open</button>
+                      ) : (
+                        <>
+                          <button className="btn btn-primary btn-sm" onClick={() => open(job.id, "application")}>Open pack</button>
+                          <button className="btn btn-ghost btn-sm" onClick={() => open(job.id, "resume")}>Resume</button>
+                        </>
+                      )}
                     </span>
-                  </button>
-                  <span className="line-actions">
-                    <button className="btn btn-primary btn-sm" onClick={() => open(job.id, "application")}>Open pack</button>
-                    <button className="btn btn-ghost btn-sm" onClick={() => open(job.id, "resume")}>Resume</button>
-                  </span>
-                </li>
-              ))}
+                  </li>
+                );
+              })}
             </ul>
           ) : (
             <p className="market-empty">No safe match was prepared, so this scan cost nothing.</p>
@@ -199,7 +222,7 @@ export function MarketScanConsole({ compact = false }: { compact?: boolean }) {
               <Link to="/discover">See the full market</Link>
             </span>
           </div>
-          {prepared.length > 0 && !canStart && (
+          {openPrepared.length > 0 && !canStart && (
             <UpgradePrompt evidence blocked="scans" />
           )}
         </div>

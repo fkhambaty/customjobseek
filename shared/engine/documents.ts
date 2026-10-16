@@ -34,7 +34,12 @@ function dates(start: string, end: string): string {
 }
 
 // Every sentence is assembled from the profile and the fit result. No line is paraphrased.
-export function buildApplication(profile: Profile, fit: FitResult, resume: TailoredResume): ApplicationFile {
+export function buildApplication(
+  profile: Profile,
+  fit: FitResult,
+  resume: TailoredResume,
+  options?: { expectedCtc?: string },
+): ApplicationFile {
   const role = resume.generatedFor;
   const recent = resume.roles[0];
   const paragraphs = [
@@ -48,6 +53,9 @@ export function buildApplication(profile: Profile, fit: FitResult, resume: Tailo
   }
   if (fit.matchedRequired.length) {
     paragraphs.push(`Required skills already on the profile: ${fit.matchedRequired.join(", ")}.`);
+  }
+  if (options?.expectedCtc?.trim()) {
+    paragraphs.push(`Expected CTC (grade-benchmark estimate for forms; not employer-published pay): ${options.expectedCtc.trim()}`);
   }
   const evidence = (recent?.bullets ?? []).slice(0, 4).map((b) => ({ label: recent?.title ?? "Experience", text: b.text }));
   const gaps = fit.missingRequired.map((s) => `${s} is asked for and is not on the profile.`);

@@ -109,10 +109,21 @@ describe("queues and analytics", () => {
 
   it("queues what to do today", () => {
     const q = todayQueues(jobs, today);
-    expect(q.applyNext).toHaveLength(1);
+    // Every open to-apply row, including stretch/skip decisions — same set as Pipeline.
+    expect(q.applyNext).toHaveLength(2);
     expect(q.messageNow.map((j) => j.company)).toEqual(["Beta"]);
     expect(q.nudge).toHaveLength(1);
     expect(q.live).toHaveLength(1);
+  });
+
+  it("excludes only still-open handpicked ids from Apply next", () => {
+    const handpicked = "open-apply";
+    const q = todayQueues([
+      job({ id: handpicked, status: "resume_ready", fit: { ...fit, score: 80, decision: "apply" } }),
+      job({ id: "other", status: "evaluated", fit: { ...fit, score: 55, decision: "skip" } }),
+      job({ id: "done", status: "applied", appliedAt: today }),
+    ], today, { excludeIds: new Set([handpicked]) });
+    expect(q.applyNext.map((row) => row.id)).toEqual(["other"]);
   });
 
   it("keeps an open posting ahead of a closed one and still shows the closed conversation", () => {

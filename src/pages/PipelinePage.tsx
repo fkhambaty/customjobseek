@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { rowEvidence } from "../../shared/agency";
 import { postingClosedCopy } from "../../shared/engine/liveness";
 import { payMid } from "../../shared/engine/insights";
@@ -99,7 +100,17 @@ function presetKey(value: string): PipelinePreset | null {
 
 export function PipelinePage() {
   const { jobs, error, notice, put, open, currency, searchPaths } = useJobs();
-  const [group, setGroup] = useState("all");
+  const [params, setParams] = useSearchParams();
+  const groupParam = params.get("group") ?? "all";
+  const group = GROUPS.some((g) => g.id === groupParam) ? groupParam : "all";
+  const setGroup = (id: string) => {
+    setParams((prev) => {
+      const next = new URLSearchParams(prev);
+      if (id === "all") next.delete("group");
+      else next.set("group", id);
+      return next;
+    }, { replace: true });
+  };
   const [query, setQuery] = useState("");
   const [pathId, setPathId] = useState("");
   const [family, setFamily] = useState("");

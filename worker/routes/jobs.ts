@@ -5,8 +5,10 @@ import { collapseDuplicateJobs } from "../../shared/engine/jobIdentity";
 import { rescorePathFields } from "../../shared/engine/searchPaths";
 import { buildApplication, buildJobFile } from "../../shared/engine/documents";
 import { evaluateFit, type JobInput } from "../../shared/engine/fit";
+import { estimateAsJobPay, estimatePayBand } from "../../shared/engine/payEstimate";
 import { buildMessages } from "../../shared/engine/outreach";
 import { tailorResume } from "../../shared/engine/tailor";
+import { addCareerPage } from "../scan";
 import {
   CHANNELS,
   emptyDetails,
@@ -143,6 +145,11 @@ export const jobs = new Hono<AppEnv>()
     if (!job) {
       throw new HttpError(422, "That page could not be read (some career sites load jobs with scripts). Paste the description instead.");
     }
+    c.executionCtx?.waitUntil(
+      addCareerPage(c.env, url.toString(), user.id, "fetched via Check a job").catch((err: unknown) =>
+        console.error("career page ingest from fetch failed", err),
+      ),
+    );
     await noteUsage(c.env.DB, user.id, "fetches");
     await noteProductEvent(c.env.DB, user.id, "job_fetch");
     return c.json({ ...job, url: url.toString() });
@@ -226,9 +233,32 @@ export const jobs = new Hono<AppEnv>()
 
     const fit = evaluateFit(input, profile);
     const id = crypto.randomUUID();
-    const pay = payFor(fit, profile);
+    let pay = payFor(fit, profile);
+    let payEstimated = false;
+    let salaryText = input.salaryText;
+    if (pay.low === null && pay.high === null) {
+      const band = estimatePayBand({
+        title: input.title,
+        company: input.company,
+        description: input.description,
+        currency: profile.preferences.currency,
+      });
+      if (band) {
+        const asPay = estimateAsJobPay(band);
+        pay = { low: asPay.payLow, high: asPay.payHigh };
+        payEstimated = true;
+        salaryText = salaryText.trim() || asPay.salaryText;
+      }
+    }
     const assigned = await assignmentFor(c.env.DB, user.id, profile, input.location, fit.parsedSalary);
-    const provenance = payProvenanceFor({ salaryText: input.salaryText, payEstimated: false, parsed: fit.parsedSalary !== null });
+    const provenance = payProvenanceFor({ salaryText, payEstimated, parsed: fit.parsedSalary !== null });
+    if (input.url) {
+      c.executionCtx?.waitUntil(
+        addCareerPage(c.env, input.url, user.id, "checked via Check a job").catch((err: unknown) =>
+          console.error("career page ingest from check-a-job failed", err),
+        ),
+      );
+    }
     const saved = await storeEvaluatedJob(c.env.DB, {
       id,
       userId: user.id,
@@ -236,13 +266,14 @@ export const jobs = new Hono<AppEnv>()
       company: input.company,
       location: input.location,
       url: input.url,
-      salaryText: input.salaryText,
+      salaryText,
       description: input.description,
       fitJson: JSON.stringify(fit),
       lane: assigned.lane,
       route: routeFromUrl(input.url),
       payLow: pay.low,
       payHigh: pay.high,
+      payEstimated,
       provenance,
       searchPathId: assigned.searchPathId,
     });

@@ -15,6 +15,7 @@ import {
   type SearchPath,
 } from "../shared/engine/searchPaths";
 import { occupationSearchWords, resolveRole } from "../shared/engine/occupations";
+import { estimateAsJobPay, estimatePayBand } from "../shared/engine/payEstimate";
 import { tailorResume } from "../shared/engine/tailor";
 import { artifactIdentity } from "../shared/resumeFile";
 import { fitResumeToPages } from "../shared/resumeFit";
@@ -175,8 +176,20 @@ export async function checkOpening(row: DiscoverRow, profile: Profile): Promise<
   return { row, input, fit: evaluateFit(input, profile) };
 }
 
-function annualPay(input: JobInput, profile: Profile): { low: number | null; high: number | null } {
-  return storedAnnualPay(evaluateFit(input, profile).parsedSalary, profile.preferences.currency);
+function annualPay(input: JobInput, profile: Profile): { low: number | null; high: number | null; estimated: boolean; salaryText: string } {
+  const published = storedAnnualPay(evaluateFit(input, profile).parsedSalary, profile.preferences.currency);
+  if (published.low !== null || published.high !== null) {
+    return { ...published, estimated: false, salaryText: input.salaryText };
+  }
+  const band = estimatePayBand({
+    title: input.title,
+    company: input.company,
+    description: input.description,
+    currency: profile.preferences.currency,
+  });
+  if (!band) return { low: null, high: null, estimated: false, salaryText: input.salaryText };
+  const asPay = estimateAsJobPay(band);
+  return { low: asPay.payLow, high: asPay.payHigh, estimated: true, salaryText: input.salaryText.trim() || asPay.salaryText };
 }
 
 export interface ScanChargeGate {
@@ -224,11 +237,19 @@ export async function packStatements(
   const resume = await fitResumeToPages(
     tailorResume(profile, fit, { id, title: input.title, company: input.company, description: input.description }),
   );
-  const application = buildApplication(profile, fit, resume);
-  const jobFile = buildJobFile(input, fit);
+  const pay = annualPay(input, profile);
+  const band = pay.estimated
+    ? estimatePayBand({
+      title: input.title,
+      company: input.company,
+      description: input.description,
+      currency: profile.preferences.currency,
+    })
+    : null;
+  const application = buildApplication(profile, fit, resume, band ? { expectedCtc: band.expectedCtc } : undefined);
+  const jobFile = buildJobFile({ ...input, salaryText: pay.salaryText }, fit);
   const contacts = contactsFrom(input.description);
   const details = { ...emptyDetails(), contacts };
-  const pay = annualPay(input, profile);
   const [packed, resumeFile] = await Promise.all([
     Promise.all([
       encryptJson(env.DATA_KEY, resume),
@@ -248,10 +269,10 @@ export async function packStatements(
   });
   const identityKey = jobIdentityKey({ title: input.title, company: input.company, url: input.url });
   const jobBinds = [
-    id, userId, input.title, input.company, input.location, input.url, input.salaryText, input.description,
+    id, userId, input.title, input.company, input.location, input.url, pay.salaryText, input.description,
     JSON.stringify(fit), assigned.lane, routeFromUrl(input.url),
-    pay.low, pay.high,
-    payProvenanceFor({ salaryText: input.salaryText, payEstimated: false, parsed: fit.parsedSalary !== null }),
+    pay.low, pay.high, pay.estimated ? 1 : 0,
+    payProvenanceFor({ salaryText: pay.salaryText, payEstimated: pay.estimated, parsed: fit.parsedSalary !== null }),
     contacts.length, packed[3], assigned.searchPathId,
   ];
   return {
@@ -260,8 +281,8 @@ export async function packStatements(
       gated(
         env.DB,
         `INSERT INTO jobs
-         (id, user_id, title, company, location, url, salary_text, description, status, fit_json, lane, route, pay_low, pay_high, pay_provenance, contact_count, details_ciphertext, search_path_id)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'resume_ready', ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         (id, user_id, title, company, location, url, salary_text, description, status, fit_json, lane, route, pay_low, pay_high, pay_estimated, pay_provenance, contact_count, details_ciphertext, search_path_id)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'resume_ready', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         jobBinds,
         gate,
         `SELECT 1 FROM jobs WHERE id = ?

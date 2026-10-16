@@ -276,8 +276,8 @@ describe("CommandCenter role shaping", () => {
     ];
     expect(new Set(headlines).size).toBe(headlines.length);
     expect(headlines[0]).toBe("DATA ENGINEER | SNOWFLAKE, DBT, SQL, AIRFLOW & WAREHOUSE PLATFORMS");
-    expect(headlines[3]).toBe("DATA ENGINEERING LEAD | DBT, AIRFLOW & WAREHOUSE PLATFORMS | TEAM BUILDING & DELIVERY STANDARDS");
-    expect(headlines[4]).toBe("ANALYTICS & BI MANAGER | PEOPLE LEADERSHIP, SEMANTIC LAYERS & KPI GOVERNANCE | TABLEAU, DBT");
+    expect(headlines[3]).toBe("DATA ENGINEERING LEAD | SNOWFLAKE, DBT, AIRFLOW & WAREHOUSE PLATFORMS | TEAM BUILDING & DELIVERY STANDARDS");
+    expect(headlines[4]).toBe("ANALYTICS & BI MANAGER | PEOPLE LEADERSHIP, SEMANTIC LAYERS & KPI GOVERNANCE | DBT, TABLEAU");
     for (const h of headlines) expect(h).not.toMatch(/POWER BI|DATABRICKS/);
   });
 

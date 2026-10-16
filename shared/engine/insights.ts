@@ -55,8 +55,10 @@ export function todayQueues(jobs: JobRecord[], today: string, options?: { exclud
   const live = active
     .filter((j) => j.status === "interview" || j.status === "offer")
     .sort((a, b) => (a.liveStatus === "closed" ? 1 : 0) - (b.liveStatus === "closed" ? 1 : 0));
+  // Same set as Pipeline "To apply": every open evaluated/resume_ready row.
+  // Handpicked roles still shown in the scan card are excluded so they are not listed twice.
   const applyNext = active
-    .filter((j) => TO_APPLY.has(j.status) && (j.fit.imported || j.fit.decision !== "skip") && !excludeIds?.has(j.id))
+    .filter((j) => TO_APPLY.has(j.status) && !excludeIds?.has(j.id))
     .sort(openPostingFirst((a, b) => b.fit.score - a.fit.score || (payMid(b) ?? 0) - (payMid(a) ?? 0)));
 
   const recent = active.filter((j) => j.status === "applied" && age(j.appliedAt) <= 30);
