@@ -67,7 +67,7 @@ function channelLabel(c: Channel | ""): string {
   }
 }
 
-const STATUS_FLOW: JobStatus[] = ["evaluated", "resume_ready", "applied", "interview", "offer", "rejected", "closed", "withdrawn"];
+const STATUS_FLOW: JobStatus[] = ["evaluated", "resume_ready", "backfill", "applied", "interview", "offer", "rejected", "closed", "withdrawn"];
 
 function Section({ title, children, aside }: { title: string; children: ReactNode; aside?: ReactNode }) {
   return (

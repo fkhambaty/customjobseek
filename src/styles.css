@@ -125,6 +125,8 @@ input:focus, textarea:focus, select:focus { outline: none; border-color: var(--i
 .row-end { display: flex; justify-content: flex-end; align-items: center; gap: 8px; margin-top: 10px; }
 .row-inline { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 .row-inline input { flex: 1; }
+.check-row { display: flex; gap: 10px; align-items: flex-start; font-size: 0.95rem; line-height: 1.4; }
+.check-row input { margin-top: 3px; }
 .row-item { margin-top: 10px; }
 .pad { padding: 20px 0; }
 .empty { text-align: center; padding: 48px 24px; }

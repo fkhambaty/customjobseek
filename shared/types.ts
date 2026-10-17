@@ -140,6 +140,7 @@ export interface TailoredResume {
 export const JOB_STATUSES = [
   "evaluated",
   "resume_ready",
+  "backfill",
   "applied",
   "interview",
   "offer",

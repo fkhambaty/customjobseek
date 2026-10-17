@@ -58,7 +58,7 @@ function Welcome({ greeting, name, profile }: { greeting: string; name: string |
         <h1 className="page-title">{greeting}{name ? `, ${name}` : ""}.</h1>
         <p className="lede today-scan-lede">One scan reads the strongest openings for your roles and prepares the work worth doing next.</p>
         <MarketScanConsole />
-        <p className="welcome-note">Prefer to start with one role? <Link to="/jobs/new">Paste a job yourself</Link>.</p>
+        <p className="welcome-note">Prefer to start with one role? <Link to="/jobs/new">Paste a posting or recruiter message</Link>.</p>
       </div>
     );
   }

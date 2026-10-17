@@ -5,3 +5,9 @@ dist/
 .env
 *.log
 .DS_Store
+
+scripts/data/public-board-directory.csv
+scripts/_q.sql
+scripts/match-*.sql
+scripts/match-*.out
+

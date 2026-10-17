@@ -26,7 +26,7 @@ import {
   workableWidgetUrl,
   workdayJobsUrl,
 } from "../shared/engine/listings";
-import { sourceCatalog } from "../shared/engine/sourceCatalog";
+import { industryCatalogCoverage, industryEmployerCatalog, sourceCatalog } from "../shared/engine/sourceCatalog";
 import {
   callablePublicFeed,
   canonicalJobUrl,
@@ -202,7 +202,7 @@ describe("curated employer catalog", () => {
   it("covers the nine markets with verified public board URLs only", () => {
     const rows = sourceCatalog();
     expect(rows.length).toBeGreaterThanOrEqual(20);
-    expect(rows.length).toBeLessThanOrEqual(80);
+    expect(rows.length).toBeLessThanOrEqual(400);
     const seen = new Set<string>();
     const counts = new Map<string, number>();
     for (const row of rows) {
@@ -221,6 +221,13 @@ describe("curated employer catalog", () => {
     for (const id of Object.keys(SOURCES)) {
       if (id === "greenhouse" || id === "lever" || id === "ashby" || id === "workable" || id === "smartrecruiters" || id === "workday" || id === "website") continue;
       expect(migration).toContain(`'${id}'`);
+    }
+  });
+
+  it("covers every onboarding industry in the employer pool", () => {
+    expect(industryEmployerCatalog().length).toBeGreaterThanOrEqual(40);
+    for (const row of industryCatalogCoverage()) {
+      expect(row.pool, row.industry).toBeGreaterThanOrEqual(1);
     }
   });
 });

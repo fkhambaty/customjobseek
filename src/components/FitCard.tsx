@@ -21,6 +21,8 @@ export function statusLabel(s: JobStatus): string {
       return "Checked";
     case "resume_ready":
       return "Resume ready";
+    case "backfill":
+      return "Backfill";
     case "applied":
       return "Applied";
     case "interview":

@@ -1,56 +1,1524 @@
 [
-  {"name": "Stripe", "careerUrl": "https://boards.greenhouse.io/stripe", "country": "US", "sectors": ["payments", "software"]},
-  {"name": "Cloudflare", "careerUrl": "https://boards.greenhouse.io/cloudflare", "country": "US", "sectors": ["infrastructure", "software"]},
-  {"name": "Anthropic", "careerUrl": "https://boards.greenhouse.io/anthropic", "country": "US", "sectors": ["AI"]},
-  {"name": "Databricks", "careerUrl": "https://boards.greenhouse.io/databricks", "country": "US", "sectors": ["data", "software"]},
-  {"name": "Palantir", "careerUrl": "https://jobs.lever.co/palantir", "country": "US", "sectors": ["software"]},
-  {"name": "OpenAI", "careerUrl": "https://jobs.ashbyhq.com/openai", "country": "US", "sectors": ["AI"]},
-  {"name": "Ramp", "careerUrl": "https://jobs.ashbyhq.com/ramp", "country": "US", "sectors": ["fintech", "software"]},
-  {"name": "NVIDIA", "careerUrl": "https://nvidia.wd5.myworkdayjobs.com/NVIDIAExternalCareerSite", "country": "US", "sectors": ["semiconductors", "software"]},
-  {"name": "Adobe", "careerUrl": "https://adobe.wd5.myworkdayjobs.com/external_experienced", "country": "US", "sectors": ["software"]},
-  {"name": "Visa", "careerUrl": "https://jobs.smartrecruiters.com/Visa", "country": "US", "sectors": ["payments"]},
-  {"name": "Moderna", "careerUrl": "https://boards.greenhouse.io/moderna", "country": "US", "sectors": ["biotech", "pharma", "healthcare"]},
-  {"name": "Teladoc Health", "careerUrl": "https://boards.greenhouse.io/teladochealth", "country": "US", "sectors": ["healthcare", "clinical"]},
-  {"name": "Color Health", "careerUrl": "https://boards.greenhouse.io/color", "country": "US", "sectors": ["healthcare", "biotech"]},
-  {"name": "Ro", "careerUrl": "https://jobs.ashbyhq.com/ro", "country": "US", "sectors": ["healthcare", "wellness"]},
-  {"name": "Noom", "careerUrl": "https://boards.greenhouse.io/noom", "country": "US", "sectors": ["healthcare", "nutrition", "wellness"]},
-  {"name": "Hinge Health", "careerUrl": "https://boards.greenhouse.io/hingehealth", "country": "US", "sectors": ["healthcare", "clinical"]},
-
-  {"name": "Groww", "careerUrl": "https://boards.greenhouse.io/groww", "country": "IN", "sectors": ["fintech"]},
-  {"name": "Practo", "careerUrl": "https://boards.greenhouse.io/practo", "country": "IN", "sectors": ["healthcare"]},
-  {"name": "PharmEasy", "careerUrl": "https://boards.greenhouse.io/pharmeasy", "country": "IN", "sectors": ["healthcare", "pharma"]},
-  {"name": "InMobi", "careerUrl": "https://boards.greenhouse.io/inmobi", "country": "IN", "sectors": ["advertising"]},
-  {"name": "Zenoti", "careerUrl": "https://boards.greenhouse.io/zenoti", "country": "IN", "sectors": ["software"]},
-  {"name": "CRED", "careerUrl": "https://jobs.lever.co/cred", "country": "IN", "sectors": ["fintech"]},
-  {"name": "Meesho", "careerUrl": "https://jobs.lever.co/meesho", "country": "IN", "sectors": ["ecommerce"]},
-
-  {"name": "Monzo", "careerUrl": "https://boards.greenhouse.io/monzo", "country": "GB", "sectors": ["fintech"]},
-  {"name": "Wise", "careerUrl": "https://boards.greenhouse.io/wise", "country": "GB", "sectors": ["fintech"]},
-  {"name": "Deliveroo", "careerUrl": "https://boards.greenhouse.io/deliveroo", "country": "GB", "sectors": ["logistics"]},
-  {"name": "GoCardless", "careerUrl": "https://boards.greenhouse.io/gocardless", "country": "GB", "sectors": ["payments"]},
-
-  {"name": "Wealthsimple", "careerUrl": "https://jobs.ashbyhq.com/wealthsimple", "country": "CA", "sectors": ["fintech"]},
-  {"name": "Hootsuite", "careerUrl": "https://boards.greenhouse.io/hootsuite", "country": "CA", "sectors": ["software"]},
-  {"name": "KOHO", "careerUrl": "https://jobs.ashbyhq.com/koho", "country": "CA", "sectors": ["fintech"]},
-  {"name": "1Password", "careerUrl": "https://jobs.ashbyhq.com/1password", "country": "CA", "sectors": ["security", "software"]},
-
-  {"name": "Culture Amp", "careerUrl": "https://boards.greenhouse.io/cultureamp", "country": "AU", "sectors": ["software"]},
-  {"name": "Canva", "careerUrl": "https://jobs.smartrecruiters.com/Canva", "country": "AU", "sectors": ["software"]},
-
-  {"name": "GovTech Singapore", "careerUrl": "https://boards.greenhouse.io/govtech", "country": "SG", "sectors": ["public sector", "technology"]},
-  {"name": "Grab", "careerUrl": "https://jobs.smartrecruiters.com/Grab", "country": "SG", "sectors": ["technology"]},
-  {"name": "Ninja Van", "careerUrl": "https://jobs.lever.co/ninjavan", "country": "SG", "sectors": ["logistics"]},
-  {"name": "Nium", "careerUrl": "https://jobs.lever.co/nium", "country": "SG", "sectors": ["fintech"]},
-  {"name": "Airwallex", "careerUrl": "https://jobs.ashbyhq.com/airwallex", "country": "SG", "sectors": ["fintech"]},
-
-  {"name": "Xero", "careerUrl": "https://jobs.ashbyhq.com/xero", "country": "NZ", "sectors": ["software"]},
-  {"name": "Rocket Lab", "careerUrl": "https://boards.greenhouse.io/rocketlab", "country": "NZ", "sectors": ["aerospace"]},
-
-  {"name": "Intercom", "careerUrl": "https://boards.greenhouse.io/intercom", "country": "IE", "sectors": ["software"]},
-  {"name": "Workhuman", "careerUrl": "https://jobs.ashbyhq.com/workhuman", "country": "IE", "sectors": ["software"]},
-  {"name": "Wayflyer", "careerUrl": "https://jobs.ashbyhq.com/wayflyer", "country": "IE", "sectors": ["fintech"]},
-
-  {"name": "Luno", "careerUrl": "https://boards.greenhouse.io/luno", "country": "ZA", "sectors": ["fintech"]},
-  {"name": "Ozow", "careerUrl": "https://boards.greenhouse.io/ozow", "country": "ZA", "sectors": ["payments"]},
-  {"name": "OfferZen", "careerUrl": "https://boards.greenhouse.io/offerzen", "country": "ZA", "sectors": ["software"]}
+  {
+    "name": "Stripe",
+    "careerUrl": "https://boards.greenhouse.io/stripe",
+    "country": "US",
+    "sectors": [
+      "payments",
+      "software"
+    ]
+  },
+  {
+    "name": "Cloudflare",
+    "careerUrl": "https://boards.greenhouse.io/cloudflare",
+    "country": "US",
+    "sectors": [
+      "infrastructure",
+      "software"
+    ]
+  },
+  {
+    "name": "Anthropic",
+    "careerUrl": "https://boards.greenhouse.io/anthropic",
+    "country": "US",
+    "sectors": [
+      "AI"
+    ]
+  },
+  {
+    "name": "Databricks",
+    "careerUrl": "https://boards.greenhouse.io/databricks",
+    "country": "US",
+    "sectors": [
+      "data",
+      "software"
+    ]
+  },
+  {
+    "name": "Palantir",
+    "careerUrl": "https://jobs.lever.co/palantir",
+    "country": "US",
+    "sectors": [
+      "software"
+    ]
+  },
+  {
+    "name": "OpenAI",
+    "careerUrl": "https://jobs.ashbyhq.com/openai",
+    "country": "US",
+    "sectors": [
+      "AI"
+    ]
+  },
+  {
+    "name": "Ramp",
+    "careerUrl": "https://jobs.ashbyhq.com/ramp",
+    "country": "US",
+    "sectors": [
+      "fintech",
+      "software"
+    ]
+  },
+  {
+    "name": "NVIDIA",
+    "careerUrl": "https://nvidia.wd5.myworkdayjobs.com/NVIDIAExternalCareerSite",
+    "country": "US",
+    "sectors": [
+      "semiconductors",
+      "software"
+    ]
+  },
+  {
+    "name": "Adobe",
+    "careerUrl": "https://adobe.wd5.myworkdayjobs.com/external_experienced",
+    "country": "US",
+    "sectors": [
+      "software"
+    ]
+  },
+  {
+    "name": "Visa",
+    "careerUrl": "https://jobs.smartrecruiters.com/Visa",
+    "country": "US",
+    "sectors": [
+      "payments"
+    ]
+  },
+  {
+    "name": "Moderna",
+    "careerUrl": "https://boards.greenhouse.io/moderna",
+    "country": "US",
+    "sectors": [
+      "biotech",
+      "pharma",
+      "healthcare"
+    ]
+  },
+  {
+    "name": "Teladoc Health",
+    "careerUrl": "https://boards.greenhouse.io/teladochealth",
+    "country": "US",
+    "sectors": [
+      "healthcare",
+      "clinical"
+    ]
+  },
+  {
+    "name": "Color Health",
+    "careerUrl": "https://boards.greenhouse.io/color",
+    "country": "US",
+    "sectors": [
+      "healthcare",
+      "biotech"
+    ]
+  },
+  {
+    "name": "Ro",
+    "careerUrl": "https://jobs.ashbyhq.com/ro",
+    "country": "US",
+    "sectors": [
+      "healthcare",
+      "wellness"
+    ]
+  },
+  {
+    "name": "Noom",
+    "careerUrl": "https://boards.greenhouse.io/noom",
+    "country": "US",
+    "sectors": [
+      "healthcare",
+      "nutrition",
+      "wellness"
+    ]
+  },
+  {
+    "name": "Hinge Health",
+    "careerUrl": "https://boards.greenhouse.io/hingehealth",
+    "country": "US",
+    "sectors": [
+      "healthcare",
+      "clinical"
+    ]
+  },
+  {
+    "name": "Groww",
+    "careerUrl": "https://boards.greenhouse.io/groww",
+    "country": "IN",
+    "sectors": [
+      "fintech"
+    ]
+  },
+  {
+    "name": "Practo",
+    "careerUrl": "https://boards.greenhouse.io/practo",
+    "country": "IN",
+    "sectors": [
+      "healthcare"
+    ]
+  },
+  {
+    "name": "PharmEasy",
+    "careerUrl": "https://boards.greenhouse.io/pharmeasy",
+    "country": "IN",
+    "sectors": [
+      "healthcare",
+      "pharma"
+    ]
+  },
+  {
+    "name": "InMobi",
+    "careerUrl": "https://boards.greenhouse.io/inmobi",
+    "country": "IN",
+    "sectors": [
+      "advertising"
+    ]
+  },
+  {
+    "name": "Zenoti",
+    "careerUrl": "https://boards.greenhouse.io/zenoti",
+    "country": "IN",
+    "sectors": [
+      "software"
+    ]
+  },
+  {
+    "name": "CRED",
+    "careerUrl": "https://jobs.lever.co/cred",
+    "country": "IN",
+    "sectors": [
+      "fintech"
+    ]
+  },
+  {
+    "name": "Meesho",
+    "careerUrl": "https://jobs.lever.co/meesho",
+    "country": "IN",
+    "sectors": [
+      "ecommerce"
+    ]
+  },
+  {
+    "name": "Monzo",
+    "careerUrl": "https://boards.greenhouse.io/monzo",
+    "country": "GB",
+    "sectors": [
+      "fintech"
+    ]
+  },
+  {
+    "name": "Wise",
+    "careerUrl": "https://boards.greenhouse.io/wise",
+    "country": "GB",
+    "sectors": [
+      "fintech"
+    ]
+  },
+  {
+    "name": "Deliveroo",
+    "careerUrl": "https://boards.greenhouse.io/deliveroo",
+    "country": "GB",
+    "sectors": [
+      "logistics"
+    ]
+  },
+  {
+    "name": "GoCardless",
+    "careerUrl": "https://boards.greenhouse.io/gocardless",
+    "country": "GB",
+    "sectors": [
+      "payments"
+    ]
+  },
+  {
+    "name": "Wealthsimple",
+    "careerUrl": "https://jobs.ashbyhq.com/wealthsimple",
+    "country": "CA",
+    "sectors": [
+      "fintech"
+    ]
+  },
+  {
+    "name": "Hootsuite",
+    "careerUrl": "https://boards.greenhouse.io/hootsuite",
+    "country": "CA",
+    "sectors": [
+      "software"
+    ]
+  },
+  {
+    "name": "KOHO",
+    "careerUrl": "https://jobs.ashbyhq.com/koho",
+    "country": "CA",
+    "sectors": [
+      "fintech"
+    ]
+  },
+  {
+    "name": "1Password",
+    "careerUrl": "https://jobs.ashbyhq.com/1password",
+    "country": "CA",
+    "sectors": [
+      "security",
+      "software"
+    ]
+  },
+  {
+    "name": "Culture Amp",
+    "careerUrl": "https://boards.greenhouse.io/cultureamp",
+    "country": "AU",
+    "sectors": [
+      "software"
+    ]
+  },
+  {
+    "name": "Canva",
+    "careerUrl": "https://jobs.smartrecruiters.com/Canva",
+    "country": "AU",
+    "sectors": [
+      "software"
+    ]
+  },
+  {
+    "name": "GovTech Singapore",
+    "careerUrl": "https://boards.greenhouse.io/govtech",
+    "country": "SG",
+    "sectors": [
+      "public sector",
+      "technology"
+    ]
+  },
+  {
+    "name": "Grab",
+    "careerUrl": "https://jobs.smartrecruiters.com/Grab",
+    "country": "SG",
+    "sectors": [
+      "technology"
+    ]
+  },
+  {
+    "name": "Ninja Van",
+    "careerUrl": "https://jobs.lever.co/ninjavan",
+    "country": "SG",
+    "sectors": [
+      "logistics"
+    ]
+  },
+  {
+    "name": "Nium",
+    "careerUrl": "https://jobs.lever.co/nium",
+    "country": "SG",
+    "sectors": [
+      "fintech"
+    ]
+  },
+  {
+    "name": "Airwallex",
+    "careerUrl": "https://jobs.ashbyhq.com/airwallex",
+    "country": "SG",
+    "sectors": [
+      "fintech"
+    ]
+  },
+  {
+    "name": "Xero",
+    "careerUrl": "https://jobs.ashbyhq.com/xero",
+    "country": "NZ",
+    "sectors": [
+      "software"
+    ]
+  },
+  {
+    "name": "Rocket Lab",
+    "careerUrl": "https://boards.greenhouse.io/rocketlab",
+    "country": "NZ",
+    "sectors": [
+      "aerospace"
+    ]
+  },
+  {
+    "name": "Intercom",
+    "careerUrl": "https://boards.greenhouse.io/intercom",
+    "country": "IE",
+    "sectors": [
+      "software"
+    ]
+  },
+  {
+    "name": "Workhuman",
+    "careerUrl": "https://jobs.ashbyhq.com/workhuman",
+    "country": "IE",
+    "sectors": [
+      "software"
+    ]
+  },
+  {
+    "name": "Wayflyer",
+    "careerUrl": "https://jobs.ashbyhq.com/wayflyer",
+    "country": "IE",
+    "sectors": [
+      "fintech"
+    ]
+  },
+  {
+    "name": "Luno",
+    "careerUrl": "https://boards.greenhouse.io/luno",
+    "country": "ZA",
+    "sectors": [
+      "fintech"
+    ]
+  },
+  {
+    "name": "Ozow",
+    "careerUrl": "https://boards.greenhouse.io/ozow",
+    "country": "ZA",
+    "sectors": [
+      "payments"
+    ]
+  },
+  {
+    "name": "OfferZen",
+    "careerUrl": "https://boards.greenhouse.io/offerzen",
+    "country": "ZA",
+    "sectors": [
+      "software"
+    ]
+  },
+  {
+    "name": "Insurityindia",
+    "careerUrl": "https://boards.greenhouse.io/insurityindia",
+    "country": "IN",
+    "sectors": [
+      "software",
+      "IT services",
+      "technology",
+      "AI",
+      "data",
+      "cloud",
+      "internet",
+      "security",
+      "semiconductors",
+      "networking",
+      "infrastructure",
+      "fintech"
+    ]
+  },
+  {
+    "name": "Alphasenseindia",
+    "careerUrl": "https://boards.greenhouse.io/alphasenseindia",
+    "country": "IN",
+    "sectors": [
+      "software",
+      "IT services",
+      "technology",
+      "AI",
+      "data",
+      "cloud",
+      "internet",
+      "security",
+      "semiconductors",
+      "networking",
+      "infrastructure",
+      "fintech"
+    ]
+  },
+  {
+    "name": "Azuritypharmaceuticalsindia",
+    "careerUrl": "https://boards.greenhouse.io/azuritypharmaceuticalsindia",
+    "country": "IN",
+    "sectors": [
+      "software",
+      "IT services",
+      "technology",
+      "AI",
+      "data",
+      "cloud",
+      "internet",
+      "security",
+      "semiconductors",
+      "networking",
+      "infrastructure",
+      "fintech"
+    ]
+  },
+  {
+    "name": "Kraftonindia",
+    "careerUrl": "https://boards.greenhouse.io/kraftonindia",
+    "country": "IN",
+    "sectors": [
+      "software",
+      "IT services",
+      "technology",
+      "AI",
+      "data",
+      "cloud",
+      "internet",
+      "security",
+      "semiconductors",
+      "networking",
+      "infrastructure",
+      "fintech"
+    ]
+  },
+  {
+    "name": "Cleoindia",
+    "careerUrl": "https://boards.greenhouse.io/cleoindia",
+    "country": "IN",
+    "sectors": [
+      "software",
+      "IT services",
+      "technology",
+      "AI",
+      "data",
+      "cloud",
+      "internet",
+      "security",
+      "semiconductors",
+      "networking",
+      "infrastructure",
+      "fintech"
+    ]
+  },
+  {
+    "name": "Blenheimchalcotindia",
+    "careerUrl": "https://boards.greenhouse.io/blenheimchalcotindia",
+    "country": "IN",
+    "sectors": [
+      "software",
+      "IT services",
+      "technology",
+      "AI",
+      "data",
+      "cloud",
+      "internet",
+      "security",
+      "semiconductors",
+      "networking",
+      "infrastructure",
+      "fintech"
+    ]
+  },
+  {
+    "name": "Bluevineindia",
+    "careerUrl": "https://boards.greenhouse.io/bluevineindia",
+    "country": "IN",
+    "sectors": [
+      "software",
+      "IT services",
+      "technology",
+      "AI",
+      "data",
+      "cloud",
+      "internet",
+      "security",
+      "semiconductors",
+      "networking",
+      "infrastructure",
+      "fintech"
+    ]
+  },
+  {
+    "name": "Wri",
+    "careerUrl": "https://wri.wd501.myworkdayjobs.com/WRI_India",
+    "country": "IN",
+    "sectors": [
+      "software",
+      "IT services",
+      "technology",
+      "AI",
+      "data",
+      "cloud",
+      "internet",
+      "security",
+      "semiconductors",
+      "networking",
+      "infrastructure",
+      "fintech"
+    ]
+  },
+  {
+    "name": "Target",
+    "careerUrl": "https://target.wd5.myworkdayjobs.com/targetcareers",
+    "country": "US",
+    "sectors": [
+      "retail",
+      "ecommerce",
+      "consumer"
+    ]
+  },
+  {
+    "name": "Lowes",
+    "careerUrl": "https://lowes.wd5.myworkdayjobs.com/lws_external_cs",
+    "country": "US",
+    "sectors": [
+      "software",
+      "IT services",
+      "technology",
+      "AI",
+      "data",
+      "cloud",
+      "internet",
+      "security",
+      "semiconductors",
+      "networking",
+      "infrastructure",
+      "fintech"
+    ]
+  },
+  {
+    "name": "Tjx",
+    "careerUrl": "https://tjx.wd1.myworkdayjobs.com/TJX_EXTERNAL",
+    "country": "US",
+    "sectors": [
+      "software",
+      "IT services",
+      "technology",
+      "AI",
+      "data",
+      "cloud",
+      "internet",
+      "security",
+      "semiconductors",
+      "networking",
+      "infrastructure",
+      "fintech"
+    ]
+  },
+  {
+    "name": "Dollartree",
+    "careerUrl": "https://dollartree.wd5.myworkdayjobs.com/dollartreeus",
+    "country": "US",
+    "sectors": [
+      "software",
+      "IT services",
+      "technology",
+      "AI",
+      "data",
+      "cloud",
+      "internet",
+      "security",
+      "semiconductors",
+      "networking",
+      "infrastructure",
+      "fintech"
+    ]
+  },
+  {
+    "name": "Cvshealth",
+    "careerUrl": "https://cvshealth.wd1.myworkdayjobs.com/CVS_Health_Careers",
+    "country": "US",
+    "sectors": [
+      "software",
+      "IT services",
+      "technology",
+      "AI",
+      "data",
+      "cloud",
+      "internet",
+      "security",
+      "semiconductors",
+      "networking",
+      "infrastructure",
+      "fintech"
+    ]
+  },
+  {
+    "name": "Svetness",
+    "careerUrl": "https://boards.greenhouse.io/svetness",
+    "country": "US",
+    "sectors": [
+      "software",
+      "IT services",
+      "technology",
+      "AI",
+      "data",
+      "cloud",
+      "internet",
+      "security",
+      "semiconductors",
+      "networking",
+      "infrastructure",
+      "fintech"
+    ]
+  },
+  {
+    "name": "Globalhr",
+    "careerUrl": "https://globalhr.wd5.myworkdayjobs.com/REC_RTX_Ext_Gateway",
+    "country": "US",
+    "sectors": [
+      "software",
+      "IT services",
+      "technology",
+      "AI",
+      "data",
+      "cloud",
+      "internet",
+      "security",
+      "semiconductors",
+      "networking",
+      "infrastructure",
+      "fintech"
+    ]
+  },
+  {
+    "name": "Hitachi",
+    "careerUrl": "https://hitachi.wd1.myworkdayjobs.com/hitachi",
+    "country": "US",
+    "sectors": [
+      "software",
+      "IT services",
+      "technology",
+      "AI",
+      "data",
+      "cloud",
+      "internet",
+      "security",
+      "semiconductors",
+      "networking",
+      "infrastructure",
+      "fintech"
+    ]
+  },
+  {
+    "name": "Iwoca.Co.Uk",
+    "careerUrl": "https://jobs.ashbyhq.com/iwoca.co.uk",
+    "country": "GB",
+    "sectors": [
+      "software",
+      "IT services",
+      "technology",
+      "AI",
+      "data",
+      "cloud",
+      "internet",
+      "security",
+      "semiconductors",
+      "networking",
+      "infrastructure",
+      "fintech"
+    ]
+  },
+  {
+    "name": "London",
+    "careerUrl": "https://boards.greenhouse.io/london",
+    "country": "GB",
+    "sectors": [
+      "software",
+      "IT services",
+      "technology",
+      "AI",
+      "data",
+      "cloud",
+      "internet",
+      "security",
+      "semiconductors",
+      "networking",
+      "infrastructure",
+      "fintech"
+    ]
+  },
+  {
+    "name": "Nobuhoteltoronto",
+    "careerUrl": "https://boards.greenhouse.io/nobuhoteltoronto",
+    "country": "CA",
+    "sectors": [
+      "software",
+      "IT services",
+      "technology",
+      "AI",
+      "data",
+      "cloud",
+      "internet",
+      "security",
+      "semiconductors",
+      "networking",
+      "infrastructure",
+      "fintech"
+    ]
+  },
+  {
+    "name": "Heidihealth.Com.Au",
+    "careerUrl": "https://jobs.ashbyhq.com/heidihealth.com.au",
+    "country": "AU",
+    "sectors": [
+      "software",
+      "IT services",
+      "technology",
+      "AI",
+      "data",
+      "cloud",
+      "internet",
+      "security",
+      "semiconductors",
+      "networking",
+      "infrastructure",
+      "fintech"
+    ]
+  },
+  {
+    "name": "Stryker",
+    "careerUrl": "https://stryker.wd1.myworkdayjobs.com/StrykerCareers",
+    "country": "US",
+    "sectors": [
+      "healthcare",
+      "hospital",
+      "pharma",
+      "biotech",
+      "medical",
+      "nutrition",
+      "wellness",
+      "clinical"
+    ]
+  },
+  {
+    "name": "Roche",
+    "careerUrl": "https://roche.wd3.myworkdayjobs.com/roche-ext",
+    "country": "US",
+    "sectors": [
+      "healthcare",
+      "hospital",
+      "pharma",
+      "biotech",
+      "medical",
+      "nutrition",
+      "wellness",
+      "clinical"
+    ]
+  },
+  {
+    "name": "Astrazeneca",
+    "careerUrl": "https://astrazeneca.wd3.myworkdayjobs.com/Careers",
+    "country": "US",
+    "sectors": [
+      "healthcare",
+      "hospital",
+      "pharma",
+      "biotech",
+      "medical",
+      "nutrition",
+      "wellness",
+      "clinical"
+    ]
+  },
+  {
+    "name": "Medtronic",
+    "careerUrl": "https://medtronic.wd1.myworkdayjobs.com/MedtronicCareers",
+    "country": "US",
+    "sectors": [
+      "healthcare",
+      "hospital",
+      "pharma",
+      "biotech",
+      "medical",
+      "nutrition",
+      "wellness",
+      "clinical"
+    ]
+  },
+  {
+    "name": "Novartis",
+    "careerUrl": "https://novartis.wd3.myworkdayjobs.com/Novartis_Careers",
+    "country": "US",
+    "sectors": [
+      "healthcare",
+      "hospital",
+      "pharma",
+      "biotech",
+      "medical",
+      "nutrition",
+      "wellness",
+      "clinical"
+    ]
+  },
+  {
+    "name": "Pfizer",
+    "careerUrl": "https://pfizer.wd1.myworkdayjobs.com/PfizerCareers",
+    "country": "US",
+    "sectors": [
+      "healthcare",
+      "hospital",
+      "pharma",
+      "biotech",
+      "medical",
+      "nutrition",
+      "wellness",
+      "clinical"
+    ]
+  },
+  {
+    "name": "Mastercard",
+    "careerUrl": "https://mastercard.wd1.myworkdayjobs.com/CorporateCareers",
+    "country": "US",
+    "sectors": [
+      "fintech",
+      "payments",
+      "banking",
+      "finance",
+      "insurance",
+      "professional services"
+    ]
+  },
+  {
+    "name": "Visa",
+    "careerUrl": "https://visa.wd5.myworkdayjobs.com/Visa",
+    "country": "US",
+    "sectors": [
+      "fintech",
+      "payments",
+      "banking",
+      "finance",
+      "insurance",
+      "professional services"
+    ]
+  },
+  {
+    "name": "Allica Bank",
+    "careerUrl": "https://jobs.ashbyhq.com/allica-bank",
+    "country": "US",
+    "sectors": [
+      "fintech",
+      "payments",
+      "banking",
+      "finance",
+      "insurance",
+      "professional services"
+    ]
+  },
+  {
+    "name": "Agentis-Capital-Advisors",
+    "careerUrl": "https://jobs.ashbyhq.com/Agentis-Capital-Advisors",
+    "country": "US",
+    "sectors": [
+      "fintech",
+      "payments",
+      "banking",
+      "finance",
+      "insurance",
+      "professional services"
+    ]
+  },
+  {
+    "name": "Academy",
+    "careerUrl": "https://academy.wd1.myworkdayjobs.com/Careers",
+    "country": "US",
+    "sectors": [
+      "education",
+      "edtech",
+      "training",
+      "university"
+    ]
+  },
+  {
+    "name": "Duolingo",
+    "careerUrl": "https://boards.greenhouse.io/duolingo",
+    "country": "US",
+    "sectors": [
+      "education",
+      "edtech",
+      "training",
+      "university"
+    ]
+  },
+  {
+    "name": "Coursera",
+    "careerUrl": "https://boards.greenhouse.io/coursera",
+    "country": "US",
+    "sectors": [
+      "education",
+      "edtech",
+      "training",
+      "university"
+    ]
+  },
+  {
+    "name": "Green-Tree-School-and-Services",
+    "careerUrl": "https://jobs.ashbyhq.com/Green-Tree-School-and-Services",
+    "country": "US",
+    "sectors": [
+      "education",
+      "edtech",
+      "training",
+      "university"
+    ]
+  },
+  {
+    "name": "Meliora-Academy",
+    "careerUrl": "https://jobs.ashbyhq.com/Meliora-Academy",
+    "country": "US",
+    "sectors": [
+      "education",
+      "edtech",
+      "training",
+      "university"
+    ]
+  },
+  {
+    "name": "2u",
+    "careerUrl": "https://boards.greenhouse.io/2u",
+    "country": "US",
+    "sectors": [
+      "education",
+      "edtech",
+      "training",
+      "university"
+    ]
+  },
+  {
+    "name": "Spacex",
+    "careerUrl": "https://boards.greenhouse.io/spacex",
+    "country": "US",
+    "sectors": [
+      "manufacturing",
+      "engineering",
+      "automotive",
+      "industrial",
+      "aerospace",
+      "semiconductors"
+    ]
+  },
+  {
+    "name": "Boeing",
+    "careerUrl": "https://boeing.wd1.myworkdayjobs.com/EXTERNAL_CAREERS",
+    "country": "US",
+    "sectors": [
+      "manufacturing",
+      "engineering",
+      "automotive",
+      "industrial",
+      "aerospace",
+      "semiconductors"
+    ]
+  },
+  {
+    "name": "3m",
+    "careerUrl": "https://3m.wd1.myworkdayjobs.com/Search",
+    "country": "US",
+    "sectors": [
+      "manufacturing",
+      "engineering",
+      "automotive",
+      "industrial",
+      "aerospace",
+      "semiconductors"
+    ]
+  },
+  {
+    "name": "Factory",
+    "careerUrl": "https://jobs.ashbyhq.com/factory",
+    "country": "US",
+    "sectors": [
+      "manufacturing",
+      "engineering",
+      "automotive",
+      "industrial",
+      "aerospace",
+      "semiconductors"
+    ]
+  },
+  {
+    "name": "Industrial",
+    "careerUrl": "https://boards.greenhouse.io/industrial",
+    "country": "US",
+    "sectors": [
+      "manufacturing",
+      "engineering",
+      "automotive",
+      "industrial",
+      "aerospace",
+      "semiconductors"
+    ]
+  },
+  {
+    "name": "Chipotle",
+    "careerUrl": "https://chipotle.wd5.myworkdayjobs.com/chipotlecareers",
+    "country": "US",
+    "sectors": [
+      "hospitality",
+      "food",
+      "restaurant",
+      "hotel",
+      "nutrition",
+      "wellness"
+    ]
+  },
+  {
+    "name": "Airbnb",
+    "careerUrl": "https://boards.greenhouse.io/airbnb",
+    "country": "US",
+    "sectors": [
+      "hospitality",
+      "food",
+      "restaurant",
+      "hotel",
+      "nutrition",
+      "wellness"
+    ]
+  },
+  {
+    "name": "Sweetgreen",
+    "careerUrl": "https://boards.greenhouse.io/sweetgreen",
+    "country": "US",
+    "sectors": [
+      "hospitality",
+      "food",
+      "restaurant",
+      "hotel",
+      "nutrition",
+      "wellness"
+    ]
+  },
+  {
+    "name": "Deliveroo",
+    "careerUrl": "https://jobs.ashbyhq.com/deliveroo",
+    "country": "US",
+    "sectors": [
+      "hospitality",
+      "food",
+      "restaurant",
+      "hotel",
+      "nutrition",
+      "wellness"
+    ]
+  },
+  {
+    "name": "Hiring Cafe",
+    "careerUrl": "https://jobs.ashbyhq.com/hiring-cafe",
+    "country": "US",
+    "sectors": [
+      "hospitality",
+      "food",
+      "restaurant",
+      "hotel",
+      "nutrition",
+      "wellness"
+    ]
+  },
+  {
+    "name": "Walmart",
+    "careerUrl": "https://walmart.wd504.myworkdayjobs.com/WalmartExternal",
+    "country": "US",
+    "sectors": [
+      "retail",
+      "ecommerce",
+      "consumer"
+    ]
+  },
+  {
+    "name": "Nike",
+    "careerUrl": "https://nike.wd1.myworkdayjobs.com/nke",
+    "country": "US",
+    "sectors": [
+      "retail",
+      "ecommerce",
+      "consumer"
+    ]
+  },
+  {
+    "name": "Fedex",
+    "careerUrl": "https://fedex.wd1.myworkdayjobs.com/FXE-EU_External",
+    "country": "US",
+    "sectors": [
+      "logistics",
+      "operations",
+      "supply chain",
+      "transport",
+      "delivery"
+    ]
+  },
+  {
+    "name": "Fleet",
+    "careerUrl": "https://boards.greenhouse.io/fleet",
+    "country": "US",
+    "sectors": [
+      "logistics",
+      "operations",
+      "supply chain",
+      "transport",
+      "delivery"
+    ]
+  },
+  {
+    "name": "Agency",
+    "careerUrl": "https://boards.greenhouse.io/agency",
+    "country": "US",
+    "sectors": [
+      "media",
+      "advertising",
+      "design",
+      "creative technology",
+      "entertainment"
+    ]
+  },
+  {
+    "name": "Disney",
+    "careerUrl": "https://disney.wd5.myworkdayjobs.com/disneycareer",
+    "country": "US",
+    "sectors": [
+      "media",
+      "advertising",
+      "design",
+      "creative technology",
+      "entertainment"
+    ]
+  },
+  {
+    "name": "Nen Creative",
+    "careerUrl": "https://jobs.ashbyhq.com/nen-creative",
+    "country": "US",
+    "sectors": [
+      "media",
+      "advertising",
+      "design",
+      "creative technology",
+      "entertainment"
+    ]
+  },
+  {
+    "name": "Inbeat Agency",
+    "careerUrl": "https://jobs.ashbyhq.com/inbeat-agency",
+    "country": "US",
+    "sectors": [
+      "media",
+      "advertising",
+      "design",
+      "creative technology",
+      "entertainment"
+    ]
+  },
+  {
+    "name": "A16z New Media",
+    "careerUrl": "https://jobs.ashbyhq.com/a16z-new-media",
+    "country": "US",
+    "sectors": [
+      "media",
+      "advertising",
+      "design",
+      "creative technology",
+      "entertainment"
+    ]
+  },
+  {
+    "name": "Alpha Design Ai Inc",
+    "careerUrl": "https://jobs.ashbyhq.com/alpha-design-ai-inc",
+    "country": "US",
+    "sectors": [
+      "media",
+      "advertising",
+      "design",
+      "creative technology",
+      "entertainment"
+    ]
+  },
+  {
+    "name": "Counsel",
+    "careerUrl": "https://jobs.ashbyhq.com/counsel",
+    "country": "US",
+    "sectors": [
+      "legal",
+      "compliance",
+      "professional services"
+    ]
+  },
+  {
+    "name": "Finch Legal",
+    "careerUrl": "https://jobs.ashbyhq.com/finch-legal",
+    "country": "US",
+    "sectors": [
+      "legal",
+      "compliance",
+      "professional services"
+    ]
+  },
+  {
+    "name": "Corteva",
+    "careerUrl": "https://corteva.wd5.myworkdayjobs.com/Corteva",
+    "country": "US",
+    "sectors": [
+      "agriculture",
+      "agritech",
+      "food"
+    ]
+  },
+  {
+    "name": "Indigo",
+    "careerUrl": "https://boards.greenhouse.io/indigo",
+    "country": "US",
+    "sectors": [
+      "agriculture",
+      "agritech",
+      "food"
+    ]
+  },
+  {
+    "name": "Pwc",
+    "careerUrl": "https://pwc.wd3.myworkdayjobs.com/Global_Experienced_Careers",
+    "country": "US",
+    "sectors": [
+      "consulting",
+      "professional services",
+      "HR"
+    ]
+  },
+  {
+    "name": "Accenture",
+    "careerUrl": "https://accenture.wd103.myworkdayjobs.com/AccentureCareers",
+    "country": "US",
+    "sectors": [
+      "consulting",
+      "professional services",
+      "HR"
+    ]
+  },
+  {
+    "name": "Chegg",
+    "careerUrl": "https://boards.greenhouse.io/chegg",
+    "country": "US",
+    "sectors": [
+      "education",
+      "edtech",
+      "training",
+      "university"
+    ]
+  },
+  {
+    "name": "Outschool",
+    "careerUrl": "https://jobs.lever.co/outschool",
+    "country": "US",
+    "sectors": [
+      "education",
+      "edtech",
+      "training",
+      "university"
+    ]
+  },
+  {
+    "name": "Notion",
+    "careerUrl": "https://boards.greenhouse.io/notion",
+    "country": "US",
+    "sectors": [
+      "software",
+      "IT services",
+      "technology",
+      "AI",
+      "data",
+      "cloud",
+      "internet",
+      "security",
+      "semiconductors",
+      "networking",
+      "infrastructure",
+      "fintech"
+    ]
+  },
+  {
+    "name": "Rivian",
+    "careerUrl": "https://jobs.lever.co/rivian",
+    "country": "US",
+    "sectors": [
+      "manufacturing",
+      "engineering",
+      "automotive",
+      "industrial",
+      "aerospace",
+      "semiconductors"
+    ]
+  },
+  {
+    "name": "Anduril",
+    "careerUrl": "https://boards.greenhouse.io/andurilindustries",
+    "country": "US",
+    "sectors": [
+      "manufacturing",
+      "engineering",
+      "automotive",
+      "industrial",
+      "aerospace",
+      "semiconductors"
+    ]
+  },
+  {
+    "name": "DoorDash",
+    "careerUrl": "https://boards.greenhouse.io/doordashusa",
+    "country": "US",
+    "sectors": [
+      "hospitality",
+      "food",
+      "restaurant",
+      "hotel",
+      "nutrition",
+      "wellness"
+    ]
+  },
+  {
+    "name": "Instacart",
+    "careerUrl": "https://boards.greenhouse.io/instacart",
+    "country": "US",
+    "sectors": [
+      "hospitality",
+      "food",
+      "restaurant",
+      "hotel",
+      "nutrition",
+      "wellness"
+    ]
+  },
+  {
+    "name": "Rippling Commerce",
+    "careerUrl": "https://boards.greenhouse.io/rippling",
+    "country": "US",
+    "sectors": [
+      "retail",
+      "ecommerce",
+      "consumer"
+    ]
+  },
+  {
+    "name": "Whatnot",
+    "careerUrl": "https://boards.greenhouse.io/whatnot",
+    "country": "US",
+    "sectors": [
+      "retail",
+      "ecommerce",
+      "consumer"
+    ]
+  },
+  {
+    "name": "Faire",
+    "careerUrl": "https://boards.greenhouse.io/faire",
+    "country": "US",
+    "sectors": [
+      "retail",
+      "ecommerce",
+      "consumer"
+    ]
+  },
+  {
+    "name": "Samsara",
+    "careerUrl": "https://boards.greenhouse.io/samsara",
+    "country": "US",
+    "sectors": [
+      "logistics",
+      "operations",
+      "supply chain",
+      "transport",
+      "delivery"
+    ]
+  },
+  {
+    "name": "Flexport",
+    "careerUrl": "https://boards.greenhouse.io/flexport",
+    "country": "US",
+    "sectors": [
+      "logistics",
+      "operations",
+      "supply chain",
+      "transport",
+      "delivery"
+    ]
+  },
+  {
+    "name": "Spotify",
+    "careerUrl": "https://boards.greenhouse.io/spotify",
+    "country": "US",
+    "sectors": [
+      "media",
+      "advertising",
+      "design",
+      "creative technology",
+      "entertainment"
+    ]
+  },
+  {
+    "name": "Discord",
+    "careerUrl": "https://boards.greenhouse.io/discord",
+    "country": "US",
+    "sectors": [
+      "media",
+      "advertising",
+      "design",
+      "creative technology",
+      "entertainment"
+    ]
+  },
+  {
+    "name": "Cooley",
+    "careerUrl": "https://boards.greenhouse.io/cooley",
+    "country": "US",
+    "sectors": [
+      "legal",
+      "compliance",
+      "professional services"
+    ]
+  },
+  {
+    "name": "Gunderson Dettmer",
+    "careerUrl": "https://boards.greenhouse.io/gundersondettmer",
+    "country": "US",
+    "sectors": [
+      "legal",
+      "compliance",
+      "professional services"
+    ]
+  },
+  {
+    "name": "Chan Zuckerberg Initiative",
+    "careerUrl": "https://boards.greenhouse.io/chanzuckerberginitiative",
+    "country": "US",
+    "sectors": [
+      "public sector",
+      "government",
+      "nonprofit",
+      "NGO"
+    ]
+  },
+  {
+    "name": "Wikimedia Foundation",
+    "careerUrl": "https://boards.greenhouse.io/wikimedia",
+    "country": "US",
+    "sectors": [
+      "public sector",
+      "government",
+      "nonprofit",
+      "NGO"
+    ]
+  },
+  {
+    "name": "Indigo Ag",
+    "careerUrl": "https://boards.greenhouse.io/indigoag",
+    "country": "US",
+    "sectors": [
+      "agriculture",
+      "agritech",
+      "food"
+    ]
+  },
+  {
+    "name": "Corteva",
+    "careerUrl": "https://corteva.wd1.myworkdayjobs.com/Corteva_External_Careers",
+    "country": "US",
+    "sectors": [
+      "agriculture",
+      "agritech",
+      "food"
+    ]
+  },
+  {
+    "name": "Paradox",
+    "careerUrl": "https://boards.greenhouse.io/paradoxai",
+    "country": "US",
+    "sectors": [
+      "consulting",
+      "professional services",
+      "HR"
+    ]
+  },
+  {
+    "name": "Remote.com",
+    "careerUrl": "https://boards.greenhouse.io/remotecom",
+    "country": "US",
+    "sectors": [
+      "consulting",
+      "professional services",
+      "HR"
+    ]
+  }
 ]

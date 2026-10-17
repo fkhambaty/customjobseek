@@ -36,14 +36,14 @@ const ROUTE_LABEL: Record<string, string> = {
   recruitee: "Recruitee",
 };
 
-/** Where the application is submitted, from the link alone. */
+/** Where the application is submitted, from the link alone. Empty = external outreach (recruiter / LinkedIn message). */
 export function routeFromUrl(raw: string): string {
-  if (!raw) return "No link";
+  if (!raw) return "External";
   let host = "";
   try {
     host = new URL(raw).hostname.toLowerCase();
   } catch {
-    return "No link";
+    return "External";
   }
   if (host.includes("linkedin.")) return "LinkedIn";
   if (host.includes("naukri.")) return "Naukri";

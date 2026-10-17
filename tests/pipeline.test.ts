@@ -67,7 +67,7 @@ describe("classify", () => {
     expect(routeFromUrl("https://www.phdata.io/jobs?gh_jid=8124479")).toBe("Greenhouse");
     expect(routeFromUrl("https://citi.wd5.myworkdayjobs.com/x/job/1")).toBe("Workday");
     expect(routeFromUrl("https://www.linkedin.com/jobs/view/1")).toBe("LinkedIn");
-    expect(routeFromUrl("")).toBe("No link");
+    expect(routeFromUrl("")).toBe("External");
   });
 
   it("builds a lane from place and floor", () => {

@@ -177,22 +177,10 @@ export const jobs = new Hono<AppEnv>()
       )
       .all<JobRow>();
     const mapped = results.map(toJob);
+    // Collapse only for the response. Never archive on list — that permanently hid history.
     const collapsed = collapseDuplicateJobs(mapped);
-    const kept = new Set(collapsed.map((job) => job.id));
-    const duplicates = mapped.filter((job) => !kept.has(job.id) && !job.archivedAt);
-    if (duplicates.length) {
-      const now = new Date().toISOString();
-      c.executionCtx?.waitUntil(
-        c.env.DB.batch(
-          duplicates.map((job) =>
-            c.env.DB.prepare(
-              "UPDATE jobs SET archived_at = COALESCE(archived_at, ?), updated_at = datetime('now') WHERE id = ? AND user_id = ? AND archived_at IS NULL",
-            ).bind(now, job.id, c.get("user").id),
-          ),
-        ).catch((err: unknown) => console.error("duplicate job archive failed", err)),
-      );
-    }
-    return c.json({ jobs: collapsed, nextCursor: nextJobCursor(collapsed, page.limit) });
+    // Cursor follows the DB page, not the collapsed length, or paging stops after ~one screen.
+    return c.json({ jobs: collapsed, nextCursor: nextJobCursor(mapped, page.limit) });
   })
   .get("/activity", async (c) => {
     const user = c.get("user");

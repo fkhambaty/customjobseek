@@ -81,6 +81,7 @@ export function isPipelineStatus(status: JobStatus): status is PipelineStatus {
     case "interview":
     case "offer":
       return true;
+    case "backfill":
     case "rejected":
     case "withdrawn":
     case "closed":
@@ -106,6 +107,7 @@ export function closureEffect(status: JobStatus, outcome: LiveStatus): ClosureEf
     case "interview":
     case "offer":
       return "flag_posting";
+    case "backfill":
     case "rejected":
     case "withdrawn":
     case "closed":
@@ -129,6 +131,7 @@ export function postingClosedCopy(status: JobStatus): string {
       return "The employer listing is closed. Your application stays active, because a posting can come down while you are still in process.";
     case "closed":
       return "The employer listing is closed, and this job is marked closed.";
+    case "backfill":
     case "rejected":
     case "withdrawn":
       return "The employer listing is closed.";

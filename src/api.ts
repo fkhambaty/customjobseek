@@ -328,8 +328,9 @@ export const api = {
       const fresh = data.jobs.filter((job) => !seen.has(job.id));
       for (const job of fresh) seen.add(job.id);
       jobs.push(...fresh);
-      if (!data.nextCursor || data.nextCursor === cursor || fresh.length === 0) return { jobs, notice: "" };
+      if (!data.nextCursor || data.nextCursor === cursor) return { jobs, notice: "" };
       cursor = data.nextCursor;
+      // A page can collapse to zero new rows (duplicates already seen); still follow the cursor.
       if (page === pages - 1) return { jobs, notice: jobListCapNotice(jobs.length, true) };
     }
     return { jobs, notice: "" };

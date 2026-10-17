@@ -34,9 +34,10 @@ const PIPELINE_COLUMNS: ColumnMap<JobRecord, PipelineSortKey> = {
   status: { key: "status", kind: "status", defaultDirection: "asc", statusOrder: JOB_STATUSES, value: (job) => job.status },
 };
 
-const GROUPS: { id: string; label: string; statuses: JobStatus[] }[] = [
+const GROUPS: { id: string; label: string; statuses: JobStatus[]; onlyIfPresent?: boolean }[] = [
   { id: "all", label: "All", statuses: [...JOB_STATUSES] },
   { id: "todo", label: "To apply", statuses: ["evaluated", "resume_ready"] },
+  { id: "backfill", label: "Backfill", statuses: ["backfill"], onlyIfPresent: true },
   { id: "applied", label: "Applied", statuses: ["applied"] },
   { id: "live", label: "Interviewing", statuses: ["interview", "offer"] },
   { id: "rejected", label: "Rejected", statuses: ["rejected"] },
@@ -183,7 +184,7 @@ export function PipelinePage() {
 
       <div className="filters">
         <div className="seg" role="group" aria-label="Pipeline stages">
-          {GROUPS.map((g) => (
+          {GROUPS.filter((g) => !g.onlyIfPresent || counts(g) > 0).map((g) => (
             <button key={g.id} type="button" className={group === g.id ? "on" : ""} aria-pressed={group === g.id} aria-current={group === g.id ? "true" : undefined} onClick={() => setGroup(g.id)}>
               {g.label} <span>{counts(g)}</span>
             </button>

@@ -138,7 +138,7 @@ export function sourceFreshness(input: {
   route: string;
   today: string;
 }): Freshness {
-  const source = input.route && input.route !== "No link" ? input.route : "Source";
+  const source = input.route && input.route !== "No link" && input.route !== "External" ? input.route : "Source";
   if (input.liveStatus === "closed") return { status: "closed", label: `${source} closed` };
   const checkedAge = daysBetween(input.sourceCheckedAt, input.today);
   if (input.liveStatus === "live") {
@@ -172,6 +172,7 @@ export function outreachReadiness(job: Pick<JobRecord, "status" | "contactCount"
 
 export function stageHint(status: JobStatus, interviewStage: InterviewStage | "", ready: boolean): string {
   if (status === "evaluated" || status === "resume_ready") return ready ? "Ready to send" : "Pack incomplete";
+  if (status === "backfill") return "Backfill · outside current filters";
   if (status === "interview") return interviewStage ? `Interviewing · ${interviewStageLabel(interviewStage)}` : "Interviewing";
   if (status === "offer") return "Offer";
   if (status === "applied") return "Applied";

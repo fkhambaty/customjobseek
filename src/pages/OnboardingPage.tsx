@@ -633,7 +633,7 @@ function StepBody({
     case "roles":
       return (
         <>
-          <Field label="Your industry" hint="Optional but important. Scans prefer boards in these industries so a healthcare role is not scored against unrelated technology employers first.">
+          <Field label="Your industry" hint="Required for useful scans. Job boards are tagged by industry — a dietitian only searches healthcare employers; an engineer only searches technology boards.">
             <IndustryPicker
               selected={profile.preferences.industries}
               onChange={(value) => onPref("industries", value)}

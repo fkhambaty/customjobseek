@@ -385,11 +385,20 @@ export function jobListCursor(createdAt: string, id: string): string {
   return `${createdAt}|${id}`;
 }
 
+/**
+ * Build the next-page cursor from the rows actually fetched from D1 (before any UI collapse).
+ * Passing a collapsed shorter list here used to end paging early and hide the rest of the pipeline.
+ */
 export function nextJobCursor(rows: { createdAt: string; id: string }[], limit: number): string | null {
   if (rows.length < limit) return null;
   const last = rows[rows.length - 1];
   if (!last) return null;
   return jobListCursor(last.createdAt, last.id);
+}
+
+/** True when this DB page was full — more rows may exist even if the UI collapsed some. */
+export function jobListPageHasMore(fetchedCount: number, limit: number): boolean {
+  return fetchedCount >= limit;
 }
 
 export const RETENTION_DAYS = {

@@ -16,6 +16,9 @@
     "test": "vitest run",
     "db:migrate:local": "wrangler d1 migrations apply customjobseek --local",
     "db:migrate:remote": "wrangler d1 migrations apply customjobseek --remote",
+    "catalog:build": "tsx scripts/build-industry-catalog.mjs scripts/data/public-board-directory.csv",
+    "catalog:import": "tsx scripts/import-source-catalog.ts",
+    "seed:cc-backfill": "node scripts/backfill-from-command-center.mjs",
     "deploy": "npm run build && wrangler deploy"
   },
   "dependencies": {

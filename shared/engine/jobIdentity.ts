@@ -62,8 +62,10 @@ export function collapseDuplicateJobs<T extends { id: string; title: string; com
         return 3;
       case "evaluated":
         return 2;
-      default:
+      case "backfill":
         return 1;
+      default:
+        return 0;
     }
   };
   const best = new Map<string, T>();

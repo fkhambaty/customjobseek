@@ -8,6 +8,7 @@ import {
   discoveryTokens,
   forecastUsed,
   jobListCursor,
+  jobListPageHasMore,
   limitFor,
   missingQuotaMeters,
   nextJobCursor,
@@ -168,6 +169,13 @@ describe("search tokens and job pages", () => {
     });
     expect(nextJobCursor([{ createdAt: "a", id: "1" }], 2)).toBeNull();
     expect(nextJobCursor([{ createdAt: "a", id: "1" }, { createdAt: "b", id: "2" }], 2)).toBe("b|2");
+    // After duplicate collapse the visible page can be shorter than LIMIT; cursor must still advance.
+    const fullPage = Array.from({ length: 40 }, (_, i) => ({ createdAt: `t${i}`, id: `j${i}` }));
+    const collapsed = fullPage.slice(0, 12);
+    expect(nextJobCursor(collapsed, 40)).toBeNull();
+    expect(nextJobCursor(fullPage, 40)).toBe("t39|j39");
+    expect(jobListPageHasMore(40, 40)).toBe(true);
+    expect(jobListPageHasMore(12, 40)).toBe(false);
   });
 });
 
