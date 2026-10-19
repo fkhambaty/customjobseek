@@ -74,8 +74,10 @@ async function upsertEmployers(supplied: CatalogEmployer[], scanPriority: number
 async function main(): Promise<void> {
   const curatedPath = new URL("shared/data/source-catalog.json", ROOT);
   const industryPath = new URL("shared/data/industry-employer-catalog.json", ROOT);
+  const commandcenterPath = new URL("shared/data/commandcenter-boards.json", ROOT);
   const curated = JSON.parse(readFileSync(curatedPath, "utf8")) as CatalogEmployer[];
   const industry = existsSync(industryPath) ? (JSON.parse(readFileSync(industryPath, "utf8")) as CatalogEmployer[]) : [];
+  const commandcenter = existsSync(commandcenterPath) ? (JSON.parse(readFileSync(commandcenterPath, "utf8")) as CatalogEmployer[]) : [];
 
   const a = await upsertEmployers(curated, 10);
   console.log(`Curated boards (${curated.length}): ${a.added} added, ${a.updated} updated, ${a.skipped} skipped.`);
@@ -83,6 +85,10 @@ async function main(): Promise<void> {
   if (industry.length) {
     const b = await upsertEmployers(industry, 6);
     console.log(`Industry boards (${industry.length}): ${b.added} added, ${b.updated} updated, ${b.skipped} skipped.`);
+  }
+  if (commandcenter.length) {
+    const c = await upsertEmployers(commandcenter, 8);
+    console.log(`Command Center boards (${commandcenter.length}): ${c.added} added, ${c.updated} updated, ${c.skipped} skipped.`);
   }
 }
 
