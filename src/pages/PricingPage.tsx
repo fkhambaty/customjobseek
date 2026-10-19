@@ -56,7 +56,7 @@ export function PricingPage() {
       <div className="center">
         <h1>Pay per application, not per month</h1>
         <p className="muted lede-sm">
-          One application pack is a fit check plus a tailored resume for that job. Every paid price below is a one-time
+          One application pack is a fit check plus a tailored resume and downloadable cover letter for that job. Every paid price below is a one-time
           charge in INR. Nothing renews.
         </p>
         {wallet && <WalletLine wallet={wallet} />}

@@ -202,7 +202,7 @@ export function MarketScanConsole({ compact = false }: { compact?: boolean }) {
                         <button className="btn btn-ghost btn-sm" onClick={() => open(job.id)}>Open</button>
                       ) : (
                         <>
-                          <button className="btn btn-primary btn-sm" onClick={() => open(job.id, "application")}>Open pack</button>
+                          <button className="btn btn-primary btn-sm" onClick={() => open(job.id, "application")}>Open cover letter</button>
                           <button className="btn btn-ghost btn-sm" onClick={() => open(job.id, "resume")}>Resume</button>
                         </>
                       )}

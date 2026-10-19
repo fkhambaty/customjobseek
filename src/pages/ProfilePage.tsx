@@ -132,8 +132,8 @@ export function ProfilePage() {
           </Field>
           <Field label="Email on resume"><input type="email" value={profile.email} onChange={(e) => set("email", e.target.value)} /></Field>
           <Field label="Phone"><input value={profile.phone} onChange={(e) => set("phone", e.target.value)} /></Field>
-          <Field label="Links" hint="Printed on every resume. Include GitHub. Comma-separated.">
-            <ListInput value={profile.links} onChange={(v) => set("links", v)} placeholder="linkedin.com/in/you, https://github.com/you" />
+          <Field label="Links" hint="Printed on every resume and cover letter. Include GitHub, demos, and portfolio sites. Comma-separated.">
+            <ListInput value={profile.links} onChange={(v) => set("links", v)} placeholder="linkedin.com/in/you, https://github.com/you, https://yoursite.dev" />
           </Field>
           <Field label="Total years of experience">
             <NumberInput value={profile.totalYears} onChange={(v) => set("totalYears", v)} placeholder="8" />

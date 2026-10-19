@@ -11,12 +11,14 @@ import {
   templateLabel,
   type MessageTemplate,
 } from "../../shared/engine/outreachIntel";
+import { coverLetterPlainText } from "../../shared/engine/documents";
 import { resumeHtmlPath } from "../../shared/resumeFile";
 import { CHANNELS, type Channel, type Contact, type JobFull, type JobStatus } from "../../shared/types";
 import { api, ApiError, type Pack } from "../api";
 import { useJobs } from "../data";
 import { ago, formatPay, jobOpenUrl, shortDate, today } from "../format";
 import { useSession } from "../session";
+import { CoverLetterFileView } from "./CoverLetterFileView";
 import { FitCard, statusLabel } from "./FitCard";
 import { Markdown } from "./Markdown";
 import { ResumeFileView } from "./ResumeFileView";
@@ -32,7 +34,7 @@ function tabLabel(t: JobTab): string {
     case "resume":
       return "Resume";
     case "application":
-      return "Application";
+      return "Cover letter";
     case "jd":
       return "Job description";
     case "people":
@@ -341,17 +343,50 @@ function ResumeTab({ job, pack, onBuilt }: { job: JobFull; pack: Pack | null; on
   );
 }
 
-function ApplicationTab({ pack }: { pack: Pack | null }) {
+function ApplicationTab({ job, pack }: { job: JobFull; pack: Pack | null }) {
   const app = pack?.application;
-  if (!app && !pack?.applicationNotes) {
-    return <div className="empty-note"><p>No application file yet.</p><p className="muted">It is made alongside the resume.</p></div>;
+  if (!app && !pack?.applicationNotes && !pack?.savedResume && !pack?.resume) {
+    return (
+      <div className="empty-note">
+        <p>No cover letter yet.</p>
+        <p className="muted">Build the resume on the Resume tab. The cover letter is made with it and can be downloaded as a PDF.</p>
+      </div>
+    );
   }
+  const canDownload = Boolean(app || pack?.resume || pack?.savedResume);
   return (
     <>
+      {canDownload && (
+        <Section title="Download">
+          <p className="muted">Cover letter with examples of your work and showable links from your profile. Not a copy of your resume.</p>
+          <CoverLetterFileView jobId={job.id} />
+        </Section>
+      )}
       {app && (
-        <Section title="Application file" aside={<Copy text={app.paragraphs.join("\n\n")} label="Copy text" />}>
+        <Section title="Cover letter" aside={<Copy text={coverLetterPlainText(app)} label="Copy text" />}>
           {app.paragraphs.map((p) => <p key={p}>{p}</p>)}
-          {app.evidence.length > 0 && <ul>{app.evidence.map((e) => <li key={e.text}><strong>{e.label}.</strong> {e.text}</li>)}</ul>}
+          {app.evidence.length > 0 && (
+            <>
+              <h4>Examples of my work</h4>
+              <ul>{app.evidence.map((e) => <li key={e.text}><strong>{e.label}.</strong> {e.text}</li>)}</ul>
+            </>
+          )}
+          {(app.workLinks?.length ?? 0) > 0 && (
+            <>
+              <h4>Work I can show</h4>
+              <ul>
+                {app.workLinks.map((link) => (
+                  <li key={link.url}>
+                    <strong>{link.label}:</strong>{" "}
+                    <a href={link.url} target="_blank" rel="noreferrer">{link.url}</a>
+                  </li>
+                ))}
+              </ul>
+            </>
+          )}
+          {app.expectedCtc && (
+            <p className="muted small">Form note (not on the PDF): expected CTC estimate {app.expectedCtc}</p>
+          )}
           {app.gaps.length > 0 && (
             <>
               <h4>Be ready to discuss</h4>
@@ -715,7 +750,7 @@ export function JobView({ id, tab, onTab, onClose }: { id: string; tab: JobTab; 
       <div className="jv-body">
         {tab === "overview" && <Overview job={job} onChange={change} />}
         {tab === "resume" && <ResumeTab job={job} pack={pack} onBuilt={setPack} />}
-        {tab === "application" && <ApplicationTab pack={pack} />}
+        {tab === "application" && <ApplicationTab job={job} pack={pack} />}
         {tab === "jd" && <JdTab job={job} pack={pack} />}
         {tab === "people" && <PeopleTab job={job} onChange={change} />}
         {tab === "history" && <HistoryTab job={job} pack={pack} onChange={change} />}

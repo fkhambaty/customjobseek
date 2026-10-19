@@ -701,11 +701,11 @@ function Facts({ profile, onEdit }: { profile: Profile; onEdit: (next: Profile) 
         <Field label="Phone" hint="Optional. Only printed if you fill it in.">
           <input autoComplete="tel" inputMode="tel" value={profile.phone} onChange={(event) => set("phone", event.target.value)} />
         </Field>
-        <Field label="Links" hint="Printed on every resume. Include GitHub.">
+        <Field label="Links" hint="Printed on every resume and cover letter. Include GitHub, demos, and portfolio sites.">
           <ListInput
             value={profile.links}
             onChange={(links) => set("links", links)}
-            placeholder="linkedin.com/in/you, https://github.com/you"
+            placeholder="linkedin.com/in/you, https://github.com/you, https://yoursite.dev"
           />
         </Field>
         <Field label="Headline" hint="Optional. One line under your name.">

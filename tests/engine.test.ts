@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { detectBoard } from "../shared/engine/boards";
-import { buildApplication } from "../shared/engine/documents";
+import { buildApplication, coverLetterPlainText, workLinkLabel } from "../shared/engine/documents";
+import { renderCoverLetterHtml } from "../shared/coverLetterHtml";
+import { renderHtmlResumePdf } from "../shared/resumePdf";
+import { isPdf } from "../shared/resumeFile";
 import { classifyTerms, evaluateFit, parseCompExtras, parseSalary, parseYearsRequired, titleAlignment, type JobInput } from "../shared/engine/fit";
 import { profileFromResumeText } from "../shared/engine/importResume";
 import { resumeTextInReadingOrder } from "../shared/engine/resumeLayout";
@@ -438,14 +441,35 @@ describe("boards, application file, resume import", () => {
     expect(detectBoard("https://jobs.ashbyhq.com/paxos/f8cbcedf")?.ats).toBe("ashby");
   });
 
-  it("builds the application only from profile lines", () => {
-    const p = profile();
+  it("builds the cover letter from profile lines and showable links, not a resume rewrite", async () => {
+    const p = profile({
+      links: ["https://github.com/asha", "asha.example.com/demo", "https://github.com/asha"],
+    });
     const fit = evaluateFit(job(), p);
     const file = buildApplication(p, fit, tailorResume(p, fit, { id: "j", title: "Senior Analytics Engineer", company: "Beta" }));
     const source = p.experience.flatMap((e) => e.bullets.map((b) => b.text));
     for (const line of file.evidence) expect(source).toContain(line.text);
-    expect(file.paragraphs[0]).toContain("Asha Rao");
+    expect(file.paragraphs[0]).toContain("Senior Analytics Engineer");
     expect(file.paragraphs.join(" ")).toContain("SQL");
+    expect(file.paragraphs.join(" ")).toMatch(/not a restatement of my resume/i);
+    expect(file.workLinks).toEqual([
+      { label: "GitHub", url: "https://github.com/asha" },
+      { label: "asha.example.com", url: "https://asha.example.com/demo" },
+    ]);
+    expect(file.email).toBe("asha@example.com");
+    expect(workLinkLabel("https://youtu.be/abc")).toBe("Demo video");
+    const html = renderCoverLetterHtml(file);
+    expect(html).toContain("Examples of my work");
+    expect(html).toContain("Work I can show");
+    expect(html).toContain("https://github.com/asha");
+    expect(html).not.toContain("Professional Experience");
+    expect(html).not.toContain("Be ready to discuss");
+    const plain = coverLetterPlainText(file);
+    expect(plain).toContain("Dear Hiring Team");
+    expect(plain).toContain("GitHub:");
+    expect(plain).not.toContain("is asked for and is not on the profile");
+    const pdf = await renderHtmlResumePdf("Asha Rao - Cover letter", html);
+    expect(isPdf(pdf)).toBe(true);
   });
 
   it("reads a plain-text resume into a draft profile", () => {
