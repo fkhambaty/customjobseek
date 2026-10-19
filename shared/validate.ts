@@ -46,7 +46,16 @@ export function sanitiseProfile(input: unknown): Profile {
     headline: text(p.headline, 160),
     email: text(p.email, 160),
     phone: text(p.phone, 40),
-    links: urls(p.links, 5),
+    links: urls(p.links, 8),
+    showableWork: list(p.showableWork, 8, (item, i) => {
+      const o = obj(item);
+      const title = text(o.title, 120);
+      const detail = text(o.detail, 400);
+      const url = text(o.url, 200);
+      const company = text(o.company, 120);
+      if (!title && !detail && !url) return null;
+      return { id: id(o.id, `work${i}`), title, detail, url, company };
+    }),
     summary: text(p.summary, 1500),
     totalYears: num(p.totalYears, 0, 60),
     skills: list(p.skills, 80, (s) => {

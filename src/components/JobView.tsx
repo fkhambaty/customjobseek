@@ -365,21 +365,18 @@ function ApplicationTab({ job, pack }: { job: JobFull; pack: Pack | null }) {
       {app && (
         <Section title="Cover letter" aside={<Copy text={coverLetterPlainText(app)} label="Copy text" />}>
           {app.paragraphs.map((p) => <p key={p}>{p}</p>)}
-          {app.evidence.length > 0 && (
+          {((app.workLinks?.length ?? 0) > 0 || app.evidence.length > 0) && (
             <>
               <h4>Examples of my work</h4>
-              <ul>{app.evidence.map((e) => <li key={e.text}><strong>{e.label}.</strong> {e.text}</li>)}</ul>
-            </>
-          )}
-          {(app.workLinks?.length ?? 0) > 0 && (
-            <>
-              <h4>Work I can show</h4>
               <ul>
-                {app.workLinks.map((link) => (
+                {(app.workLinks ?? []).map((link) => (
                   <li key={link.url}>
                     <strong>{link.label}:</strong>{" "}
                     <a href={link.url} target="_blank" rel="noreferrer">{link.url}</a>
                   </li>
+                ))}
+                {app.evidence.map((e) => (
+                  <li key={`${e.label}:${e.text}`}><strong>{e.label} —</strong> {e.text}</li>
                 ))}
               </ul>
             </>

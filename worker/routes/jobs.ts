@@ -3,12 +3,7 @@ import { badMatchSupportMessage, parseBadMatchReason, parseInterviewStage, parse
 import { routeFromUrl } from "../../shared/engine/classify";
 import { collapseDuplicateJobs } from "../../shared/engine/jobIdentity";
 import { fitOptionsForPaths, rescorePathFields } from "../../shared/engine/searchPaths";
-import {
-  buildApplication,
-  buildJobFile,
-  workLinksFromProfile,
-  type ApplicationFile,
-} from "../../shared/engine/documents";
+import { buildApplication, buildJobFile, type ApplicationFile } from "../../shared/engine/documents";
 import { coverLetterFilename, renderCoverLetterHtml } from "../../shared/coverLetterHtml";
 import { evaluateFit, type JobInput } from "../../shared/engine/fit";
 import { publicJobUrl } from "../../shared/engine/listings";
@@ -91,44 +86,25 @@ async function loadStoredResume(env: Env, userId: string, jobId: string): Promis
   return decryptJson<TailoredResume>(env.DATA_KEY, pack.ciphertext);
 }
 
-/** Cover letter for download. Rebuilds from the resume when needed; fills links from the live profile. */
+/** Always rebuild from the live profile + stored resume so old third-person packs do not stick. */
 async function coverLetterForJob(env: Env, userId: string, email: string, job: JobRow): Promise<ApplicationFile> {
   const profile = await loadProfile(env, userId, email);
-  const pack = await env.DB.prepare(
-    "SELECT ciphertext FROM packs WHERE job_id = ? AND user_id = ? AND kind = 'application' AND ciphertext != ''",
+  const resume = await loadStoredResume(env, userId, job.id);
+  if (!resume) throw new HttpError(404, "Build the resume first. The cover letter is made with it.");
+  const paths = await listSearchPaths(env.DB, userId);
+  const fit = evaluateFit(
+    { title: job.title, company: job.company, location: job.location, salaryText: job.salary_text, description: job.description },
+    profile,
+    fitOptionsForPaths(paths, job.location, profile.preferences),
+  );
+  const application = buildApplication(profile, fit, resume);
+  await env.DB.prepare(
+    `INSERT INTO packs (job_id, user_id, kind, ciphertext, created_at) VALUES (?, ?, 'application', ?, datetime('now'))
+     ON CONFLICT(job_id, kind) DO UPDATE SET ciphertext = excluded.ciphertext, created_at = excluded.created_at`,
   )
-    .bind(job.id, userId)
-    .first<{ ciphertext: string }>();
-  let application = pack?.ciphertext ? await decryptJson<ApplicationFile>(env.DATA_KEY, pack.ciphertext) : null;
-  if (!application) {
-    const resume = await loadStoredResume(env, userId, job.id);
-    if (!resume) throw new HttpError(404, "Build the resume first. The cover letter is made with it.");
-    const paths = await listSearchPaths(env.DB, userId);
-    const fit = evaluateFit(
-      { title: job.title, company: job.company, location: job.location, salaryText: job.salary_text, description: job.description },
-      profile,
-      fitOptionsForPaths(paths, job.location, profile.preferences),
-    );
-    application = buildApplication(profile, fit, resume);
-    await env.DB.prepare(
-      `INSERT INTO packs (job_id, user_id, kind, ciphertext, created_at) VALUES (?, ?, 'application', ?, datetime('now'))
-       ON CONFLICT(job_id, kind) DO UPDATE SET ciphertext = excluded.ciphertext, created_at = excluded.created_at`,
-    )
-      .bind(job.id, userId, await encryptJson(env.DATA_KEY, application))
-      .run();
-  }
-  const workLinks = application.workLinks?.length ? application.workLinks : workLinksFromProfile(profile.links);
-  return {
-    ...application,
-    candidate: application.candidate || profile.fullName,
-    headline: application.headline || profile.headline,
-    email: application.email || profile.email,
-    phone: application.phone || profile.phone,
-    paragraphs: application.paragraphs ?? [],
-    evidence: application.evidence ?? [],
-    workLinks,
-    gaps: application.gaps ?? [],
-  };
+    .bind(job.id, userId, await encryptJson(env.DATA_KEY, application))
+    .run();
+  return application;
 }
 
 async function loadDetails(env: Env, row: JobRow): Promise<JobDetails> {
@@ -660,14 +636,13 @@ export const jobs = new Hono<AppEnv>()
     const { results } = await c.env.DB.prepare("SELECT kind, ciphertext FROM packs WHERE job_id = ? AND user_id = ? AND kind != 'resume_html'")
       .bind(job.id, user.id)
       .all<{ kind: string; ciphertext: string }>();
-    const [hasHtml, resumeRow, profile] = await Promise.all([
+    const [hasHtml, resumeRow] = await Promise.all([
       c.env.DB.prepare("SELECT 1 AS ok FROM packs WHERE job_id = ? AND user_id = ? AND kind = 'resume_html'")
         .bind(job.id, user.id)
         .first<{ ok: number }>(),
       c.env.DB.prepare("SELECT ciphertext FROM resumes WHERE job_id = ? AND user_id = ?")
         .bind(job.id, user.id)
         .first<{ ciphertext: string }>(),
-      loadProfile(c.env, user.id, user.email),
     ]);
     const out: Record<string, unknown> = {};
     for (const row of results) {
@@ -676,17 +651,10 @@ export const jobs = new Hono<AppEnv>()
     }
     if (!out.resume && resumeRow?.ciphertext) out.resume = await decryptJson(c.env.DATA_KEY, resumeRow.ciphertext);
     let application = (out.application as ApplicationFile | undefined) ?? null;
-    if (application) {
-      const workLinks = application.workLinks?.length ? application.workLinks : workLinksFromProfile(profile.links);
-      application = {
-        ...application,
-        email: application.email || profile.email,
-        phone: application.phone || profile.phone,
-        workLinks,
-        paragraphs: application.paragraphs ?? [],
-        evidence: application.evidence ?? [],
-        gaps: application.gaps ?? [],
-      };
+    try {
+      application = await coverLetterForJob(c.env, user.id, user.email, job);
+    } catch {
+      /* keep stored pack when no resume exists yet */
     }
     return c.json({
       resume: out.resume ?? null,

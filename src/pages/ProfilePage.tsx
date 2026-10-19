@@ -2,7 +2,8 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { COUNTRIES, currencies, preferencesForCountry } from "../../shared/geo";
 import { originalPdfLimitMessage } from "../../shared/resumeStorage";
-import type { Bullet, Experience, Profile } from "../../shared/types";
+import { DEFAULT_SHOWABLE_WORK } from "../../shared/engine/documents";
+import type { Bullet, Experience, Profile, ShowableWork } from "../../shared/types";
 import { api } from "../api";
 import { CountrySelect, TimeZoneField } from "../components/CountrySelect";
 import { Field, ListInput, NumberInput, newId } from "../components/fields";
@@ -132,8 +133,8 @@ export function ProfilePage() {
           </Field>
           <Field label="Email on resume"><input type="email" value={profile.email} onChange={(e) => set("email", e.target.value)} /></Field>
           <Field label="Phone"><input value={profile.phone} onChange={(e) => set("phone", e.target.value)} /></Field>
-          <Field label="Links" hint="Printed on every resume and cover letter. Include GitHub, demos, and portfolio sites. Comma-separated.">
-            <ListInput value={profile.links} onChange={(v) => set("links", v)} placeholder="linkedin.com/in/you, https://github.com/you, https://yoursite.dev" />
+          <Field label="Links" hint="Printed on every resume and cover letter. Include GitHub, YouTube, demos, and portfolio sites. Comma-separated.">
+            <ListInput value={profile.links} onChange={(v) => set("links", v)} placeholder="linkedin.com/in/you, https://github.com/you, https://youtube.com/@you, https://yoursite.dev" />
           </Field>
           <Field label="Total years of experience">
             <NumberInput value={profile.totalYears} onChange={(v) => set("totalYears", v)} placeholder="8" />
@@ -142,6 +143,106 @@ export function ProfilePage() {
         <Field label="Summary" hint="Three or four sentences about what you do and the results you get.">
           <textarea rows={4} value={profile.summary} onChange={(e) => set("summary", e.target.value)} />
         </Field>
+      </section>
+
+      <section className="card">
+        <div className="row-between">
+          <div>
+            <h2>Work I can show</h2>
+            <p className="muted small">Used on cover letters: GitHub, demos, sites, and a few project notes. Not a resume rewrite.</p>
+          </div>
+          <div className="row-end">
+            <button
+              type="button"
+              className="btn btn-ghost btn-sm"
+              onClick={() => {
+                const existing = new Set((profile.showableWork ?? []).map((w) => `${w.title}|${w.url}|${w.detail}`.toLowerCase()));
+                const added: ShowableWork[] = DEFAULT_SHOWABLE_WORK
+                  .filter((item) => !existing.has(`${item.title}|${item.url}|${item.detail}`.toLowerCase()))
+                  .map((item) => ({ ...item, id: newId("work") }));
+                const nextLinks = [...profile.links];
+                for (const item of DEFAULT_SHOWABLE_WORK) {
+                  if (!item.url) continue;
+                  if (!nextLinks.some((link) => link.toLowerCase().includes(item.url.replace(/^https?:\/\//i, "").toLowerCase()))) {
+                    nextLinks.push(item.url);
+                  }
+                }
+                setProfile({ ...profile, showableWork: [...(profile.showableWork ?? []), ...added], links: nextLinks.slice(0, 8) });
+              }}
+            >
+              Load usual examples
+            </button>
+            <button
+              type="button"
+              className="btn btn-ghost btn-sm"
+              onClick={() => set("showableWork", [...(profile.showableWork ?? []), { id: newId("work"), title: "", detail: "", url: "", company: "" }])}
+            >
+              Add example
+            </button>
+          </div>
+        </div>
+        {(profile.showableWork ?? []).length === 0 && (
+          <p className="muted">No cover-letter examples yet. Load the usual ones, or add GitHub, YouTube, datafordummies.in, and project notes by hand.</p>
+        )}
+        {(profile.showableWork ?? []).map((item, i) => (
+          <div className="card sub-card" key={item.id}>
+            <div className="grid-2">
+              <Field label="Title">
+                <input
+                  value={item.title}
+                  placeholder="YouTube · Snowflake projects"
+                  onChange={(e) => {
+                    const next = [...(profile.showableWork ?? [])];
+                    next[i] = { ...item, title: e.target.value };
+                    set("showableWork", next);
+                  }}
+                />
+              </Field>
+              <Field label="Company (optional)">
+                <input
+                  value={item.company}
+                  placeholder="OpenGov"
+                  onChange={(e) => {
+                    const next = [...(profile.showableWork ?? [])];
+                    next[i] = { ...item, company: e.target.value };
+                    set("showableWork", next);
+                  }}
+                />
+              </Field>
+              <Field label="Link (optional)">
+                <input
+                  value={item.url}
+                  placeholder="https://…"
+                  onChange={(e) => {
+                    const next = [...(profile.showableWork ?? [])];
+                    next[i] = { ...item, url: e.target.value };
+                    set("showableWork", next);
+                  }}
+                />
+              </Field>
+              <Field label="One-line detail">
+                <input
+                  value={item.detail}
+                  placeholder="Unifying 10 suites into a central Snowflake warehouse"
+                  onChange={(e) => {
+                    const next = [...(profile.showableWork ?? [])];
+                    next[i] = { ...item, detail: e.target.value };
+                    set("showableWork", next);
+                  }}
+                />
+              </Field>
+            </div>
+            <div className="row-end">
+              <button
+                type="button"
+                className="btn btn-danger-ghost btn-sm"
+                onClick={() => set("showableWork", (profile.showableWork ?? []).filter((_, j) => j !== i))}
+              >
+                Remove
+              </button>
+            </div>
+          </div>
+        ))}
       </section>
 
       <section className="card">
@@ -160,7 +261,12 @@ export function ProfilePage() {
                 setStatus(null);
                 try {
                   const r = await api.importResume(file);
-                  setProfile({ ...r.profile, preferences: profile.preferences });
+                  setProfile({
+                    ...r.profile,
+                    preferences: profile.preferences,
+                    showableWork: profile.showableWork ?? [],
+                    links: profile.links.length ? profile.links : r.profile.links,
+                  });
                   setMissing(r.missing);
                   setStatus({ kind: "ok", text: "Read the PDF. Check every line, then save." });
                 } catch (err) {

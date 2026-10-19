@@ -441,26 +441,55 @@ describe("boards, application file, resume import", () => {
     expect(detectBoard("https://jobs.ashbyhq.com/paxos/f8cbcedf")?.ats).toBe("ashby");
   });
 
-  it("builds the cover letter from profile lines and showable links, not a resume rewrite", async () => {
+  it("builds a first-person cover letter with showable links, not a third-person resume rewrite", async () => {
     const p = profile({
-      links: ["https://github.com/asha", "asha.example.com/demo", "https://github.com/asha"],
+      links: ["https://github.com/asha", "asha.example.com/demo", "https://github.com/asha", "linkedin.com/in/asha"],
+      experience: [
+        {
+          id: "e1",
+          company: "OpenGov Inc.",
+          title: "Senior Software Engineer, Analytics & Data Platform",
+          location: "Pune",
+          start: "2025",
+          end: "Present",
+          bullets: [
+            { id: "b1", text: "Unifying 10 product suites into a central Snowflake warehouse" },
+            { id: "b2", text: "Ran weekly stakeholder reviews" },
+          ],
+        },
+        {
+          id: "e2",
+          company: "Allscripts",
+          title: "Engineer",
+          location: "Remote",
+          start: "2018",
+          end: "2020",
+          bullets: [{ id: "b3", text: "US government healthcare platform setup for clinical reporting" }],
+        },
+        {
+          id: "e3",
+          company: "Ivalua",
+          title: "Consultant",
+          location: "Pune",
+          start: "2016",
+          end: "2018",
+          bullets: [{ id: "b4", text: "End-to-end VW analytics data platform for procurement reporting" }],
+        },
+      ],
     });
     const fit = evaluateFit(job(), p);
     const file = buildApplication(p, fit, tailorResume(p, fit, { id: "j", title: "Senior Analytics Engineer", company: "Beta" }));
-    const source = p.experience.flatMap((e) => e.bullets.map((b) => b.text));
-    for (const line of file.evidence) expect(source).toContain(line.text);
-    expect(file.paragraphs[0]).toContain("Senior Analytics Engineer");
-    expect(file.paragraphs.join(" ")).toContain("SQL");
+    expect(file.paragraphs[0]).toMatch(/^I am applying for/);
+    expect(file.paragraphs.join(" ")).not.toMatch(/is applying for/);
     expect(file.paragraphs.join(" ")).toMatch(/not a restatement of my resume/i);
-    expect(file.workLinks).toEqual([
-      { label: "GitHub", url: "https://github.com/asha" },
-      { label: "asha.example.com", url: "https://asha.example.com/demo" },
-    ]);
-    expect(file.email).toBe("asha@example.com");
-    expect(workLinkLabel("https://youtu.be/abc")).toBe("Demo video");
+    expect(file.workLinks.map((l) => l.url)).toEqual(["https://github.com/asha", "https://asha.example.com/demo"]);
+    expect(file.evidence.map((e) => e.label)).toEqual(["OpenGov", "Allscripts", "Ivalua"]);
+    expect(file.evidence.map((e) => e.text).join(" ")).toMatch(/10 product suites|healthcare|VW analytics/i);
+    expect(file.evidence.every((e) => !/Senior Software Engineer/i.test(e.label))).toBe(true);
+    expect(workLinkLabel("https://youtube.com/@fakhruddinkhambaty")).toBe("YouTube · Snowflake projects");
+    expect(workLinkLabel("https://datafordummies.in")).toBe("datafordummies.in");
     const html = renderCoverLetterHtml(file);
     expect(html).toContain("Examples of my work");
-    expect(html).toContain("Work I can show");
     expect(html).toContain("https://github.com/asha");
     expect(html).not.toContain("Professional Experience");
     expect(html).not.toContain("Be ready to discuss");

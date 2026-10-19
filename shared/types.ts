@@ -53,12 +53,23 @@ export interface Preferences {
   timezone: string;
 }
 
+/** Cover-letter work examples: links, demos, and project notes — not a resume rewrite. */
+export interface ShowableWork {
+  id: string;
+  title: string;
+  detail: string;
+  url: string;
+  company: string;
+}
+
 export interface Profile {
   fullName: string;
   headline: string;
   email: string;
   phone: string;
   links: string[];
+  /** Printed on cover letters as examples of work (GitHub, demos, sites, project notes). */
+  showableWork: ShowableWork[];
   summary: string;
   totalYears: number | null;
   skills: Skill[];
@@ -261,6 +272,7 @@ export function emptyProfile(email = ""): Profile {
     email,
     phone: "",
     links: [],
+    showableWork: [],
     summary: "",
     totalYears: null,
     skills: [],
