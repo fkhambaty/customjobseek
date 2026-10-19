@@ -9,6 +9,7 @@ export type Ats =
   | "workday"
   | "teamtailor"
   | "recruitee"
+  | "breezy"
   | "icims"
   | "oracle_recruiting"
   | "successfactors"
@@ -89,6 +90,18 @@ export function detectBoard(raw: string): BoardRef | null {
   const recruitee = labelHost(host, "recruitee.com");
   if (recruitee && !recruitee.includes(".") && !RECRUITEE_RESERVED.has(recruitee)) {
     return { ats: "recruitee", token: recruitee, careerUrl: `https://${recruitee}.recruitee.com`, nameHint: tidy(recruitee) };
+  }
+  const breezy = labelHost(host, "breezy.hr");
+  if (breezy && !breezy.includes(".")) {
+    return { ats: "breezy", token: breezy, careerUrl: `https://${breezy}.breezy.hr`, nameHint: tidy(breezy) };
+  }
+  const greenhouseFor = url.searchParams.get("for")?.trim() || "";
+  const greenhouseJob = url.searchParams.get("gh_jid")?.trim() || "";
+  if (greenhouseJob || /greenhouse\.io\/embed/i.test(url.href)) {
+    const token = greenhouseFor || host.replace(/^www\./, "").split(".")[0] || "";
+    if (token) {
+      return { ats: "greenhouse", token, careerUrl: `https://boards.greenhouse.io/${token}`, nameHint: tidy(token) };
+    }
   }
   if (host.endsWith(".icims.com")) {
     const token = host.slice(0, -".icims.com".length);

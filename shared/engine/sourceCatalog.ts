@@ -1,5 +1,6 @@
 import rows from "../data/source-catalog.json";
 import industryRows from "../data/industry-employer-catalog.json";
+import commandcenterRows from "../data/commandcenter-boards.json";
 import { FEATURED_MARKET_CODES, type FeaturedMarketCode } from "../geo";
 import { INDUSTRY_CATEGORIES, sectorsForIndustries, type IndustryId } from "../industries";
 
@@ -17,7 +18,7 @@ export function sourceCatalog(): CatalogEmployer[] {
 
 /** Larger multi-industry scan pool (imported into `companies` with sector tags). */
 export function industryEmployerCatalog(): CatalogEmployer[] {
-  return industryRows as CatalogEmployer[];
+  return [...(industryRows as CatalogEmployer[]), ...(commandcenterRows as CatalogEmployer[])];
 }
 
 export function catalogCount(country: string): number {

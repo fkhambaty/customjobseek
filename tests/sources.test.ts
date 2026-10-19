@@ -3,6 +3,7 @@ import greenhouseJobs from "./fixtures/greenhouse-jobs.json";
 import recruiteeOffers from "./fixtures/recruitee-offers.json";
 import teamtailorRss from "./fixtures/teamtailor-jobs.rss?raw";
 import migrationSql from "../migrations/0009_source_platform.sql?raw";
+import websiteScanSql from "../migrations/0020_website_breezy_scan.sql?raw";
 import { adapterEnabled, complianceFor } from "../shared/commercial";
 import { detectBoard } from "../shared/engine/boards";
 import { employerKey } from "../shared/engine/catalog";
@@ -12,10 +13,13 @@ import {
   publicJobUrl,
   greenhouseJobsUrl,
   leverPostingsUrl,
+  embeddedBoardFromHtml,
   parseAshbyJobs,
+  parseBreezyJobs,
   parseGreenhouseJobs,
   parseLeverPostings,
   parseRecruiteeOffers,
+  parseWebsiteListings,
   parseSmartRecruitersPostings,
   parseTeamtailorFeed,
   parseWorkableJobs,
@@ -45,18 +49,20 @@ import {
 describe("source registry", () => {
   it("keeps the original readers live and leaves portals without a public API unscanned", () => {
     const live = liveListingAts();
-    expect(live).toEqual(expect.arrayContaining(["greenhouse", "lever", "ashby", "workable", "smartrecruiters", "workday", "teamtailor", "recruitee"]));
-    for (const id of ["icims", "oracle_recruiting", "successfactors", "public_feed", "licensed", "aggregator", "website"] as const) {
+    expect(live).toEqual(expect.arrayContaining(["greenhouse", "lever", "ashby", "workable", "smartrecruiters", "workday", "teamtailor", "recruitee", "breezy", "website"]));
+    for (const id of ["icims", "oracle_recruiting", "successfactors", "public_feed", "licensed", "aggregator"] as const) {
       expect(SOURCES[id].listing).toBe("none");
       expect(adapterEnabled(id)).toBe(false);
     }
     expect(complianceFor("greenhouse")).toBe("public_api");
     expect(complianceFor("workday")).toBe("public_site");
+    expect(complianceFor("website")).toBe("public_site");
     expect(complianceFor("teamtailor")).toBe("public_feed");
     expect(complianceFor("icims")).toBe("paste_only");
     expect(complianceFor("aggregator")).toBe("partnership_required");
     expect(adapterEnabled("teamtailor")).toBe(true);
-    expect(adapterEnabled("website")).toBe(false);
+    expect(adapterEnabled("website")).toBe(true);
+    expect(adapterEnabled("breezy")).toBe(true);
   });
 
   it("registers government feeds without calling any of them", () => {
@@ -104,6 +110,15 @@ describe("board detection", () => {
     expect(detectBoard("https://www.oracle.com/in/careers/")?.ats).toBe("website");
     expect(detectBoard("https://career5.successfactors.com/career?company=acme")?.ats).toBe("successfactors");
     expect(detectBoard("https://jobs.sap.com/search/")?.ats).toBe("website");
+    expect(detectBoard("https://euler.breezy.hr/p/4b2044278763-data-engineer")).toMatchObject({
+      ats: "breezy",
+      token: "euler",
+      careerUrl: "https://euler.breezy.hr",
+    });
+    expect(detectBoard("https://www.phdata.io/jobs?gh_jid=8111674")).toMatchObject({
+      ats: "greenhouse",
+      token: "phdata",
+    });
     expect(detectBoard("https://www.linkedin.com/jobs/view/1")).toMatchObject({ ats: "aggregator", nameHint: "LinkedIn" });
     expect(detectBoard("https://in.indeed.com/viewjob?jk=1")?.nameHint).toBe("Indeed");
     expect(detectBoard("https://www.naukri.com/job-listings-1")?.nameHint).toBe("Naukri");
@@ -159,7 +174,23 @@ describe("listing parsers", () => {
     expect(recognizedListingPayload("lever", [])).toBe(true);
     expect(recognizedListingPayload("teamtailor", teamtailorRss)).toBe(true);
     expect(recognizedListingPayload("teamtailor", "<html>nope</html>")).toBe(false);
-    expect(recognizedListingPayload("website", {})).toBe(false);
+    expect(recognizedListingPayload("website", `<html><body>${"career page with published openings ".repeat(8)}</body></html>`)).toBe(true);
+    expect(recognizedListingPayload("breezy", [])).toBe(true);
+    expect(parseBreezyJobs([{ friendly_id: "4b2044278763-data-engineer", name: "Data Engineer", location: { city: "", country: { name: "Worldwide" } }, remote: true, description: "<p>SQL</p>" }], "https://euler.breezy.hr")[0]).toMatchObject({
+      title: "Data Engineer",
+      location: "Worldwide / Remote",
+      url: "https://euler.breezy.hr/p/4b2044278763-data-engineer",
+    });
+    const siteJobs = parseWebsiteListings(
+      `<html><body>
+        <script type="application/ld+json">{"@type":"JobPosting","title":"Senior Data Engineer","url":"https://jobs.siemens.com/JobDetail/1","description":"<p>Snowflake warehouse work in Pune.</p>","jobLocation":{"@type":"Place","address":{"addressLocality":"Pune","addressCountry":"IN"}}}</script>
+        <a href="/en_US/externaljobs/ApplicationMethods?folderId=517345">Senior Data Engineer</a>
+      </body></html>`,
+      "https://jobs.siemens.com/en_US/externaljobs",
+    );
+    expect(siteJobs[0]?.title).toBe("Senior Data Engineer");
+    expect(siteJobs[0]?.location).toContain("Pune");
+    expect(embeddedBoardFromHtml('embed/job_board?for=spauldingridge', "https://www.example.com/jobs")?.token).toBe("spauldingridge");
   });
 
   it("builds the same public listing addresses the readers already used", () => {
@@ -226,11 +257,17 @@ describe("curated employer catalog", () => {
       counts.set(row.country, (counts.get(row.country) ?? 0) + 1);
     }
     for (const country of FEATURED_MARKET_CODES) expect(counts.get(country) ?? 0).toBeGreaterThanOrEqual(2);
-    const migration = migrationSql;
+    const migration = `${migrationSql}\n${websiteScanSql}`;
     for (const id of Object.keys(SOURCES)) {
       if (id === "greenhouse" || id === "lever" || id === "ashby" || id === "workable" || id === "smartrecruiters" || id === "workday" || id === "website") continue;
       expect(migration).toContain(`'${id}'`);
     }
+    expect(industryEmployerCatalog().some((row) => row.careerUrl.includes("spauldingridge"))).toBe(true);
+    expect(industryEmployerCatalog().some((row) => row.careerUrl.includes("beghouconsulting"))).toBe(true);
+    expect(industryEmployerCatalog().some((row) => row.careerUrl.includes("SyngentaGroup"))).toBe(true);
+    expect(industryEmployerCatalog().some((row) => /barclays/i.test(row.careerUrl))).toBe(true);
+    expect(industryEmployerCatalog().some((row) => /sigmoid/i.test(row.careerUrl))).toBe(true);
+    expect(industryEmployerCatalog().some((row) => /euler\.breezy/i.test(row.careerUrl))).toBe(true);
   });
 
   it("covers every onboarding industry in the employer pool", () => {

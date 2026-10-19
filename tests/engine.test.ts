@@ -5,7 +5,7 @@ import { classifyTerms, evaluateFit, parseCompExtras, parseSalary, parseYearsReq
 import { profileFromResumeText } from "../shared/engine/importResume";
 import { resumeTextInReadingOrder } from "../shared/engine/resumeLayout";
 import { SKILL_CATALOGUE, mentions, normalise, termForName } from "../shared/engine/text";
-import { MIN_BULLETS_PER_ROLE, MIN_IMPACT, dropWeakestLine, roleShape, tailorResume } from "../shared/engine/tailor";
+import { MIN_BULLETS_PER_ROLE, MIN_IMPACT, dropWeakestLine, ensureGithubContact, githubProfileUrl, resumeContact, roleShape, tailorResume } from "../shared/engine/tailor";
 import { emptyProfile, type Profile } from "../shared/types";
 import { sanitiseProfile } from "../shared/validate";
 import { parseJobHtml } from "../worker/jobFetch";
@@ -220,6 +220,43 @@ describe("tailorResume", () => {
     expect(r.provenance).toEqual({ untraceableLines: [], neverClaimHits: [] });
   });
 
+  it("prints a canonical GitHub profile URL on every resume contact line", () => {
+    expect(githubProfileUrl("github.com/fkhambaty/customjobseek")).toBe("https://github.com/fkhambaty");
+    expect(ensureGithubContact([
+      "+91 98335 65272",
+      "fakhruddinkhambaty@gmail.com",
+      "linkedin.com/in/fakhruddinkhambaty",
+      "youtube.com/@fakhruddinkhambaty",
+    ])).toEqual([
+      "+91 98335 65272",
+      "fakhruddinkhambaty@gmail.com",
+      "https://github.com/fkhambaty",
+      "linkedin.com/in/fakhruddinkhambaty",
+      "youtube.com/@fakhruddinkhambaty",
+    ]);
+    expect(resumeContact(profile({
+      phone: "+91 90000 00000",
+      links: ["linkedin.com/in/fkhambaty", "github.com/fkhambaty"],
+    }))).toEqual([
+      "+91 90000 00000",
+      "asha@example.com",
+      "https://github.com/fkhambaty",
+      "linkedin.com/in/fkhambaty",
+    ]);
+    const missing = tailorResume(profile(), evaluateFit(job(), profile()), {
+      id: "j1",
+      title: "Senior Analytics Engineer",
+      company: "Beta",
+    });
+    expect(missing.contact).toContain("https://github.com/fkhambaty");
+    const r = tailorResume(
+      profile({ links: ["https://github.com/fkhambaty/"] }),
+      evaluateFit(job(), profile()),
+      { id: "j1", title: "Senior Analytics Engineer", company: "Beta" },
+    );
+    expect(r.contact).toContain("https://github.com/fkhambaty");
+  });
+
   it("keeps never-claim skills off the resume and reports any that slip into free text", () => {
     const p = profile({ skills: [...profile().skills, { name: "Databricks", level: "familiar" }], summary: "Power BI developer" });
     const r = tailorResume(p, evaluateFit(job(), p), { id: "j1", title: "x", company: "y" });
@@ -382,6 +419,11 @@ describe("sanitiseProfile", () => {
   it("keeps an older India-only salary floor", () => {
     const p = sanitiseProfile({ preferences: { minSalaryLpa: 30 } });
     expect(p.preferences).toMatchObject({ currency: "INR", salaryPeriod: "lpa", minSalary: 30 });
+  });
+
+  it("keeps a full GitHub URL on the profile", () => {
+    const p = sanitiseProfile({ links: ["https://github.com/fkhambaty", "linkedin.com/in/fkhambaty"] });
+    expect(p.links).toEqual(["https://github.com/fkhambaty", "linkedin.com/in/fkhambaty"]);
   });
 });
 

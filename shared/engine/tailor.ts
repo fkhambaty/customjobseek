@@ -476,6 +476,68 @@ function selectCertifications(certs: Certification[], jobText: string, isNever: 
   return allowed.filter((cert) => chosen.includes(cert));
 }
 
+const GITHUB_PROFILE = /^(?:https?:\/\/)?(?:www\.)?github\.com\/([A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?)(?:\/.*)?$/i;
+export const DEFAULT_GITHUB = "https://github.com/fkhambaty";
+
+/** Canonical https://github.com/{user} from a profile or repo URL. */
+export function githubProfileUrl(link: string): string {
+  const match = link.trim().match(GITHUB_PROFILE);
+  return match ? `https://github.com/${match[1]}` : "";
+}
+
+function contactKey(value: string): string {
+  return value.replace(/\/+$/, "").toLowerCase();
+}
+
+function uniqueContact(parts: string[]): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const part of parts) {
+    const value = part.trim();
+    if (!value) continue;
+    const key = contactKey(value);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(value);
+  }
+  return out;
+}
+
+function isEmailContact(value: string): boolean {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
+}
+
+function isPhoneContact(value: string): boolean {
+  return /^[+()\d\s.-]{7,}$/.test(value);
+}
+
+/** Inserts the canonical GitHub URL after phone/email. Used when drawing stored contact lines too. */
+export function ensureGithubContact(contact: readonly string[]): string[] {
+  const items = contact.map((item) => item.trim()).filter(Boolean);
+  const github = items.map(githubProfileUrl).find(Boolean) || DEFAULT_GITHUB;
+  const rest = items.filter((item) => {
+    const profileUrl = githubProfileUrl(item);
+    if (profileUrl && contactKey(profileUrl) === contactKey(github)) return /github\.com\/[^/]+\/.+/i.test(item);
+    return contactKey(item) !== contactKey(github);
+  });
+  const head: string[] = [];
+  const tail: string[] = [];
+  for (const item of rest) {
+    if (isEmailContact(item) || isPhoneContact(item)) head.push(item);
+    else tail.push(item);
+  }
+  return uniqueContact([...head, github, ...tail]);
+}
+
+export function ensureGithubContactLine(text: string): string {
+  return ensureGithubContact(text.split(/\s*\|\s*/)).join(" | ");
+}
+
+/** Phone, email, then GitHub (canonical), then other links. A GitHub URL is always printed. */
+export function resumeContact(profile: Pick<Profile, "phone" | "email" | "links">): string[] {
+  return ensureGithubContact([profile.phone, profile.email, ...profile.links]);
+}
+
 // Builds the resume only from lines the candidate wrote. Nothing is invented:
 // the engine decides which verified lines to show and in what order.
 export function tailorResume(profile: Profile, fit: FitResult, job: JobRef): TailoredResume {
@@ -513,7 +575,7 @@ export function tailorResume(profile: Profile, fit: FitResult, job: JobRef): Tai
   const skills = [...ownSkills.filter(isMatched), ...ownSkills.filter((skill) => !isMatched(skill))];
   const coreStrengths = selectCoreStrengths(profile, fit, job.title, ownSkills);
 
-  const contact = [profile.phone, profile.email, ...profile.links].map((c) => c.trim()).filter(Boolean);
+  const contact = resumeContact(profile);
   const aiLine = profile.experience.flatMap((role) => role.bullets).find((b) => AI_LINE.test(b.text))?.text;
   const summary = resumePunctuation(profile.summary);
   const profileParagraphs = [summary, careerLine(profile)].filter(Boolean);

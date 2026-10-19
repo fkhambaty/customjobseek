@@ -24,6 +24,10 @@ function words(v: unknown, max = 40): string[] {
   return list(v, max, (s) => text(s, 80) || null);
 }
 
+function urls(v: unknown, max = 5): string[] {
+  return list(v, max, (s) => text(s, 200) || null);
+}
+
 function num(v: unknown, min: number, max: number): number | null {
   const n = typeof v === "number" ? v : typeof v === "string" && v.trim() ? Number(v) : NaN;
   return Number.isFinite(n) && n >= min && n <= max ? n : null;
@@ -42,7 +46,7 @@ export function sanitiseProfile(input: unknown): Profile {
     headline: text(p.headline, 160),
     email: text(p.email, 160),
     phone: text(p.phone, 40),
-    links: words(p.links, 5),
+    links: urls(p.links, 5),
     summary: text(p.summary, 1500),
     totalYears: num(p.totalYears, 0, 60),
     skills: list(p.skills, 80, (s) => {

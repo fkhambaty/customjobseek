@@ -47,7 +47,7 @@ const FAQS: { q: string; a: ReactNode }[] = [
     q: "Which websites does it read?",
     a: (
       <>
-        Public company boards on Greenhouse, Lever, Ashby, Workable, SmartRecruiters, Workday, Teamtailor, and Recruitee.
+        Public employer boards on Greenhouse, Lever, Ashby, Workable, SmartRecruiters, Workday, Teamtailor, Recruitee, Breezy, and company career sites.
         iCIMS, Oracle Recruiting, and SAP SuccessFactors are recognized on the <Link to="/companies">list</Link> and not
         scanned. LinkedIn, Indeed, Naukri, SEEK and similar job boards are not read. Paste the employer's posting, or the description.
       </>

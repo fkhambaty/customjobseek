@@ -156,7 +156,7 @@ export function CompaniesPage() {
       {account ? (
         <form className="card stack" onSubmit={submit}>
           <h2>Report a missed link</h2>
-          <p className="muted small">Paste the employer's own career page. A Greenhouse, Lever, Ashby, Workable, SmartRecruiters, Workday, Teamtailor, or Recruitee link is read. An iCIMS, Oracle, or SuccessFactors link is saved and left unscanned. A LinkedIn, Indeed, or Naukri link is saved as a partnership, not fetched.</p>
+          <p className="muted small">Paste the employer's own career page. Greenhouse, Lever, Ashby, Workable, SmartRecruiters, Workday, Teamtailor, Recruitee, Breezy, and ordinary career sites are read. iCIMS, Oracle, and SuccessFactors still need a pasted description. LinkedIn, Indeed, Naukri, and Shine are not scraped.</p>
           <label className="field">
             <span>Job link or career page</span>
             <input type="url" required placeholder="https://" value={url} onChange={(e) => setUrl(e.target.value)} />

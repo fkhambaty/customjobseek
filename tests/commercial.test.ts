@@ -156,13 +156,14 @@ describe("commercial foundation", () => {
     expect(utcDay(Date.parse("2026-10-14T23:30:00.000Z"))).toBe("2026-10-14");
   });
 
-  it("describes every job-board reader without crawling ordinary websites", () => {
+  it("describes every job-board reader including employer career sites", () => {
     const names = Object.keys(ATS_READY) as Ats[];
     expect(names).toContain("greenhouse");
+    expect(names).toContain("breezy");
     expect(complianceFor("greenhouse")).toBe("public_api");
     expect(complianceFor("workday")).toBe("public_site");
-    expect(complianceFor("website")).toBe("not_crawled");
-    expect(adapterEnabled("website")).toBe(false);
+    expect(complianceFor("website")).toBe("public_site");
+    expect(adapterEnabled("website")).toBe(true);
     expect(adapterEnabled("lever")).toBe(true);
   });
 });

@@ -84,7 +84,7 @@ function legalCopy(doc: LegalDoc): LegalCopy {
           },
           {
             heading: "Job boards",
-            paragraphs: ["The scan reads public career pages. It can miss a job or read a page wrong. Ordinary company websites are not crawled."],
+            paragraphs: ["The scan reads public employer career pages, including company sites that publish jobs as JSON-LD or job links. It can miss a job or read a page wrong. LinkedIn, Naukri, Shine and similar aggregators are not scraped."],
           },
         ],
       };

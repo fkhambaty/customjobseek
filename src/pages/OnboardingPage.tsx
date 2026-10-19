@@ -701,6 +701,13 @@ function Facts({ profile, onEdit }: { profile: Profile; onEdit: (next: Profile) 
         <Field label="Phone" hint="Optional. Only printed if you fill it in.">
           <input autoComplete="tel" inputMode="tel" value={profile.phone} onChange={(event) => set("phone", event.target.value)} />
         </Field>
+        <Field label="Links" hint="Printed on every resume. Include GitHub.">
+          <ListInput
+            value={profile.links}
+            onChange={(links) => set("links", links)}
+            placeholder="linkedin.com/in/you, https://github.com/you"
+          />
+        </Field>
         <Field label="Headline" hint="Optional. One line under your name.">
           <input value={profile.headline} onChange={(event) => set("headline", event.target.value)} />
         </Field>
@@ -773,6 +780,7 @@ function Confirm({ profile, onJump }: { profile: Profile; onJump: (step: WizardS
       <dl className="onboard-facts">
         <div><dt>Name</dt><dd>{profile.fullName || "Not set"}</dd></div>
         <div><dt>Email</dt><dd>{profile.email || "Not set"}</dd></div>
+        <div><dt>Links</dt><dd>{profile.links.join(" · ") || "Not set"}</dd></div>
         <div><dt>Skills</dt><dd>{profile.skills.map((skill) => skill.name).join(", ") || "Not set"}</dd></div>
         <div>
           <dt>History</dt>

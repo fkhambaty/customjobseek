@@ -1,7 +1,9 @@
 import { detectBoard } from "../shared/engine/boards";
 import {
+  breezyJsonUrl,
   greenhouseJobUrl,
   leverPostingUrl,
+  parseBreezyJobs,
   parseRecruiteeOffers,
   publicJobUrl,
   recruiteeOfferUrl,
@@ -157,6 +159,23 @@ async function getJson(url: string): Promise<JsonLd | null> {
 async function fetchFromAtsApi(url: URL): Promise<FetchedJob | null> {
   const host = url.hostname.toLowerCase();
   const parts = url.pathname.split("/").filter(Boolean);
+  const greenhouseJob = url.searchParams.get("gh_jid")?.trim() || "";
+  if (greenhouseJob) {
+    const board = detectBoard(url.toString());
+    if (board?.ats === "greenhouse") {
+      const d = await getJson(greenhouseJobUrl(board.token, greenhouseJob));
+      if (d) {
+        return {
+          title: str(d.title),
+          company: str(d.company_name) || board.nameHint,
+          location: str((d.location as JsonLd | undefined)?.name),
+          salaryText: "",
+          description: htmlToText(decodeEntities(str(d.content))),
+          source: "structured",
+        };
+      }
+    }
+  }
 
   if (host === "api.smartrecruiters.com" || host === "jobs.smartrecruiters.com") {
     const companiesAt = parts.indexOf("companies");
@@ -214,6 +233,23 @@ async function fetchFromAtsApi(url: URL): Promise<FetchedJob | null> {
       location: [str(cats.location), str(d.workplaceType) === "remote" ? "Remote" : ""].filter(Boolean).join(" / "),
       salaryText: range ? `${str(range.currency) === "INR" ? "₹" : str(range.currency) + " "}${str(range.min)} - ${str(range.max)}` : "",
       description: [str(d.descriptionPlain), ...lists, str(d.additionalPlain)].filter(Boolean).join("\n"),
+      source: "structured",
+    };
+  }
+
+  if (host.endsWith(".breezy.hr")) {
+    const token = host.slice(0, -".breezy.hr".length);
+    if (!token || token.includes(".")) return null;
+    const data = await getJson(breezyJsonUrl(token));
+    const id = parts[1] ?? parts[0] ?? "";
+    const job = parseBreezyJobs(data, `https://${host}`).find((opening) => opening.externalId === id || opening.url.includes(id));
+    if (!job || job.description.length < 80) return null;
+    return {
+      title: job.title,
+      company: token.replace(/-/g, " "),
+      location: job.location,
+      salaryText: "",
+      description: job.description,
       source: "structured",
     };
   }

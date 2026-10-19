@@ -71,7 +71,12 @@
   page-break-inside: avoid;
 }
 .resume strong { color: #0f1b28; font-weight: 700; }
-.resume .job { margin-bottom: 6pt; }
+.resume section { break-inside: auto; }
+.resume .job {
+  margin-bottom: 6pt;
+  break-inside: avoid;
+  page-break-inside: avoid;
+}
 .resume .job-header {
   display: flex;
   justify-content: space-between;

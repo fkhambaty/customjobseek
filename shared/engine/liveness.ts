@@ -300,6 +300,7 @@ export function livenessProbe(raw: string): LivenessProbe | null {
       return null;
     case "ashby":
       return { url: publicJobUrl(raw), accept: "text/html", source: "page" };
+    case "breezy":
     case "workable":
     case "workday":
     case "teamtailor":

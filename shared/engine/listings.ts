@@ -1,5 +1,5 @@
-import type { Ats } from "./boards";
-import { hostedSlug } from "./sources";
+import { detectBoard, type Ats, type BoardRef } from "./boards";
+import { hostedSlug, sourceById } from "./sources";
 
 export interface Opening {
   externalId: string;
@@ -44,13 +44,16 @@ export function recognizedListingPayload(ats: Ats, payload: unknown): boolean {
     case "recruitee":
       if (Array.isArray(payload)) return true;
       return isRecord(payload) && (Array.isArray(payload.offers) || isRecord(payload.offer) || typeof payload.title === "string");
+    case "breezy":
+      return Array.isArray(payload);
+    case "website":
+      return typeof payload === "string" && payload.length >= 200;
     case "icims":
     case "oracle_recruiting":
     case "successfactors":
     case "public_feed":
     case "licensed":
     case "aggregator":
-    case "website":
       return false;
     default: {
       const unexpected: never = ats;
@@ -144,6 +147,11 @@ export function recruiteeOffersUrl(token: string): string {
 export function recruiteeOfferUrl(token: string, id: string): string {
   const slug = hostedSlug(token);
   return `https://${slug}.recruitee.com/api/offers/${encodeURIComponent(id)}`;
+}
+
+export function breezyJsonUrl(token: string): string {
+  const slug = hostedSlug(token);
+  return `https://${slug}.breezy.hr/json`;
 }
 
 export function parseGreenhouseJobs(data: unknown): Opening[] {
@@ -314,4 +322,138 @@ export function parseRecruiteeOffers(data: unknown): Opening[] {
   if (Array.isArray(root.offers)) return parseRecruiteeOffers(root.offers);
   const wrapped = root.offer && typeof root.offer === "object" ? recruiteeOpening(root.offer as Record<string, unknown>) : recruiteeOpening(root);
   return wrapped ? [wrapped] : [];
+}
+
+function breezyPlace(job: Record<string, unknown>): string {
+  const location = job.location;
+  if (typeof location === "string") return location;
+  if (!isRecord(location)) return job.remote === true ? "Remote" : "";
+  const country = isRecord(location.country) ? text(location.country.name) : text(location.country);
+  const place = [text(location.city), text(location.state), country].filter(Boolean).join(", ");
+  if (job.remote === true || text(location.is_remote).toLowerCase() === "true") {
+    return place ? `${place} / Remote` : "Remote";
+  }
+  return place;
+}
+
+export function parseBreezyJobs(data: unknown, careerUrl: string): Opening[] {
+  const origin = careerUrl.replace(/\/$/, "");
+  return asList(data).map((job) => {
+    const id = text(job.friendly_id) || text(job._id) || text(job.id);
+    const title = text(job.name) || text(job.title);
+    const path = text(job.url) || (id ? `${origin}/p/${id}` : "");
+    return {
+      externalId: id,
+      title,
+      location: breezyPlace(job),
+      url: path.startsWith("http") ? path : path,
+      description: listingHtmlToText(text(job.description)),
+      expiresAt: null,
+    };
+  }).filter((job) => job.externalId && job.title);
+}
+
+function collectJobPostings(node: unknown, out: Record<string, unknown>[]): void {
+  if (!node || typeof node !== "object") return;
+  if (Array.isArray(node)) {
+    for (const item of node) collectJobPostings(item, out);
+    return;
+  }
+  const obj = node as Record<string, unknown>;
+  const type = obj["@type"];
+  const types = Array.isArray(type) ? type.map(String) : [String(type ?? "")];
+  if (types.some((value) => value.toLowerCase() === "jobposting")) out.push(obj);
+  collectJobPostings(obj["@graph"], out);
+  collectJobPostings(obj.itemListElement, out);
+}
+
+function jsonLdJobLocation(posting: Record<string, unknown>): string {
+  const places = ([] as unknown[]).concat(posting.jobLocation ?? []);
+  const names = places.map((place) => {
+    if (!isRecord(place)) return "";
+    const addr = isRecord(place.address) ? place.address : null;
+    if (!addr) return text(place.name);
+    return [text(addr.addressLocality), text(addr.addressRegion), text(addr.addressCountry)].filter(Boolean).join(", ");
+  });
+  if (String(posting.jobLocationType ?? "").toUpperCase() === "TELECOMMUTE") names.push("Remote");
+  return [...new Set(names.filter(Boolean))].join(" / ");
+}
+
+function absUrl(href: string, pageUrl: string): string | null {
+  try {
+    return new URL(href.replace(/&amp;/g, "&"), pageUrl).toString();
+  } catch {
+    return null;
+  }
+}
+
+const JOB_LINK = /(?:\/(?:jobs?|careers?|positions?|openings?|vacanc(?:y|ies)|p)\/|folderid=|jobdetail|gh_jid=|applicationmethods)/i;
+
+export function parseWebsiteListings(html: string, pageUrl: string): Opening[] {
+  const openings: Opening[] = [];
+  const seen = new Set<string>();
+  const push = (opening: Opening) => {
+    if (!opening.title || !opening.url || seen.has(opening.url)) return;
+    seen.add(opening.url);
+    openings.push(opening);
+  };
+
+  for (const match of html.matchAll(/<script[^>]+application\/ld\+json[^>]*>([\s\S]*?)<\/script>/gi)) {
+    let data: unknown;
+    try {
+      data = JSON.parse((match[1] ?? "").trim());
+    } catch {
+      continue;
+    }
+    const postings: Record<string, unknown>[] = [];
+    collectJobPostings(data, postings);
+    for (const posting of postings) {
+      const url = text(posting.url) || pageUrl;
+      const title = text(posting.title);
+      const id = text(posting.identifier) || url;
+      push({
+        externalId: id,
+        title,
+        location: jsonLdJobLocation(posting),
+        url,
+        description: listingHtmlToText(text(posting.description)),
+        expiresAt: text(posting.validThrough) || null,
+      });
+    }
+  }
+
+  for (const match of html.matchAll(/<a\b[^>]*href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi)) {
+    const href = absUrl(match[1] ?? "", pageUrl);
+    if (!href || !JOB_LINK.test(href)) continue;
+    const title = listingHtmlToText(match[2] ?? "").slice(0, 180);
+    if (!title || title.length < 3) continue;
+    const id = (() => {
+      try {
+        const url = new URL(href);
+        return url.searchParams.get("folderId") || url.searchParams.get("gh_jid") || url.pathname.split("/").filter(Boolean).at(-1) || href;
+      } catch {
+        return href;
+      }
+    })();
+    push({ externalId: id, title, location: "", url: href, description: "", expiresAt: null });
+    if (openings.length >= 200) break;
+  }
+  return openings.slice(0, 200);
+}
+
+export function embeddedBoardFromHtml(html: string, pageUrl: string): BoardRef | null {
+  const greenhouse = html.match(/boards(?:-api)?\.greenhouse\.io\/(?:v1\/boards\/|embed\/job_board\?for=)?([a-z0-9-]+)/i)
+    || html.match(/[?&]for=([a-z0-9-]+)/i);
+  if (greenhouse?.[1] && !["embed", "v1", "boards", "job"].includes(greenhouse[1].toLowerCase())) {
+    return { ats: "greenhouse", token: greenhouse[1], careerUrl: `https://boards.greenhouse.io/${greenhouse[1]}`, nameHint: greenhouse[1] };
+  }
+  const hrefs = [...html.matchAll(/https?:\/\/[^\s"'<>]+/gi)].map((row) => row[0]?.replace(/&amp;/g, "&") ?? "");
+  hrefs.unshift(pageUrl);
+  for (const href of hrefs) {
+    const board = detectBoard(href);
+    if (!board || board.ats === "website" || board.ats === "aggregator") continue;
+    if (sourceById(board.ats).listing !== "live") continue;
+    return board;
+  }
+  return null;
 }

@@ -2,9 +2,10 @@ import regeneratorRuntime from "regenerator-runtime";
 import fontkit from "@pdf-lib/fontkit/dist/fontkit.es.min.js";
 import { PDFDocument, rgb, type PDFFont, type PDFPage } from "pdf-lib";
 import { isPdf } from "./resumeFile";
+import { ensureGithubContact } from "./engine/tailor";
 import { htmlToResumeBlocks, type HtmlResumeBlock } from "./resumeHtml";
 import { certificationLine, educationLine, profileParagraphs, roleDates, roleHeading } from "./resumeLayout";
-import type { TailoredResume } from "./types";
+import type { TailoredResume, TailoredRole } from "./types";
 import boldBytes from "./fonts/NotoSansDevanagari-Bold.ttf";
 import regularBytes from "./fonts/NotoSansDevanagari-Regular.ttf";
 
@@ -31,7 +32,11 @@ const MARGIN_X = 36.85;
 const MARGIN_TOP = 34.02;
 const MARGIN_BOTTOM = 34.02;
 const CONTENT_WIDTH = PDF_A4.width - MARGIN_X * 2;
+const PAGE_BODY = PDF_A4.height - MARGIN_TOP - MARGIN_BOTTOM;
 const LINE_HEIGHT = 1.42;
+const HEADING_SIZE = 9.8;
+const HEADING_HEIGHT = 8 + HEADING_SIZE + 2.5 + 5;
+const KEEP_AFTER_HEADING = 54;
 
 const TEAL = rgb(11 / 255, 79 / 255, 138 / 255);
 const INK = rgb(15 / 255, 27 / 255, 40 / 255);
@@ -133,8 +138,22 @@ function addPage(pen: Pen): void {
   pen.y = PDF_A4.height - MARGIN_TOP;
 }
 
+function remaining(pen: Pen): number {
+  return pen.y - MARGIN_BOTTOM;
+}
+
+function atPageTop(pen: Pen): boolean {
+  return pen.y >= PDF_A4.height - MARGIN_TOP - 0.5;
+}
+
+/** Move to the next page when the block cannot fit here, unless this page is already empty. */
+function keep(pen: Pen, needed: number): void {
+  if (needed <= 0 || atPageTop(pen) || remaining(pen) >= needed) return;
+  addPage(pen);
+}
+
 function room(pen: Pen, needed: number): void {
-  if (pen.y - needed < MARGIN_BOTTOM) addPage(pen);
+  keep(pen, needed);
 }
 
 function wrap(font: PDFFont, text: string, size: number, width: number): string[] {
@@ -214,13 +233,12 @@ function drawRule(pen: Pen): void {
   pen.y -= 8;
 }
 
-function drawHeading(pen: Pen, title: string): void {
-  if (pen.y - 28 < MARGIN_BOTTOM) addPage(pen);
+function drawHeading(pen: Pen, title: string, follow = KEEP_AFTER_HEADING): void {
+  keep(pen, HEADING_HEIGHT + follow);
   pen.y -= 8;
-  const size = 9.8;
   const shown = clean(title.toUpperCase());
-  pen.page.drawText(shown, { x: MARGIN_X, y: pen.y - size, size, font: pen.bold, color: TEAL });
-  pen.y -= size + 2.5;
+  pen.page.drawText(shown, { x: MARGIN_X, y: pen.y - HEADING_SIZE, size: HEADING_SIZE, font: pen.bold, color: TEAL });
+  pen.y -= HEADING_SIZE + 2.5;
   pen.page.drawLine({
     start: { x: MARGIN_X, y: pen.y },
     end: { x: PDF_A4.width - MARGIN_X, y: pen.y },
@@ -257,8 +275,14 @@ function drawName(pen: Pen, name: string): void {
   pen.y -= size + 4;
 }
 
+function bulletHeight(pen: Pen, text: string, size: number, width: number, lineGap: number): number {
+  return wrap(pen.font, text, size, width - 10).length * (size + lineGap);
+}
+
 function drawBullet(pen: Pen, text: string, size: number, x: number, width: number, lineGap: number): void {
   const lines = wrap(pen.font, text, size, width - 10);
+  const block = lines.length * (size + lineGap);
+  if (block <= PAGE_BODY) keep(pen, block);
   lines.forEach((line, index) => {
     room(pen, size + lineGap);
     if (index === 0) pen.page.drawText("•", { x, y: pen.y - size, size, font: pen.font, color: INK });
@@ -267,13 +291,31 @@ function drawBullet(pen: Pen, text: string, size: number, x: number, width: numb
   });
 }
 
+function roleHeaderHeight(pen: Pen, leftRaw: string, dateRaw: string): number {
+  const left = clean(leftRaw);
+  const date = clean(dateRaw);
+  const dateWidth = date ? pen.font.widthOfTextAtSize(date, 8.6) : 0;
+  const sharesLine = Boolean(date) && pen.bold.widthOfTextAtSize(left, 10.4) + dateWidth + 12 <= CONTENT_WIDTH;
+  if (sharesLine) return 10.4 + 4;
+  const leftLines = wrap(pen.bold, leftRaw, 10.4, CONTENT_WIDTH).length;
+  const dateLines = date ? wrap(pen.font, dateRaw, 8.6, CONTENT_WIDTH).length : 0;
+  return leftLines * 10.4 * LINE_HEIGHT + dateLines * 8.6 * LINE_HEIGHT;
+}
+
+function roleBlockHeight(pen: Pen, title: string, company: string, dateRaw: string, bullets: string[], environment: string[]): number {
+  const header = roleHeaderHeight(pen, roleHeading(company, title), dateRaw);
+  const body = bullets.reduce((sum, bullet) => sum + bulletHeight(pen, bullet, 10, CONTENT_WIDTH - 4, 4.2), 0);
+  const env = environment.length > 0 ? wrap(pen.font, `Environment: ${environment.join(", ")}`, 8.2, CONTENT_WIDTH).length * 8.2 * LINE_HEIGHT + 1 : 0;
+  return header + body + env + 5;
+}
+
 /** Bold "Company, Title" on the left with dates right-aligned on the same line when they fit. */
 function drawRoleHeader(pen: Pen, leftRaw: string, dateRaw: string): void {
   const left = clean(leftRaw);
   const date = clean(dateRaw);
   const dateWidth = date ? pen.font.widthOfTextAtSize(date, 8.6) : 0;
   const sharesLine = Boolean(date) && pen.bold.widthOfTextAtSize(left, 10.4) + dateWidth + 12 <= CONTENT_WIDTH;
-  room(pen, 30);
+  keep(pen, roleHeaderHeight(pen, leftRaw, dateRaw));
   if (sharesLine && date) {
     const baseline = pen.y - 10.4;
     pen.page.drawText(left, { x: MARGIN_X, y: baseline, size: 10.4, font: pen.bold, color: INK });
@@ -293,6 +335,10 @@ function drawRole(
   bullets: string[],
   environment: string[],
 ): void {
+  const full = roleBlockHeight(pen, title, company, dateRaw, bullets, environment);
+  const first = bullets[0] ? bulletHeight(pen, bullets[0], 10, CONTENT_WIDTH - 4, 4.2) : 14;
+  const start = roleHeaderHeight(pen, roleHeading(company, title), dateRaw) + first;
+  keep(pen, full <= PAGE_BODY ? full : start);
   drawRoleHeader(pen, roleHeading(company, title), dateRaw);
   for (const bullet of bullets) drawBullet(pen, bullet, 10, MARGIN_X + 4, CONTENT_WIDTH - 4, 4.2);
   if (environment.length > 0) {
@@ -300,6 +346,15 @@ function drawRole(
     drawParagraph(pen, `Environment: ${environment.join(", ")}`, pen.font, 8.2, MUTED);
   }
   pen.y -= 5;
+}
+
+function firstRoleFollow(pen: Pen, role: TailoredRole): number {
+  const date = roleDates(role.start, role.end, role.location);
+  const bullets = role.bullets.map((bullet) => bullet.text);
+  const full = roleBlockHeight(pen, role.title, role.company, date, bullets, role.environment ?? []);
+  if (full <= PAGE_BODY) return full;
+  const first = bullets[0] ? bulletHeight(pen, bullets[0], 10, CONTENT_WIDTH - 4, 4.2) : 14;
+  return roleHeaderHeight(pen, roleHeading(role.company, role.title), date) + first;
 }
 
 function drawImpactGrid(pen: Pen, lines: string[]): void {
@@ -329,7 +384,7 @@ function resumeParts(resume: TailoredResume): string[] {
     resume.fullName || "Resume",
     (resume.fullName || "Resume").toUpperCase(),
     resume.headline,
-    resume.contact.join("  |  "),
+    ensureGithubContact(resume.contact).join("  |  "),
     resume.summary,
     ...(resume.profileParagraphs ?? []),
     educationLine(resume),
@@ -375,36 +430,38 @@ async function layoutResume(resume: TailoredResume): Promise<Pen> {
   const pen = await startPdf(resume.fullName || "Resume");
   drawName(pen, resume.fullName || "Resume");
   if (resume.headline) drawParagraph(pen, resume.headline, pen.bold, 9.6, TEAL);
-  if (resume.contact.length > 0) drawParagraph(pen, resume.contact.join("  |  "), pen.font, 8.9, MUTED);
+  const contact = ensureGithubContact(resume.contact);
+  if (contact.length > 0) drawParagraph(pen, contact.join("  |  "), pen.font, 8.9, MUTED);
   drawRule(pen);
   const paragraphs = profileParagraphs(resume);
   if (paragraphs.length > 0) {
-    drawHeading(pen, "Profile");
+    const first = wrap(pen.font, paragraphs[0] ?? "", 10, CONTENT_WIDTH).length * 10 * LINE_HEIGHT + 2;
+    drawHeading(pen, "Profile", Math.min(PAGE_BODY, first));
     for (const paragraph of paragraphs) {
       drawParagraph(pen, paragraph, pen.font, 10, INK);
       pen.y -= 2;
     }
   }
   if ((resume.selectedImpact?.length ?? 0) > 0) {
-    drawHeading(pen, "Selected Impact");
+    drawHeading(pen, "Selected Impact", 40);
     drawImpactGrid(pen, resume.selectedImpact ?? []);
   }
   if ((resume.capabilityGroups?.length ?? 0) > 0) {
-    drawHeading(pen, "Core Capabilities");
+    drawHeading(pen, "Core Capabilities", 28);
     for (const group of resume.capabilityGroups ?? []) {
       drawLabelled(pen, group.name, group.items.join(", "), 9.2);
       pen.y -= 1.5;
     }
   } else if (resume.coreStrengths.length > 0) {
-    drawHeading(pen, "Core Strengths");
+    drawHeading(pen, "Core Strengths", 28);
     drawParagraph(pen, resume.coreStrengths.join("  •  "), pen.font, 10, INK);
   }
   if (resume.aiAssistedDelivery) {
-    drawHeading(pen, "AI-Assisted Delivery");
+    drawHeading(pen, "AI-Assisted Delivery", 28);
     drawParagraph(pen, resume.aiAssistedDelivery, pen.font, 9.2, INK);
   }
   if (resume.roles.length > 0) {
-    drawHeading(pen, "Professional Experience");
+    drawHeading(pen, "Professional Experience", firstRoleFollow(pen, resume.roles[0]!));
     for (const role of resume.roles) {
       drawRole(
         pen,
@@ -417,11 +474,11 @@ async function layoutResume(resume: TailoredResume): Promise<Pen> {
     }
   }
   if ((resume.capabilityGroups?.length ?? 0) === 0 && resume.skills.length > 0) {
-    drawHeading(pen, "Skills");
+    drawHeading(pen, "Skills", 24);
     drawParagraph(pen, resume.skills.join(", "), pen.font, 10, INK);
   }
   if (resume.education.length > 0 || resume.certifications.length > 0) {
-    drawHeading(pen, "Education & Certifications");
+    drawHeading(pen, "Education & Certifications", 24);
     const education = educationLine(resume);
     if (education) drawParagraph(pen, education, pen.font, 9.2, INK);
     const certifications = certificationLine(resume);

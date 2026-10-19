@@ -358,6 +358,7 @@ export const ATS_READY = {
   workday: true,
   teamtailor: true,
   recruitee: true,
+  breezy: true,
   icims: true,
   oracle_recruiting: true,
   successfactors: true,

@@ -127,6 +127,17 @@ export const SOURCES = {
     notes: "Documented careers-site API at /api/offers/. No key today. Recruitee says unauthenticated calls stop on 10 February 2027. A 401 is a failed read, not an empty board.",
     savedNote: "",
   },
+  breezy: {
+    id: "breezy",
+    label: "Breezy",
+    capabilities: LIVE,
+    compliance: "public_api",
+    countries: [],
+    freshnessHours: 6,
+    listing: "live",
+    notes: "Public Breezy board JSON at /json. No login.",
+    savedNote: "",
+  },
   icims: {
     id: "icims",
     label: "iCIMS",
@@ -196,13 +207,13 @@ export const SOURCES = {
   website: {
     id: "website",
     label: "Company website",
-    capabilities: ["paste_link"],
-    compliance: "not_crawled",
+    capabilities: LIVE,
+    compliance: "public_site",
     countries: [],
-    freshnessHours: null,
-    listing: "none",
-    notes: "Ordinary company websites are not crawled.",
-    savedNote: "The page was saved and is not crawled. If it is a Greenhouse, Lever, Ashby, Workable, SmartRecruiters, Workday, Teamtailor, or Recruitee board, paste that board link.",
+    freshnessHours: 6,
+    listing: "live",
+    notes: "The employer's public career page. JSON-LD JobPosting, embedded ATS boards, and same-site job links are read. A JavaScript-only board with no markup is an incomplete read, not a closed job.",
+    savedNote: "",
   },
 } as const satisfies Record<Ats, SourceDefinition>;
 
@@ -219,7 +230,7 @@ export function liveListingAts(): Ats[] {
 }
 
 export const DISCOVER_COVERAGE =
-  "Openings here come from public career boards already read: Greenhouse, Lever, Ashby, Workable, SmartRecruiters, Workday, Teamtailor, and Recruitee. iCIMS, Oracle Recruiting, and SAP SuccessFactors are recognized and not scanned. LinkedIn, Indeed, Naukri, SEEK and other job boards are not read — paste the employer's posting.";
+  "Openings here come from public employer career pages: Greenhouse, Lever, Ashby, Workable, SmartRecruiters, Workday, Teamtailor, Recruitee, Breezy, and company sites that publish jobs as JSON-LD or job links. LinkedIn, Indeed, Naukri, Shine and similar aggregators are not scraped — if the same role is on the employer's own page, that page is what we read.";
 
 export function sourceLabel(ats: string): string {
   return isAts(ats) ? SOURCES[ats].label : ats;

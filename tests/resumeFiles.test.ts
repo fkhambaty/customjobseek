@@ -216,7 +216,7 @@ describe("resume HTML", () => {
     expect(blocks).toEqual([
       { kind: "name", text: "Fakhruddin Khambaty" },
       { kind: "headline", text: "Snowflake Data Engineer | SQL, dbt" },
-      { kind: "contact", text: "+91 98335 65272 | fk@example.com" },
+      { kind: "contact", text: "+91 98335 65272 | fk@example.com | https://github.com/fkhambaty" },
       { kind: "heading", text: "Profile" },
       { kind: "text", text: "Snowflake engineer with about six years on the platform & dbt." },
       { kind: "heading", text: "Selected Impact" },
@@ -368,5 +368,63 @@ describe("resume PDF", () => {
     const html = renderResumeHtml(fitted);
     expect(html).toContain("Company 0, Senior Analytics Engineer");
     expect(html).toContain("Jan 2018 to Dec 2024 | Pune");
+  });
+
+  it("prints GitHub on the PDF even when the stored contact line omitted it", async () => {
+    const pdf = await renderResumePdf(resume({
+      contact: ["+91 98335 65272", "fakhruddinkhambaty@gmail.com", "linkedin.com/in/fakhruddinkhambaty"],
+    }));
+    expect(await pdfText(pdf)).toContain("github.com/fkhambaty");
+    expect(renderResumeHtml(resume({ contact: ["asha@example.com"] }))).toContain("https://github.com/fkhambaty");
+  });
+
+  it("keeps a section heading with its first role instead of leaving it alone at the page break", async () => {
+    const blurb = "Analytics engineer who turns messy data into models people trust, with warehouse tests, stakeholder reviews, and documented pipelines that survive a Monday morning incident.";
+    const crowded = resume({
+      summary: `${blurb} ${blurb}`,
+      selectedImpact: Array.from({ length: 6 }, (_, i) => `Cut reporting time by ${i + 10}% across the finance estate with tested models.`),
+      capabilityGroups: [
+        { name: "Warehousing", items: ["Snowflake", "Redshift", "dbt", "SQL", "Dynamic Tables"] },
+        { name: "Orchestration", items: ["Airflow", "CI", "monitoring", "data quality tests"] },
+        { name: "Delivery", items: ["stakeholder reviews", "documentation", "incident response"] },
+      ],
+      aiAssistedDelivery: `${blurb} Human review stays mandatory before merge.`,
+      roles: [
+        {
+          experienceId: "e1",
+          company: "OpenGov Inc.",
+          title: "Senior Software Engineer, Analytics & Data Platform",
+          location: "Pune, India",
+          start: "Aug 2025",
+          end: "Present",
+          omittedBulletCount: 0,
+          bullets: Array.from({ length: 6 }, (_, i) => ({
+            id: `b1-${i}`,
+            text: "Own production dbt staging, intermediate and mart layers on Amazon Redshift and Snowflake, with incremental patterns, snapshots, tests and documentation.",
+          })),
+        },
+        {
+          experienceId: "e2",
+          company: "Ivalua",
+          title: "Senior Data Engineer",
+          location: "Pune",
+          start: "2019",
+          end: "2025",
+          omittedBulletCount: 0,
+          bullets: Array.from({ length: 4 }, (_, i) => ({
+            id: `b2-${i}`,
+            text: "Built warehouse models, reconciled finance numbers, and wrote tests that stop a bad build before the weekly review.",
+          })),
+        },
+      ],
+    });
+    const pdf = await renderResumePdf(crowded);
+    const extracted = await extractText(await getDocumentProxy(pdf), { mergePages: false });
+    const pages = (Array.isArray(extracted.text) ? extracted.text : [extracted.text]).map((page) => page.replace(/\s+/g, " "));
+    expect(pages.length).toBeGreaterThan(1);
+    for (const page of pages) {
+      if (!page.includes("PROFESSIONAL EXPERIENCE")) continue;
+      expect(page).toContain("OpenGov Inc.");
+    }
   });
 });

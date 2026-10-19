@@ -1,3 +1,4 @@
+import { ensureGithubContact, ensureGithubContactLine } from "./engine/tailor";
 import type { TailoredResume } from "./types";
 import { escapeHtml } from "./resumeFile";
 import { certificationLine, educationLine, profileParagraphs, roleDates, roleHeading } from "./resumeLayout";
@@ -63,7 +64,12 @@ export const RESUME_CSS = `.resume {
 .resume .impact li { margin: 0 0 0 12pt; text-align: left; }
 .resume .cap { margin-bottom: 3.5pt; font-size: 9.2pt; line-height: 1.4; text-align: left; break-inside: avoid; page-break-inside: avoid; }
 .resume strong { color: #0f1b28; font-weight: 700; }
-.resume .job { margin-bottom: 6pt; }
+.resume section { break-inside: auto; }
+.resume .job {
+  margin-bottom: 6pt;
+  break-inside: avoid;
+  page-break-inside: avoid;
+}
 .resume .job-header {
   display: flex;
   justify-content: space-between;
@@ -123,7 +129,8 @@ function documentShell(title: string, body: string, extraCss = ""): string {
 export function renderResumeHtml(resume: TailoredResume): string {
   const chunks: string[] = ['<article class="resume">', "<header>", `<h1>${escapeHtml(resume.fullName)}</h1>`];
   if (resume.headline) chunks.push(`<div class="headline">${escapeHtml(resume.headline)}</div>`);
-  if (resume.contact.length > 0) chunks.push(`<div class="contact">${escapeHtml(resume.contact.join("  |  "))}</div>`);
+  const contact = ensureGithubContact(resume.contact);
+  if (contact.length > 0) chunks.push(`<div class="contact">${escapeHtml(contact.join("  |  "))}</div>`);
   chunks.push("</header>");
 
   const paragraphs = profileParagraphs(resume);
@@ -275,7 +282,7 @@ function toBlocks(open: OpenBlock): HtmlResumeBlock[] {
   if (open.tag === "h1") return [{ kind: "name", text: merged }];
   if (/^h[2-6]$/.test(open.tag)) return [{ kind: "heading", text: merged }];
   if (open.classes.includes("headline")) return [{ kind: "headline", text: merged }];
-  if (open.classes.includes("contact")) return [{ kind: "contact", text: merged }];
+  if (open.classes.includes("contact")) return [{ kind: "contact", text: ensureGithubContactLine(merged) }];
   if (hasClass(open.classes, SUB_CLASSES)) return [{ kind: "sub", text: merged }];
   if (open.tag === "li") return [{ kind: open.impact ? "impact" : "bullet", text: merged }];
   const label = squash(decodeEntities(open.strong)).replace(/:$/, "");

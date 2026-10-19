@@ -1,3 +1,4 @@
+import { ensureGithubContact } from "../../shared/engine/tailor";
 import { certificationLine, educationLine, profileParagraphs, roleDates, roleHeading } from "../../shared/resumeLayout";
 import type { TailoredResume } from "../../shared/types";
 import "./resume.css";
@@ -6,12 +7,13 @@ export function Resume({ resume }: { resume: TailoredResume }) {
   const paragraphs = profileParagraphs(resume);
   const education = educationLine(resume);
   const certifications = certificationLine(resume);
+  const contact = ensureGithubContact(resume.contact);
   return (
     <article className="resume">
       <header>
         <h1>{resume.fullName}</h1>
         {resume.headline && <div className="headline">{resume.headline}</div>}
-        {resume.contact.length > 0 && <div className="contact">{resume.contact.join("  |  ")}</div>}
+        {contact.length > 0 && <div className="contact">{contact.join("  |  ")}</div>}
       </header>
 
       {paragraphs.length > 0 && (

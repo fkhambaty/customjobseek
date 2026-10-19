@@ -3,14 +3,18 @@ import type { Ats, BoardRef } from "../shared/engine/boards";
 import { detectBoard } from "../shared/engine/boards";
 import {
   ashbyBoardUrl,
+  breezyJsonUrl,
+  embeddedBoardFromHtml,
   greenhouseJobsUrl,
   type Opening,
   parseAshbyJobs,
+  parseBreezyJobs,
   parseGreenhouseJobs,
   parseLeverPostings,
   parseRecruiteeOffers,
   parseSmartRecruitersPostings,
   parseTeamtailorFeed,
+  parseWebsiteListings,
   parseWorkableJobs,
   parseWorkdayPostings,
   recognizedListingPayload,
@@ -44,6 +48,12 @@ const PAGE_CAP = 2000;
 const TEAMTAILOR_CAP = 500;
 /** A board with writes held back by the per-pass cap is read again in a few hours, not after its normal refresh. */
 const DEFERRED_RESCAN_MS = 3 * 60 * 60_000;
+const SCAN_PASS_MS = 25_000;
+const SCAN_PASS_BOARDS = 30;
+const FETCH_HEADERS = {
+  accept: "application/json, text/html, application/xhtml+xml, application/rss+xml, application/xml, text/xml;q=0.9,*/*;q=0.8",
+  "user-agent": "Mozilla/5.0 (compatible; CustomJobSeek/0.1; +https://customjobseek.com)",
+};
 
 function isIndiaLocation(location: string): boolean {
   return /\b(india|bengaluru|bangalore|hyderabad|pune|gurugram|gurgaon|noida|mumbai|chennai|kolkata|ahmedabad)\b/i.test(location);
@@ -64,7 +74,7 @@ interface Row {
 }
 
 async function getJson(url: string): Promise<unknown> {
-  const res = await fetch(url, { headers: { accept: "application/json" }, signal: AbortSignal.timeout(12_000) });
+  const res = await fetch(url, { headers: { ...FETCH_HEADERS, accept: "application/json" }, signal: AbortSignal.timeout(12_000) });
   if (!res.ok) throw new Error(`Board responded ${res.status}`);
   return res.json();
 }
@@ -72,7 +82,7 @@ async function getJson(url: string): Promise<unknown> {
 async function postJson(url: string, body: unknown): Promise<unknown> {
   const res = await fetch(url, {
     method: "POST",
-    headers: { accept: "application/json", "content-type": "application/json" },
+    headers: { ...FETCH_HEADERS, accept: "application/json", "content-type": "application/json" },
     body: JSON.stringify(body),
     signal: AbortSignal.timeout(12_000),
   });
@@ -81,9 +91,22 @@ async function postJson(url: string, body: unknown): Promise<unknown> {
 }
 
 async function getText(url: string, accept: string): Promise<string> {
-  const res = await fetch(url, { headers: { accept }, signal: AbortSignal.timeout(12_000) });
+  const res = await fetch(url, { headers: { ...FETCH_HEADERS, accept }, signal: AbortSignal.timeout(12_000) });
   if (!res.ok) throw new Error(`Board responded ${res.status}`);
   return res.text();
+}
+
+async function listWebsite(board: BoardRef): Promise<OpeningRead<Opening>> {
+  const html = await getText(board.careerUrl, "text/html,application/xhtml+xml");
+  const embedded = embeddedBoardFromHtml(html, board.careerUrl);
+  if (embedded && embedded.ats !== "website" && sourceById(embedded.ats).listing === "live") {
+    return listOpenings(embedded);
+  }
+  const openings = parseWebsiteListings(html, board.careerUrl);
+  return describeOpeningRead(openings, {
+    truncated: openings.length >= 200,
+    recognized: recognizedListingPayload("website", html) && openings.length > 0,
+  });
 }
 
 async function listTeamtailor(token: string): Promise<OpeningRead<Opening>> {
@@ -202,13 +225,18 @@ export async function listOpenings(board: BoardRef): Promise<OpeningRead<Opening
       const payload = await getJson(recruiteeOffersUrl(board.token));
       return oneShot(board.ats, payload, parseRecruiteeOffers(payload));
     }
+    case "breezy": {
+      const payload = await getJson(breezyJsonUrl(board.token));
+      return oneShot(board.ats, payload, parseBreezyJobs(payload, board.careerUrl));
+    }
+    case "website":
+      return listWebsite(board);
     case "icims":
     case "oracle_recruiting":
     case "successfactors":
     case "public_feed":
     case "licensed":
     case "aggregator":
-    case "website":
       return describeOpeningRead([], { truncated: false, recognized: false });
     default: {
       const never: never = board.ats;
@@ -362,11 +390,13 @@ export async function scanDue(env: Env): Promise<void> {
     `SELECT id FROM companies
      WHERE active = 1 AND ats IN (${live.map(() => "?").join(", ")})
        AND (next_scan_at IS NULL OR next_scan_at <= ?)
-     ORDER BY scan_priority DESC, last_scan_at IS NOT NULL, last_scan_at LIMIT 20`,
-  ).bind(...live, new Date().toISOString()).all<{ id: string }>();
+     ORDER BY scan_priority DESC, last_scan_at IS NOT NULL, last_scan_at LIMIT ?`,
+  ).bind(...live, new Date().toISOString(), SCAN_PASS_BOARDS).all<{ id: string }>();
   let failed = 0;
   let attempted = 0;
+  const deadline = Date.now() + SCAN_PASS_MS;
   for (const row of results) {
+    if (Date.now() >= deadline) break;
     if (!(await backgroundWorkAllowed(env))) {
       console.log("Daily database budget for background work reached; employer refresh stops until midnight UTC.");
       break;
