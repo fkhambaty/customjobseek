@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { detectBoard } from "../shared/engine/boards";
 import { buildApplication } from "../shared/engine/documents";
-import { classifyTerms, evaluateFit, parseSalary, parseYearsRequired, titleAlignment, type JobInput } from "../shared/engine/fit";
+import { classifyTerms, evaluateFit, parseCompExtras, parseSalary, parseYearsRequired, titleAlignment, type JobInput } from "../shared/engine/fit";
 import { profileFromResumeText } from "../shared/engine/importResume";
 import { resumeTextInReadingOrder } from "../shared/engine/resumeLayout";
 import { SKILL_CATALOGUE, mentions, normalise, termForName } from "../shared/engine/text";
@@ -132,6 +132,42 @@ describe("evaluateFit", () => {
     const fit = evaluateFit(job({ salaryText: "15-20 LPA" }), profile());
     expect(fit.decision).toBe("skip");
     expect(fit.blockers.map((b) => b.kind)).toContain("salary");
+  });
+
+  it("uses the matching search path pay band instead of profile minimum", () => {
+    const wrongProfile = profile({
+      preferences: { ...profile().preferences, minSalary: 2_500_000, salaryPeriod: "lpa" },
+    });
+    const pathPay = {
+      payMin: 55,
+      payMax: 100,
+      currency: "INR",
+      salaryPeriod: "lpa" as const,
+      label: "India · ₹55–₹100 LPA",
+    };
+    const fit = evaluateFit(job({ salaryText: "30-48 LPA", location: "Bengaluru, India" }), wrongProfile, {
+      hasSearchPaths: true,
+      pathPay,
+    });
+    expect(fit.decision).toBe("skip");
+    expect(fit.blockers.some((b) => b.kind === "salary" && b.message.includes("₹55 LPA"))).toBe(true);
+    expect(fit.blockers.some((b) => b.message.includes("2,500,000"))).toBe(false);
+  });
+
+  it("mentions joining bonus, relocation, and equity when the posting names them", () => {
+    const fit = evaluateFit(
+      job({
+        description: `${JD}\nCompensation includes a joining bonus of 2 LPA, relocation assistance, and RSUs vesting over 4 years.`,
+      }),
+      profile(),
+    );
+    expect(fit.notes.some((n) => /joining/i.test(n) && /2\s*lpa/i.test(n))).toBe(true);
+    expect(fit.notes.some((n) => /relocation/i.test(n))).toBe(true);
+    expect(fit.notes.some((n) => /equity|rsu/i.test(n))).toBe(true);
+  });
+
+  it("parseCompExtras ignores unrelated bonus wording in skills", () => {
+    expect(parseCompExtras("Nice to have: bonus points for Looker")).toEqual([]);
   });
 
   it("blocks cities and countries the candidate will not work in, and allows remote", () => {

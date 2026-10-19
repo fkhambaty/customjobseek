@@ -397,12 +397,65 @@ export function locationCheck(job: JobInput, profile: Profile): { blocker?: Bloc
   return {};
 }
 
-function salaryCheck(job: JobInput, profile: Profile): { blocker?: Blocker; note?: string; parsed: ParsedSalary | null } {
+/** Optional floor from the first search path whose place rule matches the job. */
+export interface PathPayFloor {
+  payMin: number;
+  payMax: number;
+  currency: string;
+  salaryPeriod: SalaryPeriod;
+  label: string;
+}
+
+export interface FitOptions {
+  /** When search paths exist, salary deal-breakers use the matching path's band instead of profile min/max. */
+  pathPay?: PathPayFloor | null;
+  /** True when the person has at least one search path saved. */
+  hasSearchPaths?: boolean;
+}
+
+function salaryCheck(
+  job: JobInput,
+  profile: Profile,
+  options: FitOptions = {},
+): { blocker?: Blocker; note?: string; parsed: ParsedSalary | null } {
   const parsed = parseSalary(job.salaryText || job.description.slice(0, 800));
-  const { minSalary, maxSalary, currency, salaryPeriod } = profile.preferences;
+  const pathPay = options.pathPay ?? null;
+  const usePaths = Boolean(options.hasSearchPaths);
+
   if (!parsed) {
-    return { parsed, note: minSalary ? "Pay is not published. Ask for the band before investing time." : undefined };
+    const expectsPay = usePaths ? Boolean(pathPay) : profile.preferences.minSalary !== null;
+    return { parsed, note: expectsPay ? "Pay is not published. Ask for the band before investing time." : undefined };
   }
+
+  if (usePaths) {
+    if (!pathPay) return { parsed };
+    if (parsed.currency !== pathPay.currency) {
+      return {
+        parsed,
+        note: `Pay is published in ${parsed.currency} (${formatSalary(parsed)}). Your search path "${pathPay.label}" is in ${pathPay.currency}, so this is not compared automatically.`,
+      };
+    }
+    const floor = annualise(pathPay.payMin, pathPay.salaryPeriod);
+    const ceiling = annualise(pathPay.payMax, pathPay.salaryPeriod);
+    if (parsed.annualMax < floor) {
+      return {
+        parsed,
+        blocker: {
+          kind: "salary",
+          message: `Pay tops out at ${formatSalary(parsed)}, below your search path minimum of ${formatSalary(salaryResult(pathPay.payMin, pathPay.payMin, pathPay.currency, pathPay.salaryPeriod))} (${pathPay.label}).`,
+        },
+      };
+    }
+    if (parsed.annualMin > ceiling * 1.5) {
+      return {
+        parsed,
+        note: `Pay starts at ${formatSalary(parsed)}, well above your search path "${pathPay.label}". Check the seniority is right for you.`,
+      };
+    }
+    return { parsed };
+  }
+
+  const { minSalary, maxSalary, currency, salaryPeriod } = profile.preferences;
   if (parsed.currency !== currency) {
     return {
       parsed,
@@ -426,6 +479,39 @@ function salaryCheck(job: JobInput, profile: Profile): { blocker?: Blocker; note
   return { parsed };
 }
 
+/** Joining bonus, relocation, and equity called out so the person can negotiate the full package. */
+export function parseCompExtras(text: string): string[] {
+  const t = normalise(text);
+  if (!t) return [];
+  const notes: string[] = [];
+
+  const joining = t.match(
+    /\b(?:joining|sign[- ]on|signing|signon)\s+bonus\b[^.\n]{0,80}?((?:₹|rs\.?|inr|\$|£|€)?\s*\d[\d,]*(?:\.\d+)?\s*(?:lpa|lakhs?|lacs?|cr|crores?|k|m)?)/i,
+  ) ?? t.match(/\b(?:joining|sign[- ]on|signing|signon)\s+bonus\b/i);
+  if (joining) {
+    const amount = joining[1]?.trim();
+    notes.push(amount ? `Joining / sign-on bonus mentioned (about ${amount}).` : "Joining / sign-on bonus is mentioned — ask for the amount.");
+  }
+
+  const relocation = t.match(
+    /\brelocati(?:on|ng)\b[^.\n]{0,80}?((?:₹|rs\.?|inr|\$|£|€)?\s*\d[\d,]*(?:\.\d+)?\s*(?:lpa|lakhs?|lacs?|k|m)?)/i,
+  ) ?? t.match(/\b(?:relocation\s+(?:bonus|allowance|assistance|package|support)|relocating\s+assistance)\b/i);
+  if (relocation) {
+    const amount = typeof relocation[1] === "string" ? relocation[1].trim() : "";
+    notes.push(amount ? `Relocation support mentioned (about ${amount}).` : "Relocation support is mentioned — ask what is covered.");
+  }
+
+  const equity = t.match(
+    /\b(?:rsus?|esops?|stock\s+options?|equity\s+grant|equity\s+package|restricted\s+stock)\b[^.\n]{0,60}?((?:₹|rs\.?|inr|\$|£|€)?\s*\d[\d,]*(?:\.\d+)?\s*(?:lpa|lakhs?|lacs?|k|m|shares?)?)/i,
+  ) ?? t.match(/\b(?:rsus?|esops?|stock\s+options?|equity(?:\s+(?:grant|package|refresh))?|restricted\s+stock)\b/i);
+  if (equity) {
+    const amount = equity[1]?.trim();
+    notes.push(amount ? `Equity / RSUs mentioned (about ${amount}).` : "Equity / RSUs / stock options are mentioned — ask for the grant size and vest.");
+  }
+
+  return notes;
+}
+
 export function heldTerms(profile: Profile): Term[] {
   const neverNames = new Set(profile.neverClaim.map((name) => termForName(name).name.toLowerCase()));
   const fromSkills = profile.skills.map((skill) => termForName(skill.name));
@@ -441,7 +527,7 @@ export function heldTerms(profile: Profile): Term[] {
   );
 }
 
-export function evaluateFit(job: JobInput, profile: Profile): FitResult {
+export function evaluateFit(job: JobInput, profile: Profile, options: FitOptions = {}): FitResult {
   const held = heldTerms(profile);
   const heldNames = new Set(held.map((t) => t.name.toLowerCase()));
   const jdTerms = uniqueBy([...SKILL_CATALOGUE, ...held], (t) => t.name.toLowerCase());
@@ -460,9 +546,13 @@ export function evaluateFit(job: JobInput, profile: Profile): FitResult {
   if (loc.blocker) blockers.push(loc.blocker);
   if (loc.note) notes.push(loc.note);
 
-  const pay = salaryCheck(job, profile);
+  const pay = salaryCheck(job, profile, options);
   if (pay.blocker) blockers.push(pay.blocker);
   if (pay.note) notes.push(pay.note);
+
+  for (const extra of parseCompExtras(`${job.salaryText}\n${job.description}`)) {
+    notes.push(extra);
+  }
 
   const titleLower = normalise(job.title);
   const excluded = profile.preferences.excludedTitleWords.find((w) => w.trim() && hasAlias(titleLower, w.trim()));

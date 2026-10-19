@@ -87,6 +87,26 @@ export function ashbyBoardUrl(token: string): string {
   return `https://api.ashbyhq.com/posting-api/job-board/${encodeURIComponent(token)}`;
 }
 
+/**
+ * URL a person can open in a normal browser.
+ * Ashby hosted job pages are SPAs: the bare link often renders "Page not found"
+ * while the same path with embed=js server-renders the posting.
+ */
+export function publicJobUrl(raw: string): string {
+  let url: URL;
+  try {
+    url = new URL(raw);
+  } catch {
+    return raw;
+  }
+  if (url.hostname.toLowerCase() !== "jobs.ashbyhq.com") return url.toString();
+  const parts = url.pathname.split("/").filter(Boolean);
+  // Need board + job id (optional /application). Board roots stay unchanged.
+  if (parts.length < 2) return url.toString();
+  if (!url.searchParams.has("embed")) url.searchParams.set("embed", "js");
+  return url.toString();
+}
+
 export function workableWidgetUrl(token: string): string {
   return `https://apply.workable.com/api/v1/widget/accounts/${encodeURIComponent(token)}`;
 }
@@ -161,7 +181,7 @@ export function parseAshbyJobs(data: unknown, careerUrl: string): Opening[] {
       externalId: text(job.id),
       title: text(job.title),
       location: text(job.location),
-      url: text(job.jobUrl) || `${careerUrl}/${text(job.id)}`,
+      url: publicJobUrl(text(job.jobUrl) || `${careerUrl.replace(/\/$/, "")}/${text(job.id)}`),
       description: text(job.descriptionPlain) || listingHtmlToText(text(job.descriptionHtml)),
       expiresAt: null,
     }));

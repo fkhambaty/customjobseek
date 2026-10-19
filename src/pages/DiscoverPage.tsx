@@ -8,7 +8,7 @@ import { MarketScanConsole } from "../components/MarketScanConsole";
 import { SCAN_FINISHED_EVENT } from "../components/ScanReviewDialog";
 import { UpgradePrompt } from "../components/UpgradePrompt";
 import { useJobs } from "../data";
-import { ago, dateTime, duration, timeAgo } from "../format";
+import { ago, dateTime, duration, jobOpenUrl, timeAgo } from "../format";
 import { useSession } from "../session";
 
 function LastScanPanel({ scan, matches }: { scan: LastScan; matches: number | null }) {
@@ -183,7 +183,7 @@ export function DiscoverPage() {
         {rows.map((r) => (
           <li className="line" key={r.url}>
             <span className={`score score-${r.match >= 80 ? "hi" : "mid"}`} title="How closely the title matches your targets">{r.match}</span>
-            <a className="line-main" href={r.url} target="_blank" rel="noreferrer">
+            <a className="line-main" href={jobOpenUrl(r.url)} target="_blank" rel="noreferrer">
               <span className="line-title">{r.title}</span>
               <span className="line-company">{r.company}</span>
               <span className="line-facts">

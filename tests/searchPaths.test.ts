@@ -15,6 +15,7 @@ import {
   matchesPathFilter,
   nextPathSet,
   parsePathCommit,
+  placePathPayFloor,
   planJobChanges,
   planJobPathAction,
   rescorePathFields,
@@ -150,6 +151,14 @@ describe("search path labels, place, and pay", () => {
     expect(locationMatches("Austin, TX", indiaExceptPune, "IN")).toBe(false);
   });
 
+  it("exposes the first place-matching path as the fit pay floor", () => {
+    const remote = makePath({ id: "remote", sortOrder: 0, locationMode: "remote", payMin: 20, payMax: 250 });
+    const india = makePath({ id: "india", sortOrder: 1, locationMode: "country", cities: [], excludedCities: [], payMin: 55, payMax: 100 });
+    const floor = placePathPayFloor([remote, india], "Bengaluru, India", "IN", "India");
+    expect(floor).toMatchObject({ payMin: 55, payMax: 100, label: "India · ₹55–₹100 LPA" });
+    expect(placePathPayFloor([remote, india], "Remote, India", "IN", "India")?.payMin).toBe(20);
+  });
+
   it("compares the published midpoint with an inclusive annualised pay band", () => {
     const band = makePath({ id: "band", sortOrder: 0, locationMode: "cities", cities: ["Pune"], payMin: 35, payMax: 50 });
     const wide = makePath({ id: "wide", sortOrder: 1, locationMode: "cities", cities: ["Pune"], payMin: 1, payMax: 1e9 });
@@ -258,8 +267,8 @@ describe("search path labels, place, and pay", () => {
     expect(draftWithPeriod(draft({ currency: "USD", salaryPeriod: "year" }), "lpa")).toMatchObject({ currency: "INR", salaryPeriod: "lpa" });
     expect(draftWithCurrency(draft({ currency: "INR", salaryPeriod: "lpa" }), "GBP")).toMatchObject({ currency: "GBP", salaryPeriod: "year" });
     expect(shouldPersistSearchPaths("paths", "confirm")).toBe(true);
-    expect(shouldPersistSearchPaths("paths", "market")).toBe(false);
-    expect(shouldPersistSearchPaths("market", "paths")).toBe(false);
+    expect(shouldPersistSearchPaths("paths", "roles")).toBe(false);
+    expect(shouldPersistSearchPaths("roles", "paths")).toBe(false);
     expect(parsePathCommit({ action: "create", disposition: "move", draft: draft() }).ok).toBe(false);
     const six = Array.from({ length: 6 }, (_, index) => makePath({
       id: `p${index}`,

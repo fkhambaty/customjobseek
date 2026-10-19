@@ -1,7 +1,7 @@
 import { cityNames, countryByCode, currencies } from "../geo";
 import { emptyProfile, type Blocker, type Decision, type FitResult, type Preferences, type SalaryPeriod } from "../types";
 import { laneFor } from "./classify";
-import { annualise, locationCheck, marketLocationOk } from "./fit";
+import { annualise, locationCheck, marketLocationOk, type FitOptions, type PathPayFloor } from "./fit";
 
 export const SEARCH_PATH_LIMIT = 6;
 export const UNASSIGNED_PATH_FILTER = "__unassigned";
@@ -230,6 +230,33 @@ export function firstOrderedMatch(paths: SearchPath[], job: JobPayPlace, country
     if (payMatches(path, midpoint, job.currency)) return path;
   }
   return null;
+}
+
+/** First path whose place rule fits, used as the pay floor for fit deal-breakers. */
+export function placePathPayFloor(
+  paths: SearchPath[],
+  location: string,
+  countryCode = "",
+  countryLabel = "Country",
+): PathPayFloor | null {
+  const hit = [...paths].sort(byOrder).find((path) => locationMatches(location, path, countryCode));
+  if (!hit) return null;
+  return {
+    payMin: hit.payMin,
+    payMax: hit.payMax,
+    currency: hit.currency,
+    salaryPeriod: hit.salaryPeriod,
+    label: searchPathLabel(hit, countryLabel),
+  };
+}
+
+/** Fit salary options derived from saved search paths for a job location. */
+export function fitOptionsForPaths(paths: SearchPath[], location: string, preferences: Preferences): FitOptions {
+  if (!paths.length) return {};
+  return {
+    hasSearchPaths: true,
+    pathPay: placePathPayFloor(paths, location, preferences.country, countryLabelFor(preferences)),
+  };
 }
 
 export function assignSearchPath(input: JobPayPlace & { paths: SearchPath[]; preferences: Preferences }): PathAssignment {

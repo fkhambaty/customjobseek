@@ -1,5 +1,13 @@
 import { detectBoard } from "../shared/engine/boards";
-import { greenhouseJobUrl, leverPostingUrl, parseRecruiteeOffers, recruiteeOfferUrl, smartRecruitersPostingUrl } from "../shared/engine/listings";
+import {
+  greenhouseJobUrl,
+  leverPostingUrl,
+  parseRecruiteeOffers,
+  publicJobUrl,
+  recruiteeOfferUrl,
+  smartRecruitersPostingUrl,
+} from "../shared/engine/listings";
+import { explicitClosedText, scriptUnreadable, visibleText } from "../shared/engine/liveness";
 import { openingByUrl } from "./scan";
 
 export interface FetchedJob {
@@ -230,25 +238,18 @@ async function fetchFromAtsApi(url: URL): Promise<FetchedJob | null> {
   return null;
 }
 
-export async function fetchJob(url: URL): Promise<FetchedJob | null> {
-  if (aggregatorBlock(url)) return null;
-  const viaApi = await fetchFromAtsApi(url).catch(() => null);
-  if (viaApi && viaApi.description.length >= 80) return viaApi;
+/** A posting page a person can actually read — not a soft-404 SPA shell. */
+export function postingPageUsable(html: string): boolean {
+  const text = visibleText(html);
+  if (!text) return false;
+  if (explicitClosedText(text)) return false;
+  if (/\bpage not found\b/i.test(text) || /\bthe page you requested was not found\b/i.test(text)) return false;
+  if (scriptUnreadable(html)) return false;
+  return text.length >= 200 || Boolean(parseJobHtml(html));
+}
 
-  const listed = await openingByUrl(url.toString()).catch(() => null);
-  if (listed && listed.description.length >= 80) {
-    const board = url.pathname.split("/").filter(Boolean)[0] ?? "";
-    return {
-      title: listed.title,
-      company: board.replace(/-/g, " "),
-      location: listed.location,
-      salaryText: "",
-      description: listed.description,
-      source: "structured",
-    };
-  }
-
-  const res = await fetch(url.toString(), {
+async function fetchPostingHtml(url: string): Promise<string | null> {
+  const res = await fetch(url, {
     headers: {
       "user-agent": "Mozilla/5.0 (compatible; CustomJobSeek/0.1; +https://customjobseek.com)",
       accept: "text/html,application/xhtml+xml",
@@ -259,6 +260,40 @@ export async function fetchJob(url: URL): Promise<FetchedJob | null> {
   if (!res.ok) return null;
   const type = res.headers.get("content-type") ?? "";
   if (!type.includes("html")) return null;
-  const html = (await res.text()).slice(0, MAX_BYTES);
-  return parseJobHtml(html);
+  return (await res.text()).slice(0, MAX_BYTES);
+}
+
+/**
+ * Read a job only when the public link is usable.
+ * Board list APIs can still advertise openings whose hosted page shows "Page not found".
+ */
+export async function fetchJob(url: URL): Promise<FetchedJob | null> {
+  if (aggregatorBlock(url)) return null;
+  const openUrl = new URL(publicJobUrl(url.toString()));
+
+  // Greenhouse / Lever / SmartRecruiters / Recruitee expose a stable per-job JSON API.
+  const viaApi = await fetchFromAtsApi(openUrl).catch(() => null);
+  if (viaApi && viaApi.description.length >= 80) return viaApi;
+
+  const html = await fetchPostingHtml(openUrl.toString()).catch(() => null);
+  if (html && !postingPageUsable(html)) return null;
+
+  if (html) {
+    const fromPage = parseJobHtml(html);
+    if (fromPage && fromPage.description.length >= 80) return fromPage;
+  }
+
+  // Board-list copy is allowed only after the public page proved readable.
+  if (!html) return null;
+  const listed = await openingByUrl(openUrl.toString()).catch(() => null);
+  if (!listed || listed.description.length < 80) return null;
+  const board = openUrl.pathname.split("/").filter(Boolean)[0] ?? "";
+  return {
+    title: listed.title,
+    company: board.replace(/-/g, " "),
+    location: listed.location,
+    salaryText: "",
+    description: listed.description,
+    source: "structured",
+  };
 }

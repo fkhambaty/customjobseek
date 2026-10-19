@@ -57,8 +57,9 @@ describe("guided onboarding", () => {
     const partial = readyProfile();
     partial.preferences.targetRoles = [];
     expect(derivedWizardStep(partial, true)).toBe("roles");
-    expect(resumeWizardStep(ready, "market", false)).toBe("market");
+    expect(resumeWizardStep(ready, "market", false)).toBe("paths");
     expect(resumeWizardStep(partial, "market", false)).toBe("roles");
+    expect(resumeWizardStep(ready, "paths", false)).toBe("paths");
     expect(resumeWizardStep(ready, "scan", false)).toBe("scan");
     expect(resumeWizardStep(partial, "scan", false)).toBe("roles");
     expect(resumeWizardStep(emptyProfile(), "resume", false)).toBe("resume");
@@ -67,16 +68,16 @@ describe("guided onboarding", () => {
   });
 
   it("keeps completed people on Today and everyone else in setup", () => {
-    const steps: StoredWizardStep[] = ["", "done", ...WIZARD_STEPS];
+    const steps: StoredWizardStep[] = ["", "done", "market", ...WIZARD_STEPS];
     const gates = steps.map((step) => [step, needsGuidedOnboarding(step, true), needsGuidedOnboarding(step, false)]);
     expect(gates).toEqual([
       ["", false, true],
       ["done", false, false],
+      ["market", true, true],
       ["welcome", true, true],
       ["resume", true, true],
       ["facts", true, true],
       ["roles", true, true],
-      ["market", true, true],
       ["paths", true, true],
       ["confirm", true, true],
       ["scan", true, true],
@@ -93,6 +94,7 @@ describe("guided onboarding", () => {
       seen.push(step);
     }
     expect(seen).toEqual([...WIZARD_STEPS]);
+    expect(seen).not.toContain("market");
     expect(shiftWizardStep("scan", "continue")).toBeNull();
     expect(shiftWizardStep("welcome", "back")).toBeNull();
     while (true) {
@@ -113,7 +115,7 @@ describe("guided onboarding", () => {
     const empty = emptyProfile("ada@example.com");
     expect(wizardContinueBlock("welcome", empty)).toBeNull();
     expect(wizardContinueBlock("resume", empty)).toBeNull();
-    expect(wizardContinueBlock("market", empty)).toBeNull();
+    expect(wizardContinueBlock("paths", empty)).toBeNull();
     expect(wizardContinueBlock("scan", empty)).toBeNull();
     expect(wizardContinueBlock("facts", empty)).toMatch(/your name/);
     expect(wizardContinueBlock("roles", readyProfile())).toBeNull();
@@ -124,8 +126,9 @@ describe("guided onboarding", () => {
     expect(wizardContinueBlock("confirm", readyProfile())).toBeNull();
   });
 
-  it("accepts only real saved steps", () => {
+  it("accepts only real saved steps and remaps retired market to paths", () => {
     expect(parseStoredWizardStep("market")).toBe("market");
+    expect(parseWizardProgress("market")).toBe("paths");
     expect(parseStoredWizardStep("done")).toBe("done");
     expect(parseStoredWizardStep("")).toBe("");
     expect(parseStoredWizardStep("profile")).toBe("");

@@ -93,7 +93,22 @@ describe("liveness signals", () => {
     expect(livenessProbe("https://in.indeed.com/viewjob?jk=1")).toBeNull();
     expect(livenessProbe("https://www.naukri.com/job-listings-1")).toBeNull();
     expect(livenessProbe("http://127.0.0.1/jobs/1")).toBeNull();
-    expect(livenessProbe("https://jobs.ashbyhq.com/acme/abc")?.source).toBe("page");
+    expect(livenessProbe("https://jobs.ashbyhq.com/acme/abc")).toEqual({
+      url: "https://jobs.ashbyhq.com/acme/abc?embed=js",
+      accept: "text/html",
+      source: "page",
+    });
+  });
+
+  it("treats soft 404 copy as closed", () => {
+    expect(explicitClosedText("Page not found")).toBe(true);
+    expect(explicitClosedText("The page you requested was not found")).toBe(true);
+    expect(interpretProbe({
+      httpStatus: 200,
+      body: "<html><body><h1>Page not found</h1><p>The page you requested was not found</p></body></html>",
+      contentType: "text/html",
+      failure: null,
+    })).toBe("closed");
   });
 
   it("closes an unevaluated application and only flags a live interview", () => {

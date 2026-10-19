@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { COUNTRIES, currencies, preferencesForCountry } from "../../shared/geo";
 import { originalPdfLimitMessage } from "../../shared/resumeStorage";
-import type { Bullet, Experience, Profile, SalaryPeriod } from "../../shared/types";
+import type { Bullet, Experience, Profile } from "../../shared/types";
 import { api } from "../api";
 import { CountrySelect, TimeZoneField } from "../components/CountrySelect";
 import { Field, ListInput, NumberInput, newId } from "../components/fields";
@@ -174,8 +174,12 @@ export function ProfilePage() {
       </section>
 
       <section className="card">
-        <h2>Where you will work, and for what pay</h2>
-        <p className="muted small">Pick a country, then the cities in it. Pay is compared only when the job uses the same currency. The time zone is only for the daily scan.</p>
+        <h2>Country, roles, and scan clock</h2>
+        <p className="muted small">
+          Place and pay bands live on{" "}
+          <Link to="/search-paths">Search paths</Link>
+          . Country and currency here only seed new path suggestions. The time zone is for the daily scan.
+        </p>
         <div className="grid-2">
           <Field label="Country">
             <CountrySelect
@@ -184,7 +188,7 @@ export function ProfilePage() {
               onChange={(code) => setProfile({ ...profile, preferences: preferencesForCountry(profile.preferences, code) })}
             />
           </Field>
-          <Field label="Cities" hint="Leave empty to accept the whole country. Add any city the list does not have.">
+          <Field label="Cities" hint="Used when suggesting new city search paths. Add any city the list does not have.">
             <select
               value=""
               onChange={(e) => {
@@ -218,25 +222,15 @@ export function ProfilePage() {
           </Field>
           <Field label="Remote">
             <select value={profile.preferences.remoteOk ? "yes" : "no"} onChange={(e) => setPref("remoteOk", e.target.value === "yes")}>
-              <option value="yes">Remote roles are fine</option>
-              <option value="no">No remote roles</option>
+              <option value="yes">Suggest a remote search path</option>
+              <option value="no">Do not suggest remote</option>
             </select>
           </Field>
-          <Field label="Currency">
+          <Field label="Default currency" hint="Used when you add a new search path.">
             <select value={profile.preferences.currency} onChange={(e) => setPref("currency", e.target.value)}>
               {currencies().map((c) => <option key={c} value={c}>{c}</option>)}
             </select>
           </Field>
-          <Field label="Pay unit">
-            <select value={profile.preferences.salaryPeriod} onChange={(e) => setPref("salaryPeriod", e.target.value as SalaryPeriod)}>
-              <option value="year">Per year</option>
-              <option value="month">Per month</option>
-              <option value="hour">Per hour</option>
-              <option value="lpa">Lakhs per year (India)</option>
-            </select>
-          </Field>
-          <Field label="Minimum pay"><NumberInput value={profile.preferences.minSalary} onChange={(v) => setPref("minSalary", v)} placeholder="80000" /></Field>
-          <Field label="Maximum pay"><NumberInput value={profile.preferences.maxSalary} onChange={(v) => setPref("maxSalary", v)} placeholder="120000" /></Field>
           <Field label="Roles you target" hint="Comma-separated. Any job title is accepted, including ones that are not in the examples.">
             <ListInput value={profile.preferences.targetRoles} onChange={(v) => setPref("targetRoles", v)} placeholder="Registered Nurse, Electrician, Teacher" />
           </Field>

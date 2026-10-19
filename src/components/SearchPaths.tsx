@@ -680,7 +680,7 @@ export function OnboardingPaths({
   return (
     <>
       <div className="path-examples">
-        <p>Start from your cities and remote choice. Each suggestion uses a pay band from your market step. Edit them before you continue.</p>
+        <p>Each path is a place rule and a pay band. Suggestions start wide — edit the cities, remote, and numbers before you continue.</p>
         <ul className="onboard-points">
           <li>Pune, Mumbai · ₹30–₹45 LPA</li>
           <li>Remote · $80,000–$120,000 per year</li>

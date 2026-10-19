@@ -498,6 +498,8 @@ export function canonicalJobUrl(raw: string): string {
   if (url.protocol !== "https:" && url.protocol !== "http:") return "";
   url.hash = "";
   url.hostname = url.hostname.toLowerCase();
+  // Ashby open links use ?embed=js so the SPA renders; identity must ignore that flag.
+  if (url.hostname === "jobs.ashbyhq.com") url.searchParams.delete("embed");
   const kept: [string, string][] = [];
   for (const [key, value] of url.searchParams) {
     if (TRACKING_PARAMS.has(key.toLowerCase())) continue;

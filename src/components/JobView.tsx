@@ -15,7 +15,7 @@ import { resumeHtmlPath } from "../../shared/resumeFile";
 import { CHANNELS, type Channel, type Contact, type JobFull, type JobStatus } from "../../shared/types";
 import { api, ApiError, type Pack } from "../api";
 import { useJobs } from "../data";
-import { ago, formatPay, shortDate, today } from "../format";
+import { ago, formatPay, jobOpenUrl, shortDate, today } from "../format";
 import { useSession } from "../session";
 import { FitCard, statusLabel } from "./FitCard";
 import { Markdown } from "./Markdown";
@@ -375,7 +375,7 @@ function JdTab({ job, pack }: { job: JobFull; pack: Pack | null }) {
     <>
       {job.url && (
         <p>
-          <a href={job.url} target="_blank" rel="noreferrer">Open the posting ↗</a>
+          <a href={jobOpenUrl(job.url)} target="_blank" rel="noreferrer">Open the posting ↗</a>
           {job.requisition && <span className="muted"> · ref {job.requisition}</span>}
         </p>
       )}
@@ -679,7 +679,7 @@ export function JobView({ id, tab, onTab, onClose }: { id: string; tab: JobTab; 
           </p>
         </div>
         <div className="jv-actions">
-          {job.url && <a className="btn btn-primary btn-sm" href={job.url} target="_blank" rel="noreferrer">{job.status === "applied" ? "Posting ↗" : "Apply ↗"}</a>}
+          {job.url && <a className="btn btn-primary btn-sm" href={jobOpenUrl(job.url)} target="_blank" rel="noreferrer">{job.status === "applied" ? "Posting ↗" : "Apply ↗"}</a>}
           <button
             className="btn btn-quiet btn-sm"
             title="Free. Use after you update your profile."

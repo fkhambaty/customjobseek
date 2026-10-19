@@ -9,6 +9,7 @@ import { employerKey } from "../shared/engine/catalog";
 import { FEATURED_MARKET_CODES } from "../shared/geo";
 import {
   ashbyBoardUrl,
+  publicJobUrl,
   greenhouseJobsUrl,
   leverPostingsUrl,
   parseAshbyJobs,
@@ -125,6 +126,12 @@ describe("listing parsers", () => {
     expect(lever[0]).toMatchObject({ externalId: "abc", location: "New York", description: "Build.\nMust\nSQL" });
     const ashby = parseAshbyJobs({ jobs: [{ id: "1", title: "Hidden", isListed: false }, { id: "2", title: "Shown", location: "Remote", descriptionPlain: "Yes" }] }, "https://jobs.ashbyhq.com/ramp");
     expect(ashby.map((job) => job.title)).toEqual(["Shown"]);
+    expect(ashby[0]?.url).toBe("https://jobs.ashbyhq.com/ramp/2?embed=js");
+    expect(publicJobUrl("https://jobs.ashbyhq.com/cursor/32350e7d-b6c8-4556-b8ba-3e58490f7cb7")).toBe(
+      "https://jobs.ashbyhq.com/cursor/32350e7d-b6c8-4556-b8ba-3e58490f7cb7?embed=js",
+    );
+    expect(publicJobUrl("https://jobs.ashbyhq.com/cursor")).toBe("https://jobs.ashbyhq.com/cursor");
+    expect(publicJobUrl("https://boards.greenhouse.io/acme/jobs/1")).toBe("https://boards.greenhouse.io/acme/jobs/1");
     const workable = parseWorkableJobs({ jobs: [{ shortcode: "AB", title: "Designer", location: { city: "Dublin" }, url: "https://apply.workable.com/acme/j/AB" }] });
     expect(workable[0]).toMatchObject({ externalId: "AB", location: "Dublin" });
     const smart = parseSmartRecruitersPostings([{ id: "9", name: "Analyst", location: { city: "Austin" }, ref: "https://jobs.smartrecruiters.com/Visa/9" }], "https://jobs.smartrecruiters.com/Visa");
@@ -185,6 +192,8 @@ describe("canonical openings", () => {
     const titleOnly = openingDedupKey({ employerKey: "ashby:ramp", externalId: "", url: "", title: "Staff Engineer!", location: "New York, NY" });
     expect(titleOnly.dedupKey).toBe("title:ashby:ramp:staff engineer:new york ny");
     expect(canonicalJobUrl("https://Example.com/jobs/1/?b=2&utm_medium=email&a=1")).toBe("https://example.com/jobs/1?a=1&b=2");
+    expect(canonicalJobUrl("https://jobs.ashbyhq.com/cursor/abc?embed=js")).toBe("https://jobs.ashbyhq.com/cursor/abc");
+    expect(canonicalJobUrl("https://jobs.ashbyhq.com/cursor/abc")).toBe("https://jobs.ashbyhq.com/cursor/abc");
   });
 
   it("collapses the same requisition or the same URL and keeps two different requisitions", () => {

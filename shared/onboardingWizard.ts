@@ -1,12 +1,12 @@
 import type { Profile } from "./types";
 import { factGaps, profileReadiness } from "./validate";
 
-export const WIZARD_STEPS = ["welcome", "resume", "facts", "roles", "market", "paths", "confirm", "scan"] as const;
+export const WIZARD_STEPS = ["welcome", "resume", "facts", "roles", "paths", "confirm", "scan"] as const;
 
 export type WizardStep = (typeof WIZARD_STEPS)[number];
 
-/** Empty is an account from before guided setup. Done means they left the wizard. */
-export type StoredWizardStep = WizardStep | "done" | "";
+/** Empty is an account from before guided setup. Done means they left the wizard. "market" is a retired step remapped to paths. */
+export type StoredWizardStep = WizardStep | "done" | "" | "market";
 
 export interface OnboardingProgress {
   profile: boolean;
@@ -40,10 +40,11 @@ export function parseStoredWizardStep(value: unknown): StoredWizardStep {
   return value as StoredWizardStep;
 }
 
-/** A step the client is allowed to save. Empty is only the legacy default. */
+/** A step the client is allowed to save. Empty is only the legacy default. Retired "market" becomes "paths". */
 export function parseWizardProgress(value: unknown): WizardStep | "done" | null {
   const step = parseStoredWizardStep(value);
   if (step === "") return null;
+  if (step === "market") return "paths";
   return step;
 }
 
@@ -77,17 +78,11 @@ export function wizardCopy(step: WizardStep): WizardCopy {
         short: "Roles",
         why: "Pick your industry, then the titles to find. Industry steers which employer boards a scan prefers. Titles decide which openings are worth reading. Without at least one title, a scan has nothing to match and stays off.",
       };
-    case "market":
-      return {
-        title: "Where you will work, and for what pay",
-        short: "Market",
-        why: "Country, remote work, and pay tell the scan what to skip. A role in the wrong place, or below your pay, is not a match. Leaving pay blank means you have no pay floor.",
-      };
     case "paths":
       return {
-        title: "Name the search paths you want",
+        title: "Where to look, and for what pay",
         short: "Paths",
-        why: "A search path is one place rule and one pay band, such as Pune + Mumbai · ₹25–₹35 LPA, Remote · $80k–$120k, or India except Pune · ₹40–₹80 LPA. Every path needs a lower and upper pay limit and a currency (INR by default). A job matches on the midpoint of published pay. If the posting has no pay, you can review it separately. Nothing is guessed.",
+        why: "Each search path is one place rule and one pay band, such as Pune · ₹25–₹35 LPA, Remote · $80k–$120k, or India except Pune · ₹40–₹80 LPA. Set your country and time zone here, then add up to six paths. A job matches on the midpoint of published pay. If the posting has no pay, you can review it separately. Nothing is guessed.",
       };
     case "confirm":
       return {
@@ -119,7 +114,7 @@ function hasDraftFacts(profile: Profile): boolean {
   );
 }
 
-/** Earliest step the saved profile still needs. Market is kept only when that step was saved. */
+/** Earliest step the saved profile still needs. */
 export function derivedWizardStep(profile: Profile, resumeImported: boolean): WizardStep {
   if (factGaps(profile).length === 0 && profile.preferences.targetRoles.length > 0) return "confirm";
   if (factGaps(profile).length === 0) return "roles";
@@ -135,7 +130,6 @@ function canOffer(step: WizardStep, profile: Profile): boolean {
       return true;
     case "roles":
       return factGaps(profile).length === 0;
-    case "market":
     case "paths":
       return factGaps(profile).length === 0 && profile.preferences.targetRoles.length > 0;
     case "confirm":
@@ -154,11 +148,12 @@ export function resumeWizardStep(profile: Profile, stored: StoredWizardStep, res
     case "":
     case "done":
       return derived;
+    case "market":
+      return canOffer("paths", profile) ? "paths" : derived;
     case "welcome":
     case "resume":
     case "facts":
     case "roles":
-    case "market":
     case "paths":
     case "confirm":
     case "scan":
@@ -217,7 +212,6 @@ export function wizardContinueBlock(step: WizardStep, profile: Profile): string 
   switch (step) {
     case "welcome":
     case "resume":
-    case "market":
     case "paths":
     case "scan":
       return null;

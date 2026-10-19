@@ -2,9 +2,10 @@ import { Hono } from "hono";
 import { badMatchSupportMessage, parseBadMatchReason, parseInterviewStage, parseLiveStatus, payProvenanceFor } from "../../shared/agency";
 import { routeFromUrl } from "../../shared/engine/classify";
 import { collapseDuplicateJobs } from "../../shared/engine/jobIdentity";
-import { rescorePathFields } from "../../shared/engine/searchPaths";
+import { fitOptionsForPaths, rescorePathFields } from "../../shared/engine/searchPaths";
 import { buildApplication, buildJobFile } from "../../shared/engine/documents";
 import { evaluateFit, type JobInput } from "../../shared/engine/fit";
+import { publicJobUrl } from "../../shared/engine/listings";
 import { estimateAsJobPay, estimatePayBand } from "../../shared/engine/payEstimate";
 import { buildMessages } from "../../shared/engine/outreach";
 import { tailorResume } from "../../shared/engine/tailor";
@@ -34,7 +35,7 @@ import { notifyOwner } from "../notify";
 import { logCompanyMessage } from "../threads";
 import { aggregatorBlock, fetchJob, isFetchableUrl } from "../jobFetch";
 import { storeEvaluatedJob } from "../jobCharge";
-import { applyJobPathAction, assignmentFor } from "../searchPathStore";
+import { applyJobPathAction, assignmentFor, listSearchPaths } from "../searchPathStore";
 import { noteOnboarding } from "../onboarding";
 import { enforceRateLimit } from "../rateLimit";
 import { requireUser } from "../session";
@@ -55,7 +56,11 @@ function readJobInput(body: Record<string, unknown>): JobInput & { url: string }
   };
   if (!job.title) throw new HttpError(400, "Add the job title.");
   if (job.description.length < 150) throw new HttpError(400, "Paste the full job description (at least a few paragraphs).");
-  if (job.url && !isFetchableUrl(job.url)) throw new HttpError(400, "The job link must be a normal https:// web address.");
+  if (job.url) {
+    const open = publicJobUrl(job.url);
+    if (!isFetchableUrl(open)) throw new HttpError(400, "The job link must be a normal https:// web address.");
+    job.url = open;
+  }
   return job;
 }
 
@@ -140,13 +145,13 @@ export const jobs = new Hono<AppEnv>()
     const user = c.get("user");
     await enforceRateLimit(c.env.DB, "job_fetch", user.id);
     const body = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
-    const url = isFetchableUrl(typeof body.url === "string" ? body.url.trim() : "");
+    const url = isFetchableUrl(publicJobUrl(typeof body.url === "string" ? body.url.trim() : ""));
     if (!url) throw new HttpError(400, "Enter a full job link starting with https://");
     const blocked = aggregatorBlock(url);
     if (blocked) throw new HttpError(422, blocked);
     const job = await fetchJob(url).catch(() => null);
     if (!job) {
-      throw new HttpError(422, "That page could not be read (some career sites load jobs with scripts). Paste the description instead.");
+      throw new HttpError(422, "That posting link is closed or could not be read. Paste the description instead, or try another link.");
     }
     c.executionCtx?.waitUntil(
       addCareerPage(c.env, url.toString(), user.id, "fetched via Check a job").catch((err: unknown) =>
@@ -222,7 +227,8 @@ export const jobs = new Hono<AppEnv>()
     const missing = profileReadiness(profile);
     if (missing.length) throw new HttpError(400, `Finish your profile first: add ${missing.join(", ")}.`);
 
-    const fit = evaluateFit(input, profile);
+    const paths = await listSearchPaths(c.env.DB, user.id);
+    const fit = evaluateFit(input, profile, fitOptionsForPaths(paths, input.location, profile.preferences));
     const id = crypto.randomUUID();
     let pay = payFor(fit, profile);
     let payEstimated = false;
@@ -405,10 +411,9 @@ export const jobs = new Hono<AppEnv>()
     const user = c.get("user");
     const job = await getJob(c.env, user.id, c.req.param("id"));
     const profile = await loadProfile(c.env, user.id, user.email);
-    const fit = evaluateFit(
-      { title: job.title, company: job.company, location: job.location, salaryText: job.salary_text, description: job.description },
-      profile,
-    );
+    const paths = await listSearchPaths(c.env.DB, user.id);
+    const input = { title: job.title, company: job.company, location: job.location, salaryText: job.salary_text, description: job.description };
+    const fit = evaluateFit(input, profile, fitOptionsForPaths(paths, job.location, profile.preferences));
     const imported = job.id.startsWith("cc:");
     const assigned = imported ? null : await assignmentFor(c.env.DB, user.id, profile, job.location, fit.parsedSalary);
     const fields = rescorePathFields(
@@ -501,9 +506,11 @@ export const jobs = new Hono<AppEnv>()
     const missing = profileReadiness(profile);
     if (missing.length) throw new HttpError(400, `Finish your profile first: add ${missing.join(", ")}.`);
 
+    const paths = await listSearchPaths(c.env.DB, user.id);
     const fit = evaluateFit(
       { title: job.title, company: job.company, location: job.location, salaryText: job.salary_text, description: job.description },
       profile,
+      fitOptionsForPaths(paths, job.location, profile.preferences),
     );
     const resume = await fitResumeToPages(
       tailorResume(profile, fit, { id: job.id, title: job.title, company: job.company, description: job.description }),

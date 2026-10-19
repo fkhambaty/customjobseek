@@ -236,7 +236,7 @@ export async function processScan(env: Env, scan: MarketScanRow): Promise<void> 
   await updateStage(env, scan.id, "reading", { candidates: candidates.length, checked: 0 });
   const readable: CheckedOpening[] = [];
   for (let i = 0; i < candidates.length; i += 4) {
-    const batch = await Promise.all(candidates.slice(i, i + 4).map((row) => checkOpening(row, profile)));
+    const batch = await Promise.all(candidates.slice(i, i + 4).map((row) => checkOpening(row, profile, paths)));
     for (const checked of batch) {
       if (!checked) continue;
       const acceptance = scanOpeningAcceptance(

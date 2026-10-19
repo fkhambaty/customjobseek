@@ -5,6 +5,7 @@ import { detectBoard } from "./boards";
 import {
   greenhouseJobUrl,
   leverPostingUrl,
+  publicJobUrl,
   recruiteeOfferUrl,
   smartRecruitersPostingUrl,
 } from "./listings";
@@ -34,6 +35,9 @@ const CLOSED_PHRASES: readonly RegExp[] = [
   /\b(?:this|the) (?:job|position|role|posting|opening) (?:is|has been|was) (?:now )?(?:closed|filled|expired|removed)\b/i,
   /\b(?:this )?(?:job|position|role|posting|opening) has been (?:closed|filled|removed)\b/i,
   /\bposting (?:has expired|is closed|has been closed)\b/i,
+  /\bpage not found\b/i,
+  /\bthe page you requested was not found\b/i,
+  /\b(?:this )?(?:job|position|role|posting|opening) (?:could not be found|was not found|not found)\b/i,
 ];
 
 const STABLE_JOB_APIS = new Set<ProbeSource>(["greenhouse", "lever", "smartrecruiters", "recruitee"]);
@@ -295,6 +299,7 @@ export function livenessProbe(raw: string): LivenessProbe | null {
     case "aggregator":
       return null;
     case "ashby":
+      return { url: publicJobUrl(raw), accept: "text/html", source: "page" };
     case "workable":
     case "workday":
     case "teamtailor":

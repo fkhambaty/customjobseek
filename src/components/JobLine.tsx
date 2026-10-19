@@ -6,7 +6,7 @@ import { PAY_NOT_PUBLISHED, showPayNotPublished } from "../../shared/engine/sear
 import type { JobRecord, JobStatus } from "../../shared/types";
 import { api } from "../api";
 import { useJobs } from "../data";
-import { ago, formatPay, shortDate, today } from "../format";
+import { ago, formatPay, jobOpenUrl, shortDate, today } from "../format";
 
 export type LineMode = "apply" | "message" | "nudge" | "live" | "due";
 
@@ -74,7 +74,7 @@ export function JobLine({ job, mode }: { job: JobRecord; mode: LineMode }) {
       <span className="line-actions">
         {mode === "apply" && (
           <>
-            {job.url && <a className="btn btn-primary btn-sm" href={job.url} target="_blank" rel="noreferrer">Apply ↗</a>}
+            {job.url && <a className="btn btn-primary btn-sm" href={jobOpenUrl(job.url)} target="_blank" rel="noreferrer">Apply ↗</a>}
             {evidence.packageReady ? (
               <button type="button" className="btn btn-ghost btn-sm" onClick={() => open(job.id, "resume")}>Resume</button>
             ) : (

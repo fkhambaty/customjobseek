@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { Link } from "react-router-dom";
 import { PUBLIC_FEEDS, SOURCES, capabilityPhrase, freshnessPhrase, healthLabel, healthPhrase, isAts, sourceLabel } from "../../shared/engine/sources";
 import { api, type CompanyRow, type MarketStats } from "../api";
+import { jobOpenUrl } from "../format";
 import { useSession } from "../session";
 
 function statusLine(company: CompanyRow): string {
@@ -196,7 +197,7 @@ export function CompaniesPage() {
                 <ul className="notes">
                   {jobs.length === 0 && <li>No openings stored yet.</li>}
                   {jobs.map((j) => (
-                    <li key={j.url}><a href={j.url} target="_blank" rel="noreferrer">{j.title}</a>{j.location && ` · ${j.location}`}</li>
+                    <li key={j.url}><a href={jobOpenUrl(j.url)} target="_blank" rel="noreferrer">{j.title}</a>{j.location && ` · ${j.location}`}</li>
                   ))}
                 </ul>
               )}

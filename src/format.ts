@@ -1,5 +1,12 @@
 import { daysBetween } from "../shared/engine/insights";
+import { publicJobUrl } from "../shared/engine/listings";
 import type { JobRecord } from "../shared/types";
+
+/** Apply / posting link shown to the person — never a bare Ashby SPA dead-end. */
+export function jobOpenUrl(url: string | null | undefined): string {
+  if (!url?.trim()) return "";
+  return publicJobUrl(url.trim());
+}
 
 export function today(): string {
   return new Date().toISOString().slice(0, 10);

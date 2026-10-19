@@ -8,6 +8,7 @@ import { dedupeJobOpenings, jobIdentityKey } from "../shared/engine/jobIdentity"
 import {
   assignSearchPath,
   countryLabelFor,
+  fitOptionsForPaths,
   jobPayPlace,
   openingLocationAllowed,
   placePathLabel,
@@ -23,6 +24,7 @@ import { emptyDetails, type Contact, type Profile } from "../shared/types";
 import { encryptJson } from "./crypto";
 import { INSERT_RESUME_ARTIFACT, tailoredArtifactValues } from "./resumeArtifacts";
 import { HttpError, type Env } from "./env";
+import { publicJobUrl } from "../shared/engine/listings";
 import { fetchJob, isFetchableUrl } from "./jobFetch";
 import { listSearchPaths } from "./searchPathStore";
 
@@ -161,23 +163,39 @@ export interface CheckedOpening {
   fit: ReturnType<typeof evaluateFit>;
 }
 
-export async function checkOpening(row: DiscoverRow, profile: Profile): Promise<CheckedOpening | null> {
-  const url = isFetchableUrl(row.url);
+export async function checkOpening(
+  row: DiscoverRow,
+  profile: Profile,
+  paths: SearchPath[] = [],
+): Promise<CheckedOpening | null> {
+  const url = isFetchableUrl(publicJobUrl(row.url));
   if (!url) return null;
   const fetched = await fetchJob(url).catch(() => null);
   if (!fetched || fetched.description.length < 150) return null;
+  const openLink = url.toString();
   const input = {
     ...fetched,
     title: fetched.title || row.title,
     company: fetched.company || row.company,
     location: fetched.location || row.location,
-    url: row.url,
+    url: openLink,
   };
-  return { row, input, fit: evaluateFit(input, profile) };
+  return {
+    row: { ...row, url: openLink },
+    input,
+    fit: evaluateFit(input, profile, fitOptionsForPaths(paths, input.location, profile.preferences)),
+  };
 }
 
-function annualPay(input: JobInput, profile: Profile): { low: number | null; high: number | null; estimated: boolean; salaryText: string } {
-  const published = storedAnnualPay(evaluateFit(input, profile).parsedSalary, profile.preferences.currency);
+function annualPay(
+  input: JobInput,
+  profile: Profile,
+  paths: SearchPath[] = [],
+): { low: number | null; high: number | null; estimated: boolean; salaryText: string } {
+  const published = storedAnnualPay(
+    evaluateFit(input, profile, fitOptionsForPaths(paths, input.location, profile.preferences)).parsedSalary,
+    profile.preferences.currency,
+  );
   if (published.low !== null || published.high !== null) {
     return { ...published, estimated: false, salaryText: input.salaryText };
   }
@@ -237,7 +255,7 @@ export async function packStatements(
   const resume = await fitResumeToPages(
     tailorResume(profile, fit, { id, title: input.title, company: input.company, description: input.description }),
   );
-  const pay = annualPay(input, profile);
+  const pay = annualPay(input, profile, paths);
   const band = pay.estimated
     ? estimatePayBand({
       title: input.title,

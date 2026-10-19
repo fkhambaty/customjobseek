@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type CSSProperties, type FormEvent, type RefObject } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { COUNTRIES, currencies, preferencesForCountry, timeZoneLabel } from "../../shared/geo";
+import { COUNTRIES, preferencesForCountry, timeZoneLabel } from "../../shared/geo";
 import {
   WIZARD_STEPS,
   needsGuidedOnboarding,
@@ -12,13 +12,13 @@ import {
   wizardStepIndex,
   type WizardStep,
 } from "../../shared/onboardingWizard";
-import type { Bullet, Experience, Profile, SalaryPeriod } from "../../shared/types";
+import type { Bullet, Experience, Profile } from "../../shared/types";
 import { originalPdfLimitMessage } from "../../shared/resumeStorage";
 import { profileReadiness } from "../../shared/validate";
 import { api } from "../api";
 import { CountrySelect, TimeZoneField } from "../components/CountrySelect";
 import { OnboardingPaths, SaveCancelled } from "../components/SearchPaths";
-import { Field, ListInput, NumberInput, newId } from "../components/fields";
+import { Field, ListInput, newId } from "../components/fields";
 import { IndustryPicker, RoleTargets } from "../components/RoleTargets";
 import { industryLabels } from "../../shared/industries";
 import { plural } from "../format";
@@ -27,34 +27,9 @@ import { useSession } from "../session";
 type SaveState = "idle" | "saving" | "saved" | "error";
 type RetryKind = "load" | "import" | "scan" | "save";
 
-function periodLabel(period: SalaryPeriod): string {
-  switch (period) {
-    case "year":
-      return "year";
-    case "month":
-      return "month";
-    case "hour":
-      return "hour";
-    case "lpa":
-      return "year, in lakhs";
-    default: {
-      const unexpected: never = period;
-      return unexpected;
-    }
-  }
-}
-
 function countryLabel(code: string): string {
   if (!code) return "Anywhere";
   return COUNTRIES.find((country) => country.code === code)?.name ?? code;
-}
-
-function payText(profile: Profile): string {
-  const { minSalary, maxSalary, currency, salaryPeriod } = profile.preferences;
-  if (minSalary === null && maxSalary === null) return "No pay floor";
-  const min = minSalary === null ? "any minimum" : String(minSalary);
-  const max = maxSalary === null ? "no maximum" : String(maxSalary);
-  return `${min} to ${max} ${currency} per ${periodLabel(salaryPeriod)}`;
 }
 
 function BulletInput({ bullets, onChange }: { bullets: Bullet[]; onChange: (next: Bullet[]) => void }) {
@@ -660,10 +635,26 @@ function StepBody({
           )}
         </>
       );
-    case "market":
-      return <Market profile={profile} onEdit={onEdit} onPref={onPref} />;
     case "paths":
-      return <OnboardingPaths profile={profile} onReady={onPathsReady} />;
+      return (
+        <>
+          <div className="onboard-grid">
+            <Field label="Country" hint="Used for country-wide search paths and the cities list below.">
+              <CountrySelect
+                value={profile.preferences.country}
+                emptyLabel="Anywhere"
+                onChange={(code) => onEdit({ ...profile, preferences: preferencesForCountry(profile.preferences, code) })}
+              />
+            </Field>
+            <TimeZoneField
+              country={profile.preferences.country}
+              value={profile.preferences.timezone}
+              onChange={(zone) => onPref("timezone", zone)}
+            />
+          </div>
+          <OnboardingPaths profile={profile} onReady={onPathsReady} />
+        </>
+      );
     case "confirm":
       return <Confirm profile={profile} onJump={onJump} />;
     case "scan":
@@ -774,70 +765,6 @@ function moveRole(profile: Profile, index: number, direction: -1 | 1, onEdit: (n
   onEdit({ ...profile, experience: next });
 }
 
-function Market({
-  profile,
-  onEdit,
-  onPref,
-}: {
-  profile: Profile;
-  onEdit: (next: Profile) => void;
-  onPref: <K extends keyof Profile["preferences"]>(key: K, value: Profile["preferences"][K]) => void;
-}) {
-  const country = COUNTRIES.find((item) => item.code === profile.preferences.country);
-  return (
-    <div className="onboard-grid">
-      <Field label="Country" hint="Anywhere means a job in any country can match. India, the US, the UK, Canada, Australia, Singapore, New Zealand, Ireland, and South Africa are listed first.">
-        <CountrySelect
-          value={profile.preferences.country}
-          emptyLabel="Anywhere"
-          onChange={(code) => onEdit({ ...profile, preferences: preferencesForCountry(profile.preferences, code) })}
-        />
-      </Field>
-      <Field label="Cities" hint="Leave blank to accept the whole country. Comma-separated.">
-        <ListInput
-          key={profile.preferences.country}
-          value={profile.preferences.cities}
-          onChange={(value) => onPref("cities", value)}
-          placeholder={country?.cities.slice(0, 2).join(", ") || "City names"}
-        />
-      </Field>
-      <Field label="Work mode">
-        <select value={profile.preferences.remoteOk ? "yes" : "no"} onChange={(event) => onPref("remoteOk", event.target.value === "yes")}>
-          <option value="yes">Remote roles are fine</option>
-          <option value="no">No remote roles</option>
-        </select>
-      </Field>
-      <Field label="Currency">
-        <select value={profile.preferences.currency} onChange={(event) => onPref("currency", event.target.value)}>
-          {currencies().map((code) => <option key={code} value={code}>{code}</option>)}
-        </select>
-      </Field>
-      <Field label="Pay unit">
-        <select value={profile.preferences.salaryPeriod} onChange={(event) => onPref("salaryPeriod", event.target.value as SalaryPeriod)}>
-          <option value="year">Per year</option>
-          <option value="month">Per month</option>
-          <option value="hour">Per hour</option>
-          <option value="lpa">Lakhs per year (India)</option>
-        </select>
-      </Field>
-      <Field label="Minimum pay" hint="Blank means no floor.">
-        <NumberInput value={profile.preferences.minSalary} onChange={(value) => onPref("minSalary", value)} placeholder="80000" />
-      </Field>
-      <Field label="Maximum pay" hint="Blank means no ceiling.">
-        <NumberInput value={profile.preferences.maxSalary} onChange={(value) => onPref("maxSalary", value)} placeholder="120000" />
-      </Field>
-      <TimeZoneField
-        country={profile.preferences.country}
-        value={profile.preferences.timezone}
-        onChange={(zone) => onPref("timezone", zone)}
-      />
-      <Field label="Title words to skip" hint="Optional. A job title containing one of these is a deal-breaker.">
-        <ListInput value={profile.preferences.excludedTitleWords} onChange={(value) => onPref("excludedTitleWords", value)} placeholder="Intern, Unpaid" />
-      </Field>
-    </div>
-  );
-}
-
 function Confirm({ profile, onJump }: { profile: Profile; onJump: (step: WizardStep) => void }) {
   const missing = profileReadiness(profile);
   return (
@@ -857,14 +784,12 @@ function Confirm({ profile, onJump }: { profile: Profile; onJump: (step: WizardS
         </div>
         <div><dt>Industry</dt><dd>{industryLabels(profile.preferences.industries).join(", ") || "Not set"}</dd></div>
         <div><dt>Titles to find</dt><dd>{profile.preferences.targetRoles.join(", ") || "Not set"}</dd></div>
-        <div><dt>Place</dt><dd>{countryLabel(profile.preferences.country)}{profile.preferences.cities.length ? ` · ${profile.preferences.cities.join(", ")}` : ""} · scans at {timeZoneLabel(profile.preferences.timezone)}</dd></div>
-        <div><dt>Work mode</dt><dd>{profile.preferences.remoteOk ? "Remote roles are fine" : "No remote roles"}</dd></div>
-        <div><dt>Pay</dt><dd>{payText(profile)}</dd></div>
+        <div><dt>Country</dt><dd>{countryLabel(profile.preferences.country)} · scans at {timeZoneLabel(profile.preferences.timezone)}</dd></div>
+        <div><dt>Place and pay</dt><dd>Defined by your search paths</dd></div>
       </dl>
       <div className="onboard-jumps">
         <button type="button" className="btn btn-ghost btn-sm" onClick={() => onJump("facts")}>Edit facts</button>
         <button type="button" className="btn btn-ghost btn-sm" onClick={() => onJump("roles")}>Edit titles</button>
-        <button type="button" className="btn btn-ghost btn-sm" onClick={() => onJump("market")}>Edit place and pay</button>
         <button type="button" className="btn btn-ghost btn-sm" onClick={() => onJump("paths")}>Edit search paths</button>
         <Link to="/profile" className="btn btn-ghost btn-sm">Open full editor</Link>
       </div>
